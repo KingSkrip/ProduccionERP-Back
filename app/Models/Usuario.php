@@ -48,6 +48,7 @@ class Usuario extends Authenticatable
         'VE',
         'REIMPRPT',
         'PASSWORD2',
+        'PHOTO',
     ];
 
     protected $hidden = [

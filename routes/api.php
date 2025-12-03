@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DataDashboardController;
+use App\Http\Controllers\PerfilController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\UsuarioController;
 
@@ -26,6 +27,16 @@ Route::prefix('auth')->group(function () {
 
 Route::prefix('dash')->group(function () {
     // ----- RUTAS NUEVAS PARA ANGULAR -----
-    Route::get('me', [DataDashboardController::class, 'me']);                 // NUEVA
-    Route::post('update-status', [DataDashboardController::class, 'updateStatus']); // NUEVA
+    Route::get('me', [DataDashboardController::class, 'me']);
+    Route::post('update-status', [DataDashboardController::class, 'updateStatus']);
+});
+
+
+
+Route::middleware('jwt.auth')->group(function () {
+
+    Route::get('perfil',          [PerfilController::class, 'show'])->name('hola');
+    Route::post('perfil',          [PerfilController::class, 'updatePerfil']);
+    Route::put('perfil/password', [PerfilController::class, 'updatePassword']);
+    Route::delete('perfil',       [PerfilController::class, 'destroy']);
 });
