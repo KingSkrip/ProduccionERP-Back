@@ -209,6 +209,8 @@ class AuthController extends Controller
         }
     }
 
+    
+
 
     /**
      * Sign out - Cerrar sesión
