@@ -5,7 +5,7 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => [env('APP_URL_FRONT', 'http://localhost:4200')],
+    'allowed_origins' => [env('APP_URL_FRONT')],
 
     'allowed_origins_patterns' => [],
 

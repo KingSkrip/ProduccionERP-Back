@@ -8,6 +8,6 @@ class Rol extends Model
 {
     protected $table = 'ROLES';
     protected $primaryKey = 'CLAVE';
-    public $timestamps = true;
+  public $timestamps = false;
     protected $fillable = ['NOMBRE', 'GUARD_NAME'];
 }
