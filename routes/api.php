@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Personalizacion\Dashboard\DataDashboardController;
 use App\Http\Controllers\Personalizacion\Perfil\PerfilController;
+use App\Http\Controllers\SuperAdmin\GestionarUsuarios\RH\RHController;
 use App\Http\Controllers\SuperAdmin\GestionarUsuarios\SuAdmin\SuAdminController;
 use Illuminate\Support\Facades\Route;
 
@@ -50,3 +51,13 @@ Route::prefix('superadmin')->middleware('jwt.auth')->group(function () {
     Route::put('suadmin/{id}', [SuAdminController::class, 'update'])->name('superadmin.suadmin.update');
     Route::delete('suadmin/{id}', [SuAdminController::class, 'destroy'])->name('superadmin.suadmin.destroy');
 });
+
+//GESTIONAR RH
+Route::prefix('rh')->middleware('jwt.auth')->group(function () {
+    Route::get('data', [RHController::class, 'index'])->name('superadmin.suadmin.index');
+    Route::post('suadmin', [RHController::class, 'store'])->name('superadmin.suadmin.store');
+    Route::get('suadmin/{id}', [RHController::class, 'edit'])->name('superadmin.suadmin.show');
+    Route::put('suadmin/{id}', [RHController::class, 'update'])->name('superadmin.suadmin.update');
+    Route::delete('suadmin/{id}', [RHController::class, 'destroy'])->name('superadmin.suadmin.destroy');
+});
+
