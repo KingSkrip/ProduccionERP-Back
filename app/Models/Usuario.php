@@ -12,7 +12,11 @@ class Usuario extends Authenticatable
 
     protected $table = 'USUARIOS';
     protected $primaryKey = 'CLAVE';
+
+    // 🔥 MUY IMPORTANTE
     public $incrementing = false;
+    public $keyType = 'int';
+
     public $timestamps = false;
     protected $connection = 'firebird';
 
@@ -64,6 +68,7 @@ class Usuario extends Authenticatable
     public function roles()
     {
         return $this->hasMany(ModelHasRole::class, 'MODEL_CLAVE', 'CLAVE')
-            ->where('MODEL_TYPE', 'usuarios'); // tu modelo se llama usuarios
+            ->where('MODEL_TYPE', 'usuarios');
     }
 }
+
