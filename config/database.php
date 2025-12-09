@@ -16,7 +16,7 @@ return [
     |
     */
 
-    'default' => env('DB_CONNECTION', 'sqlite'),
+     'default' => env('DB_CONNECTION', 'firebird'),
 
     /*
     |--------------------------------------------------------------------------
@@ -112,15 +112,76 @@ return [
             // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
         ],
 
+  
+
+        // ---------------------------------------
+        //  🔥 Firebird Principal (PRODUCCIÓN)
+        // ---------------------------------------
         'firebird' => [
-            'driver' => 'firebird',
-            'host' => env('DB_HOST', 'fibrasan.ddns.net'),
-            'port' => env('DB_PORT', '3050'),
-            'database' => env('DB_DATABASE', 'srvasp01'),
-            'username' => env('DB_USERNAME', 'SYSDBA'),
-            'password' => env('DB_PASSWORD', 'masterkey'),
-            'charset' => env('DB_CHARSET', 'UTF8'),
-            'role' => null,
+            'driver'   => 'firebird',
+            'host'     => env('DB_HOST'),
+            'port'     => env('DB_PORT'),
+            'database' => env('DB_DATABASE'),
+            'username' => env('DB_USERNAME'),
+            'password' => env('DB_PASSWORD'),
+            'charset'  => env('DB_CHARSET', 'UTF8'),
+            'role'     => null,
+        ],
+
+        // ---------------------------------------
+        // 🔥 Empresa 1
+        // ---------------------------------------
+        'firebird_e1' => [
+            'driver'   => 'firebird',
+            'host'     => env('DB_HOST_E1'),
+            'port'     => env('DB_PORT_E1'),
+            'database' => env('DB_DATABASE_E1'),
+            'username' => env('DB_USERNAME_E1'),
+            'password' => env('DB_PASSWORD_E1'),
+            'charset'  => env('DB_CHARSET_E1', 'UTF8'),
+            'role'     => null,
+        ],
+
+        // ---------------------------------------
+        // 🔥 Empresa 2
+        // ---------------------------------------
+        'firebird_e2' => [
+            'driver'   => 'firebird',
+            'host'     => env('DB_HOST_E2'),
+            'port'     => env('DB_PORT_E2'),
+            'database' => env('DB_DATABASE_E2'),
+            'username' => env('DB_USERNAME_E2'),
+            'password' => env('DB_PASSWORD_E2'),
+            'charset'  => env('DB_CHARSET_E2', 'UTF8'),
+            'role'     => null,
+        ],
+
+        // ---------------------------------------
+        // 🔥 Empresa 3
+        // ---------------------------------------
+        'firebird_e3' => [
+            'driver'   => 'firebird',
+            'host'     => env('DB_HOST_E3'),
+            'port'     => env('DB_PORT_E3'),
+            'database' => env('DB_DATABASE_E3'),
+            'username' => env('DB_USERNAME_E3'),
+            'password' => env('DB_PASSWORD_E3'),
+            'charset'  => env('DB_CHARSET_E3', 'UTF8'),
+            'role'     => null,
+        ],
+
+        // ---------------------------------------
+        // 🔥 Empresa 4
+        // ---------------------------------------
+        'firebird_e4' => [
+            'driver'   => 'firebird',
+            'host'     => env('DB_HOST_E4'),
+            'port'     => env('DB_PORT_E4'),
+            'database' => env('DB_DATABASE_E4'),
+            'username' => env('DB_USERNAME_E4'),
+            'password' => env('DB_PASSWORD_E4'),
+            'charset'  => env('DB_CHARSET_E4', 'UTF8'),
+            'role'     => null,
         ],
 
     ],

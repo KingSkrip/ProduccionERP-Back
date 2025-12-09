@@ -13,7 +13,6 @@ class Usuario extends Authenticatable
     protected $table = 'USUARIOS';
     protected $primaryKey = 'CLAVE';
 
-    // 🔥 MUY IMPORTANTE
     public $incrementing = false;
     public $keyType = 'int';
 

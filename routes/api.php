@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Personalizacion\Dashboard\DataDashboardController;
 use App\Http\Controllers\Personalizacion\Perfil\PerfilController;
+use App\Http\Controllers\RH\Nominas\EmpresaUno\EmpresaUnoController;
 use App\Http\Controllers\SuperAdmin\GestionarUsuarios\Colaborador\ColaboradorController;
 use App\Http\Controllers\SuperAdmin\GestionarUsuarios\RH\RHController;
 use App\Http\Controllers\SuperAdmin\GestionarUsuarios\SuAdmin\SuAdminController;
@@ -79,4 +80,12 @@ Route::prefix('roles')->middleware('jwt.auth')->group(function () {
     Route::get('rol/{id}', [RolesController::class, 'edit'])->name('superadmin.roles.show');
     Route::put('rol/{id}', [RolesController::class, 'update'])->name('superadmin.roles.update');
     Route::delete('rol/{id}', [RolesController::class, 'destroy'])->name('superadmin.roles.destroy');
+});
+
+
+
+
+
+Route::prefix('rh/E_ONE')->middleware('jwt.auth')->group(function () {
+    Route::get('empresa1/empleados', [EmpresaUnoController::class, 'index'])->name('EONE.index');
 });

@@ -12,6 +12,12 @@ use Firebase\JWT\Key;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use App\Http\Resources\UsuarioResource;
+use App\Mail\ForgotPasswordMail;
+use App\Models\PasswordReset;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
@@ -210,8 +216,6 @@ class AuthController extends Controller
         }
     }
 
-    
-
 
     /**
      * Sign out - Cerrar sesión
@@ -236,41 +240,58 @@ class AuthController extends Controller
     /**
      * Forgot password - Recuperar contraseña
      */
-    public function forgotPassword(Request $request)
-    {
-        try {
-            $validator = Validator::make($request->all(), [
-                'email' => 'required|email'
-            ]);
+ public function forgotPassword(Request $request)
+{
+    try {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email'
+        ]);
 
-            if ($validator->fails()) {
-                return response()->json([
-                    'message' => 'Email inválido'
-                ], 422);
-            }
-
-            $usuario = Usuario::where('CORREO', $request->email)->first();
-
-            if (!$usuario) {
-                // Por seguridad, retornar éxito aunque no exista
-                return response()->json([
-                    'message' => 'Si el email existe, recibirás instrucciones'
-                ], 200);
-            }
-
-            // Aquí implementarías el envío de email con token de recuperación
-            // Por ahora solo retornamos éxito
-
-            return response()->json([
-                'message' => 'Si el email existe, recibirás instrucciones'
-            ], 200);
-        } catch (Exception $e) {
-            Log::error('Error en forgotPassword: ' . $e->getMessage());
-            return response()->json([
-                'message' => 'Error al procesar solicitud'
-            ], 500);
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Email inválido'], 422);
         }
+
+        Log::info('Correo enviado desde el front:' . $request->email);
+
+        $usuario = Usuario::where('CORREO', $request->email)->first();
+
+        if (!$usuario) {
+            return response()->json(['message' => 'Si el email existe, recibirás instrucciones'], 200);
+        }
+
+        // 🔥 GENERAR TOKEN
+        $token = Str::random(60);
+
+        // Eliminar tokens previos
+        DB::table('PASSWORD_RESET')->where('USUARIO_ID', $usuario->CLAVE)->delete();
+
+        // Insertar token nuevo
+        DB::table('PASSWORD_RESET')->insert([
+            'EMAIL' => $usuario->CORREO,
+            'TOKEN' => $token,
+            'USUARIO_ID' => $usuario->CLAVE,
+            'CREATED_AT' => Carbon::now(),
+        ]);
+
+        // ✔ DEFINIR VARIABLES
+        $email = $usuario->CORREO;
+        $user  = $usuario;
+
+        // ✔ Enviar correo
+        Mail::to($email)->send(new ForgotPasswordMail($token, $email, $user));
+
+        return response()->json(['message' => 'Si el email existe, recibirás instrucciones'], 200);
+
+    } catch (Exception $e) {
+        Log::error('Error en forgotPassword: ' . $e->getMessage());
+        return response()->json(['message' => 'Error al procesar solicitud'], 500);
     }
+}
+
+
+
+
+
 
     /**
      * Reset password - Restablecer contraseña
