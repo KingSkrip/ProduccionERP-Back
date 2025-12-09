@@ -4,7 +4,7 @@ namespace App\Http\Controllers\RH\Nominas\EmpresaUno;
 
 use App\Helpers\ValidationMessages;
 use App\Http\Controllers\Controller;
-use App\Models\Usuario;
+
 use App\Http\Resources\UsuarioResource;
 use App\Models\ModelHasRole;
 use App\Services\EmpresaUno\Empleados\EmpleadoE1Service;

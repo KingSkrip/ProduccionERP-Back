@@ -10,42 +10,20 @@ class UsuarioResource extends JsonResource
     {
         return [
             // Datos básicos
-            'id'            => $this->CLAVE,
-            'name'          => $this->NOMBRE,
-            'email'         => $this->CORREO,
-            'usuario'       => $this->USUARIO,
-            'perfil'        => $this->PERFIL,
-            'depto'         => $this->DEPTO,
-            'departamento'  => $this->DEPARTAMENTO,
-            'almacen'       => $this->ALMACEN,
-            'cve_alm'       => $this->CVE_ALM,
-            'status'        => $this->STATUS,
+            'id'                => $this->id,
+            'name'              => $this->nombre,
+            'email'             => $this->correo,
+            'usuario'           => $this->usuario,
+            'curp'              => $this->curp,
+            'telefono'          =>  $this->telefono,
+            'status_id'         => $this->status_id,
+            'departamento_id'   => $this->departamento_id,
+            'direccion_id'      => $this->direccion_id,
+            'photo'             => $this->photo,
+            'permissions'       => $this->roles()->pluck('ROLE_CLAVE'),
 
-            // Permisos
-            'permissions'   => $this->roles()->pluck('ROLE_CLAVE'),
 
-            // Campos adicionales útiles
-            'photo'         => $this->PHOTO,
-            'scale'         => $this->SCALE,
-            'desktop'       => $this->DESKTOP,
-            'ctrlses'       => $this->CTRLSES,
-            'printrep'      => $this->PRINTREP,
-            'printlbl'      => $this->PRINTLBL,
-            'reimprpt'      => $this->REIMPRPT,
-            'av'            => $this->AV,
-            'ac'            => $this->AC,
-            'ad'            => $this->AD,
-            'ae'            => $this->AE,
-            'cve_agt'       => $this->CVE_AGT,
-            'version'       => $this->VERSION,
-            'fechaact'      => $this->FECHAACT?->format('Y-m-d H:i:s'),
-            'versionrh'     => $this->VERSIONRH,
-            'fechactrh'     => $this->FECHAACTRH?->format('Y-m-d H:i:s'),
-            'deporth'       => $this->DEPORTH,
-            'departamentorh'=> $this->DEPARTAMENTORH,
 
-            // Todos los demás campos (opcional: solo si quieres TODO)
-            // 'raw' => $this->resource->toArray(),
         ];
     }
 }

@@ -73,7 +73,6 @@ class AuthController extends Controller
 
     /**
      * Iniciar sesión usando token (refresh)
-     * 🔥 CORRECCIÓN: Eliminar validación de status_id
      */
     public function signInWithToken(Request $request)
     {
@@ -90,7 +89,6 @@ class AuthController extends Controller
 
             $usuario = Users::find($decoded->sub);
 
-            // 🔥 CORRECCIÓN: Solo verificar si existe el usuario
             if (!$usuario) {
                 return response()->json([
                     'message' => 'Usuario no válido'
@@ -139,6 +137,8 @@ class AuthController extends Controller
         return JWT::encode($payload, $this->jwtSecret, $this->jwtAlgorithm);
     }
 
+
+
     /**
      * Sign up - Registrarse
      */
@@ -164,9 +164,9 @@ class AuthController extends Controller
 
             // Crear registro en model_has_roles
             ModelHasRole::create([
-                'role_clave' => 1, // ID del rol COLABORADOR
+                'role_clave' => 3, // ID del rol COLABORADOR
                 'model_clave' => $usuario->id,
-                'subrol_id' => null,
+                'subrol_id' => null, // si no hay subrol inicial
                 'model_type' => Users::class,
             ]);
 
@@ -187,19 +187,24 @@ class AuthController extends Controller
     /**
      * Sign out - Cerrar sesión
      */
-    public function signOut(Request $request)
-    {
-        try {
-            return response()->json([
-                'message' => 'Sesión cerrada exitosamente'
-            ], 200);
-        } catch (Exception $e) {
-            Log::error('Error en signOut: ' . $e->getMessage());
-            return response()->json([
-                'message' => 'Error al cerrar sesión'
-            ], 500);
-        }
+   public function signOut(Request $request)
+{
+    try {
+        // Opcional: guardar token en tabla de revocados
+        // DB::table('revoked_tokens')->insert(['token' => $request->bearerToken(), 'revoked_at' => now()]);
+
+        return response()->json([
+            'message' => 'Sesión cerrada exitosamente'
+        ], 200);
+    } catch (Exception $e) {
+        Log::error('Error en signOut: ' . $e->getMessage());
+        return response()->json([
+            'message' => 'Error al cerrar sesión'
+        ], 500);
     }
+}
+
+
 
     /**
      * Forgot password - Recuperar contraseña
@@ -218,13 +223,17 @@ class AuthController extends Controller
             $usuario = Users::where('correo', $request->email)->first();
 
             if (!$usuario) {
+                // No revelar si el email existe
                 return response()->json(['message' => 'Si el email existe, recibirás instrucciones'], 200);
             }
 
+            // 🔥 Generar token
             $token = Str::random(60);
 
+            // Eliminar tokens previos
             DB::table('password_resets')->where('usuario_id', $usuario->id)->delete();
 
+            // Insertar token nuevo
             DB::table('password_resets')->insert([
                 'email' => $usuario->correo,
                 'token' => $token,
@@ -232,6 +241,7 @@ class AuthController extends Controller
                 'created_at' => Carbon::now(),
             ]);
 
+            // Enviar correo
             Mail::to($usuario->correo)->send(new ForgotPasswordMail($token, $usuario->correo, $usuario));
 
             return response()->json(['message' => 'Si el email existe, recibirás instrucciones'], 200);
@@ -268,9 +278,11 @@ class AuthController extends Controller
                 return response()->json(['message' => 'Usuario no encontrado'], 404);
             }
 
+            // Actualizar contraseña
             $usuario->password = Hash::make($request->password);
             $usuario->save();
 
+            // Eliminar token usado
             DB::table('password_resets')->where('token', $request->token)->delete();
 
             return response()->json(['message' => 'Contraseña actualizada exitosamente'], 200);
@@ -282,7 +294,6 @@ class AuthController extends Controller
 
     /**
      * Unlock session - Desbloquear sesión
-     * 🔥 CORRECCIÓN: Cambiar PASSWORD por password
      */
     public function unlockSession(Request $request)
     {
@@ -298,7 +309,6 @@ class AuthController extends Controller
 
             $usuario = Users::where('correo', $request->email)->first();
 
-            // 🔥 CORRECCIÓN: Validar contra 'password' en minúscula
             if (!$usuario || !Hash::check($request->password, $usuario->password)) {
                 return response()->json(['message' => 'Credenciales incorrectas'], 401);
             }
@@ -312,3 +322,5 @@ class AuthController extends Controller
         }
     }
 }
+
+//Kingskrip132/*

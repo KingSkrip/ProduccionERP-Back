@@ -5,11 +5,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Rol extends Model
+class Subrole extends Model
 {
-    protected $table = 'roles'; // ajustado a minúsculas y plural
-    protected $primaryKey = 'id';
-    public $timestamps = true;
+    protected $table = 'subroles';
 
     protected $fillable = [
         'nombre',
@@ -21,6 +19,6 @@ class Rol extends Model
      */
     public function modelHasRoles(): HasMany
     {
-        return $this->hasMany(ModelHasRole::class, 'role_clave');
+        return $this->hasMany(ModelHasRole::class, 'subrol_id');
     }
 }

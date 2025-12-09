@@ -3,15 +3,13 @@
 namespace App\Http\Controllers\Personalizacion\Dashboard;
 
 use App\Http\Controllers\Controller;
-use App\Models\Usuario;
 use Exception;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Validator;
 use App\Http\Resources\UsuarioResource;
+use App\Models\Users;
 
 class DataDashboardController extends Controller
 {
@@ -20,10 +18,13 @@ class DataDashboardController extends Controller
 
     public function __construct()
     {
-        // Obtener la clave secreta del .env
         $this->jwtSecret = env('JWT_SECRET');
     }
 
+    /**
+     * Obtener datos del usuario actual
+     * 🔥 CORRECCIÓN: Buscar por 'id' en lugar de 'CLAVE'
+     */
     public function me(Request $request)
     {
         try {
@@ -35,7 +36,8 @@ class DataDashboardController extends Controller
 
             $decoded = JWT::decode($token, new Key($this->jwtSecret, $this->jwtAlgorithm));
 
-            $usuario = Usuario::where('CLAVE', $decoded->sub)->first();
+            // 🔥 CORRECCIÓN: Usar find() porque $decoded->sub contiene el ID
+            $usuario = Users::find($decoded->sub);
 
             if (!$usuario) {
                 return response()->json(['message' => 'Usuario no encontrado'], 404);
@@ -45,32 +47,45 @@ class DataDashboardController extends Controller
                 'user' => new UsuarioResource($usuario)
             ], 200);
         } catch (\Exception $e) {
+            Log::error('Error en me(): ' . $e->getMessage());
             return response()->json(['message' => 'Token inválido'], 401);
         }
     }
 
-
+    /**
+     * Actualizar status del usuario
+     */
     public function updateStatus(Request $request)
     {
-        $request->validate([
-            'status' => 'required|string'
-        ]);
+        try {
+            $request->validate([
+                'status' => 'required|string'
+            ]);
 
-        $token = $request->bearerToken();
+            $token = $request->bearerToken();
 
-        if (!$token) {
-            return response()->json(['message' => 'Token requerido'], 401);
+            if (!$token) {
+                return response()->json(['message' => 'Token requerido'], 401);
+            }
+
+            $decoded = JWT::decode($token, new Key($this->jwtSecret, $this->jwtAlgorithm));
+
+            $usuario = Users::find($decoded->sub);
+
+            if (!$usuario) {
+                return response()->json(['message' => 'Usuario no encontrado'], 404);
+            }
+
+            $usuario->status_id = $request->status;
+            $usuario->save();
+
+            return response()->json([
+                'message' => 'Status actualizado',
+                'user' => new UsuarioResource($usuario)
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error en updateStatus(): ' . $e->getMessage());
+            return response()->json(['message' => 'Error al actualizar status'], 500);
         }
-
-        $decoded = JWT::decode($token, new Key($this->jwtSecret, $this->jwtAlgorithm));
-
-        $usuario = Usuario::find($decoded->sub);
-        $usuario->STATUS = $request->status;
-        $usuario->save();
-
-        return response()->json([
-            'message' => 'Status actualizado',
-            'user' => new UsuarioResource($usuario)
-        ]);
     }
 }

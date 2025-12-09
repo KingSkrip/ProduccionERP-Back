@@ -7,27 +7,24 @@ use Illuminate\Support\Carbon;
 
 class PasswordReset extends Model
 {
-    protected $table = 'PASSWORD_RESET';
+    protected $table = 'password_resets';
 
-    protected $primaryKey = 'ID';
-
-    // 🔥 Es autoincrementable mediante generator + trigger en Firebird
+    protected $primaryKey = 'id';
     public $incrementing = true;
     public $keyType = 'int';
 
-    public $timestamps = false; // No usamos created_at/updated_at automáticos de Laravel
-
-    protected $connection = 'firebird'; // Asegúrate de que el connection esté definido en config/database.php
+    public $timestamps = true; // Usamos timestamps automáticos
+    const CREATED_AT = 'created_at';
+    const UPDATED_AT = null; // No necesitamos updated_at
 
     protected $fillable = [
-        'EMAIL',
-        'TOKEN',
-        'CREATED_AT',
-        'USUARIO_ID',
+        'email',
+        'token',
+        'usuario_id',
     ];
 
     protected $casts = [
-        'CREATED_AT' => 'datetime',
+        'created_at' => 'datetime',
     ];
 
     /**
@@ -35,21 +32,6 @@ class PasswordReset extends Model
      */
     public function usuario()
     {
-        return $this->belongsTo(Usuario::class, 'USUARIO_ID', 'CLAVE');
-    }
-
-    /**
-     * Sobrescribir la fecha de creación automática si quieres
-     */
-    public static function boot()
-    {
-        parent::boot();
-
-        // Asignar fecha actual al crear un nuevo registro
-        static::creating(function ($model) {
-            if (empty($model->CREATED_AT)) {
-                $model->CREATED_AT = Carbon::now();
-            }
-        });
+        return $this->belongsTo(Users::class, 'usuario_id', 'id');
     }
 }
