@@ -4,7 +4,6 @@ namespace App\Http\Controllers\SuperAdmin\GestionarUsuarios\SuAdmin;
 
 use App\Helpers\ValidationMessages;
 use App\Http\Controllers\Controller;
-
 use App\Http\Resources\UsuarioResource;
 use App\Models\ModelHasRole;
 use App\Models\Users;
@@ -15,22 +14,17 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
-use Throwable;
 
 class SuAdminController extends Controller
 {
     /**
-     * Muestra la lista de usuarios RH (usuarios con role_clave = 2).
-     * 🔥 CORRECCIÓN: Adaptado a nueva estructura MySQL
-     *
-     * @return \Illuminate\Http\JsonResponse
+     * Listado de usuarios con role_clave = 3 (RH)
      */
     public function index()
     {
         try {
-            $userId = auth()->id(); // ← Usar auth()->id() en lugar de auth()->user()->CLAVE
+            $userId = auth()->id();
 
-            // Traer usuarios con role_clave = 2 excepto el usuario autenticado
             $usuarios = Users::whereHas('roles', function ($query) {
                 $query->where('role_clave', 3);
             })
@@ -43,34 +37,33 @@ class SuAdminController extends Controller
             ], 200);
         } catch (Exception $e) {
             Log::error('Error en index RH: ' . $e->getMessage());
+
             return response()->json([
                 'message' => 'Error al obtener usuarios',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
 
     /**
-     * Retorna los datos necesarios para crear un usuario RH
+     * Formulario vacío para crear nuevo RH
      */
     public function create()
     {
         return response()->json([
             'message' => 'Formulario de creación de usuario RH',
-            'data' => []
+            'data' => [],
         ], 200);
     }
 
     /**
-     * Almacena un nuevo usuario RH en la base de datos.
-     * 🔥 CORRECCIÓN: Adaptado a nueva estructura MySQL
+     * Registrar nuevo usuario RH (role_clave = 3)
      */
     public function store(Request $request)
     {
         DB::beginTransaction();
 
         try {
-            // Validar datos
             $validator = Validator::make(
                 $request->all(),
                 [
@@ -79,7 +72,7 @@ class SuAdminController extends Controller
                     'password' => 'required|string|min:6',
                     'usuario' => 'nullable|string|max:255',
                     'departamento_id' => 'nullable|exists:departamentos,id',
-                    'photo' => 'nullable|file|image|mimes:jpeg,jpg,png,gif'
+                    'photo' => 'nullable|image|mimes:jpeg,jpg,png,gif'
                 ],
                 ValidationMessages::messages()
             );
@@ -91,41 +84,36 @@ class SuAdminController extends Controller
                 ], 422);
             }
 
-            // ----------------------------------------
-            // 📌 MANEJO DE FOTO
-            // ----------------------------------------
-            $photoPath = 'photos/users.jpg'; // Foto por defecto
+            // Foto por defecto
+            $photoPath = 'photos/users.jpg';
 
+            // Guardar nueva foto
             if ($request->hasFile('photo')) {
                 if (!file_exists(public_path('photos'))) {
                     mkdir(public_path('photos'), 0777, true);
                 }
 
                 $file = $request->file('photo');
-                $tempId = time();
-                $filename = 'photo_' . $tempId . '_' . time() . '.' . $file->getClientOriginalExtension();
+                $filename = 'photo_' . time() . '.' . $file->getClientOriginalExtension();
                 $file->move(public_path('photos'), $filename);
+
                 $photoPath = 'photos/' . $filename;
             }
 
-            // ----------------------------------------
-            // 📌 CREAR USUARIO
-            // ----------------------------------------
+            // Crear usuario
             $usuario = Users::create([
                 'nombre' => $request->name,
-                'usuario' => $request->input('usuario', 'RH'),
                 'correo' => $request->email,
+                'usuario' => $request->input('usuario', 'RH'),
                 'password' => Hash::make($request->password),
                 'departamento_id' => $request->departamento_id,
                 'photo' => $photoPath,
-                'status_id' => 1, // Activo por defecto
+                'status_id' => 1, // Activo
             ]);
 
-            // ----------------------------------------
-            // 📌 ASIGNAR ROL RH (role_clave = 2)
-            // ----------------------------------------
+            // Asignar rol RH
             ModelHasRole::create([
-                'role_clave' => 3, // ROL RH
+                'role_clave' => 3,
                 'model_clave' => $usuario->id,
                 'model_type' => Users::class,
             ]);
@@ -134,14 +122,7 @@ class SuAdminController extends Controller
 
             return response()->json([
                 'message' => 'Usuario RH creado exitosamente',
-                'user' => [
-                    'id' => $usuario->id,
-                    'name' => $usuario->nombre,
-                    'email' => $usuario->correo,
-                    'usuario' => $usuario->usuario,
-                    'departamento_id' => $usuario->departamento_id,
-                    'photo' => $usuario->photo,
-                ]
+                'user' => new UsuarioResource($usuario),
             ], 201);
         } catch (Exception $e) {
             DB::rollBack();
@@ -149,14 +130,14 @@ class SuAdminController extends Controller
 
             return response()->json([
                 'message' => 'Error al crear usuario RH',
-                'error' => $e->getMessage(),
+                'error' => $e->getMessage()
             ], 500);
         }
     }
 
+
     /**
-     * Obtiene los datos de un usuario RH para editar
-     * 🔥 CORRECCIÓN: Adaptado a nueva estructura
+     * Datos de un usuario RH para edición
      */
     public function edit($id)
     {
@@ -165,16 +146,11 @@ class SuAdminController extends Controller
 
             return response()->json([
                 'message' => 'Datos obtenidos',
-                'user' => [
-                    'name' => $usuario->nombre,
-                    'email' => $usuario->correo,
-                    'usuario' => $usuario->usuario,
-                    'photo' => $usuario->photo,
-                    'departamento_id' => $usuario->departamento_id,
-                ]
+                'user' => new UsuarioResource($usuario),
             ], 200);
         } catch (Exception $e) {
             Log::error('Error en edit RH: ' . $e->getMessage());
+
             return response()->json([
                 'message' => 'Usuario no encontrado',
                 'error' => $e->getMessage()
@@ -182,26 +158,27 @@ class SuAdminController extends Controller
         }
     }
 
+
     /**
-     * Actualiza un usuario RH en la base de datos.
-     * 🔥 CORRECCIÓN: Adaptado a nueva estructura MySQL
+     * Actualizar usuario RH
      */
     public function update(Request $request, $id)
     {
         DB::beginTransaction();
 
         try {
-            // Validación
+            $usuario = Users::findOrFail($id);
+
             $validator = Validator::make(
                 $request->all(),
                 [
                     'name' => 'required|string|max:255',
                     'email' => 'required|email|unique:users,correo,' . $id . ',id',
-                    'departamento_id' => 'nullable|exists:departamentos,id',
                     'usuario' => 'nullable|string|max:255',
-                    'current_password' => 'required_with:password|string',
+                    'departamento_id' => 'nullable|exists:departamentos,id',
                     'password' => 'nullable|string|min:6',
-                    'photo' => 'nullable',
+                    'current_password' => 'required_with:password|string',
+                    'photo' => 'nullable|image|mimes:jpeg,jpg,png,gif'
                 ],
                 ValidationMessages::messages()
             );
@@ -209,32 +186,15 @@ class SuAdminController extends Controller
             if ($validator->fails()) {
                 return response()->json([
                     'message' => 'Datos inválidos',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
-            // Validar foto si se envía
-            if ($request->hasFile('photo')) {
-                $validator = Validator::make(
-                    $request->all(),
-                    ['photo' => 'file|image|mimes:jpeg,jpg,png,gif'],
-                    ValidationMessages::messages()
-                );
-
-                if ($validator->fails()) {
-                    return response()->json([
-                        'message' => 'Datos inválidos',
-                        'errors' => $validator->errors()
-                    ], 422);
-                }
-            }
-
-            $usuario = Users::findOrFail($id);
-
-            // ✔️ MANTENER FOTO ACTUAL
+            // Foto actual
             $photoPath = $usuario->photo;
+            $defaultPhoto = 'photos/users.jpg';
 
-            // ✔️ SI SE ENVÍA UNA NUEVA FOTO
+            // Subida de nueva foto
             if ($request->hasFile('photo')) {
                 if (!file_exists(public_path('photos'))) {
                     mkdir(public_path('photos'), 0777, true);
@@ -243,39 +203,34 @@ class SuAdminController extends Controller
                 $file = $request->file('photo');
                 $filename = 'photo_' . $id . '_' . time() . '.' . $file->getClientOriginalExtension();
                 $file->move(public_path('photos'), $filename);
-
                 $photoPath = 'photos/' . $filename;
 
-                // Eliminar foto anterior si no es la default
-                $defaultPhoto = 'photos/users.jpg';
-                if ($usuario->photo && $usuario->photo !== $defaultPhoto) {
-                    $oldPhotoPath = public_path($usuario->photo);
-                    if (file_exists($oldPhotoPath)) {
-                        @unlink($oldPhotoPath);
+                // Eliminar foto anterior
+                if ($usuario->photo !== $defaultPhoto) {
+                    $oldPath = public_path($usuario->photo);
+                    if (file_exists($oldPath)) {
+                        @unlink($oldPath);
                     }
                 }
             }
 
-            // ✔️ VALIDAR CONTRASEÑA
+            // Verificar contraseña para cambio
             if ($request->filled('password')) {
-                $loggedUser = auth()->user();
-
-                if (!Hash::check($request->current_password, $loggedUser->password)) {
-                    DB::rollBack();
+                if (!Hash::check($request->current_password, auth()->user()->password)) {
                     return response()->json([
-                        'message' => 'Contraseña actual incorrecta',
+                        'message' => 'Contraseña actual incorrecta'
                     ], 403);
                 }
 
                 $usuario->password = Hash::make($request->password);
             }
 
-            // ✔️ ACTUALIZAR CAMPOS
+            // Actualizar datos
             $usuario->update([
                 'nombre' => $request->name,
                 'correo' => $request->email,
-                'departamento_id' => $request->departamento_id ?? $usuario->departamento_id,
                 'usuario' => $request->usuario ?? $usuario->usuario,
+                'departamento_id' => $request->departamento_id,
                 'photo' => $photoPath,
             ]);
 
@@ -283,37 +238,29 @@ class SuAdminController extends Controller
 
             return response()->json([
                 'message' => 'Usuario RH actualizado correctamente',
-                'user' => [
-                    'id' => $usuario->id,
-                    'name' => $usuario->nombre,
-                    'email' => $usuario->correo,
-                    'departamento_id' => $usuario->departamento_id,
-                    'usuario' => $usuario->usuario,
-                    'photo' => $usuario->photo,
-                ]
+                'user' => new UsuarioResource($usuario)
             ], 200);
         } catch (Exception $e) {
             DB::rollBack();
             Log::error('Error en update RH: ' . $e->getMessage());
+
             return response()->json([
                 'message' => 'Error al actualizar usuario RH',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
 
+
     /**
-     * Elimina un usuario RH de la base de datos.
-     * 🔥 CORRECCIÓN: Adaptado a nueva estructura MySQL
+     * Eliminar usuario RH
      */
     public function destroy($id)
     {
         DB::beginTransaction();
 
         try {
-            $loggedUserId = auth()->id();
-
-            if ((int)$loggedUserId === (int)$id) {
+            if ((int)auth()->id() === (int)$id) {
                 return response()->json([
                     'message' => 'No puedes eliminar tu propio usuario.'
                 ], 403);
@@ -321,39 +268,30 @@ class SuAdminController extends Controller
 
             $usuario = Users::findOrFail($id);
 
-            $responseUser = [
-                'id' => $usuario->id,
-                'name' => $usuario->nombre,
-                'email' => $usuario->correo,
-                'photo' => $usuario->photo ?? null,
-            ];
-
-            // Eliminar roles asociados
+            // Eliminar roles
             ModelHasRole::where('model_clave', $id)
                 ->where('model_type', Users::class)
                 ->delete();
 
             // Eliminar foto si no es la default
             $defaultPhoto = 'photos/users.jpg';
-            if ($usuario->photo && $usuario->photo !== $defaultPhoto) {
+            if ($usuario->photo !== $defaultPhoto) {
                 $photoPath = public_path($usuario->photo);
-                if (file_exists($photoPath) && is_writable($photoPath)) {
+                if (file_exists($photoPath)) {
                     @unlink($photoPath);
                 }
             }
 
-            // Eliminar usuario
             $usuario->delete();
 
             DB::commit();
 
             return response()->json([
                 'message' => 'Usuario RH eliminado correctamente',
-                'user' => $responseUser
+                'user' => new UsuarioResource($usuario)
             ], 200);
         } catch (ModelNotFoundException $e) {
             DB::rollBack();
-            Log::warning('Intento de eliminar usuario no encontrado: ' . $e->getMessage());
             return response()->json([
                 'message' => 'Usuario no encontrado',
                 'error' => $e->getMessage()
@@ -361,6 +299,7 @@ class SuAdminController extends Controller
         } catch (Exception $e) {
             DB::rollBack();
             Log::error('Error en destroy RH: ' . $e->getMessage());
+
             return response()->json([
                 'message' => 'Error al eliminar usuario RH',
                 'error' => $e->getMessage()

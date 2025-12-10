@@ -4,10 +4,15 @@ namespace App\Http\Controllers\SuperAdmin\GestionarUsuarios\Colaborador;
 
 use App\Helpers\ValidationMessages;
 use App\Http\Controllers\Controller;
-
+use App\Http\Resources\UsuarioFullResource;
 use App\Http\Resources\UsuarioResource;
+use App\Models\Direccion;
 use App\Models\ModelHasRole;
+use App\Models\UserEmpleo;
+use App\Models\UserFiscal;
+use App\Models\UserNomina;
 use App\Models\Users;
+use App\Models\UserSeguridadSocial;
 use Exception;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
@@ -15,74 +20,76 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
-use Throwable;
 
 class ColaboradorController extends Controller
 {
     /**
-     * Muestra la lista de usuarios RH (usuarios con role_clave = 2).
-     * 🔥 CORRECCIÓN: Adaptado a nueva estructura MySQL
-     *
-     * @return \Illuminate\Http\JsonResponse
+     * Lista los colaboradores (role_clave = 1)
      */
     public function index()
     {
         try {
-            $userId = auth()->id(); // ← Usar auth()->id() en lugar de auth()->user()->CLAVE
+            $userId = auth()->id();
 
-            // Traer usuarios con role_clave = 2 excepto el usuario autenticado
-            $usuarios = Users::whereHas('roles', function ($query) {
-                $query->where('role_clave', 1);
-            })
+            $usuarios = Users::with([
+                'direccion',
+                'departamento',
+                'roles',
+                'nomina',
+                'empleos',
+                'fiscal',
+                'seguridadSocial'
+            ])
+                ->whereHas('roles', function ($query) {
+                    $query->where('role_clave', 1);
+                })
                 ->where('id', '!=', $userId)
                 ->get();
 
             return response()->json([
-                'message' => 'Usuarios obtenidos exitosamente',
-                'data' => UsuarioResource::collection($usuarios)
+                'message' => 'Colaboradores obtenidos exitosamente',
+                'data' => UsuarioFullResource::collection($usuarios)
             ], 200);
         } catch (Exception $e) {
-            Log::error('Error en index RH: ' . $e->getMessage());
+            Log::error('Error en index Colaborador: ' . $e->getMessage());
             return response()->json([
-                'message' => 'Error al obtener usuarios',
+                'message' => 'Error al obtener colaboradores',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Retorna los datos necesarios para crear un usuario RH
-     */
-    public function create()
-    {
-        return response()->json([
-            'message' => 'Formulario de creación de usuario RH',
-            'data' => []
-        ], 200);
-    }
-
-    /**
-     * Almacena un nuevo usuario RH en la base de datos.
-     * 🔥 CORRECCIÓN: Adaptado a nueva estructura MySQL
+     * Crear colaborador con todos los datos relacionados
      */
     public function store(Request $request)
     {
         DB::beginTransaction();
 
         try {
-            // Validar datos
+            // Validación principal
             $validator = Validator::make(
                 $request->all(),
                 [
                     'name' => 'required|string|max:255',
                     'email' => 'required|email|unique:users,correo',
                     'password' => 'required|string|min:6',
-                    'usuario' => 'nullable|string|max:255',
-                    'departamento_id' => 'nullable|exists:departamentos,id',
-                    'photo' => 'nullable|file|image|mimes:jpeg,jpg,png,gif'
+                    'usuario' => 'required|string|max:255',
+                    'telefono' => 'required|string|max:15|unique:users,telefono',
+                    'curp' => 'required|string|max:18|unique:users,curp',
+                    'departamento_id' => 'required|exists:departamentos,id',
+                    'photo' => 'required|file|image|mimes:jpeg,jpg,png,gif',
+
+                    // JSON obligatorios
+                    'direccion' => 'required|json',
+                    'empleo' => 'required|json',
+                    'fiscal' => 'required|json',
+                    'seguridad_social' => 'required|json',
+                    'nomina' => 'required|json',
                 ],
                 ValidationMessages::messages()
             );
+
 
             if ($validator->fails()) {
                 return response()->json([
@@ -91,100 +98,165 @@ class ColaboradorController extends Controller
                 ], 422);
             }
 
-            // ----------------------------------------
-            // 📌 MANEJO DE FOTO
-            // ----------------------------------------
-            $photoPath = 'photos/users.jpg'; // Foto por defecto
+            // 1. Crear Dirección (si existe)
+            $direccionId = null;
+            if ($request->has('direccion')) {
+                $direccionData = json_decode($request->direccion, true);
+                if (!empty(array_filter($direccionData))) {
+                    $direccion = Direccion::create($direccionData);
+                    $direccionId = $direccion->id;
+                }
+            }
 
+            // 2. Foto
+            $photoPath = 'photos/users.jpg';
             if ($request->hasFile('photo')) {
                 if (!file_exists(public_path('photos'))) {
                     mkdir(public_path('photos'), 0777, true);
                 }
-
                 $file = $request->file('photo');
-                $tempId = time();
-                $filename = 'photo_' . $tempId . '_' . time() . '.' . $file->getClientOriginalExtension();
+                $filename = 'photo_' . time() . '.' . $file->getClientOriginalExtension();
                 $file->move(public_path('photos'), $filename);
                 $photoPath = 'photos/' . $filename;
             }
 
-            // ----------------------------------------
-            // 📌 CREAR USUARIO
-            // ----------------------------------------
+            // 3. Crear Usuario
             $usuario = Users::create([
                 'nombre' => $request->name,
-                'usuario' => $request->input('usuario', 'RH'),
+                'usuario' => $request->input('usuario', 'COL'),
                 'correo' => $request->email,
                 'password' => Hash::make($request->password),
+                'telefono' => $request->telefono,
+                'curp' => $request->curp,
                 'departamento_id' => $request->departamento_id,
+                'direccion_id' => $direccionId,
                 'photo' => $photoPath,
-                'status_id' => 1, // Activo por defecto
+                'status_id' => 1,
             ]);
 
-            // ----------------------------------------
-            // 📌 ASIGNAR ROL RH (role_clave = 2)
-            // ----------------------------------------
+            // 4. Asignar rol colaborador (1)
             ModelHasRole::create([
-                'role_clave' => 1, // ROL RH
+                'role_clave' => 1,
                 'model_clave' => $usuario->id,
                 'model_type' => Users::class,
             ]);
 
+            // 5. Crear Empleo (si existe)
+            if ($request->has('empleo')) {
+                $empleoData = json_decode($request->empleo, true);
+                if (!empty(array_filter($empleoData))) {
+                    UserEmpleo::create([
+                        'user_id' => $usuario->id,
+                        'puesto' => $empleoData['puesto'] ?? null,
+                        'fecha_inicio' => $empleoData['fecha_inicio'] ?? null,
+                        'fecha_fin' => $empleoData['fecha_fin'] ?? null,
+                        'comentarios' => $empleoData['comentarios'] ?? null,
+                    ]);
+                }
+            }
+
+            // 6. Crear Datos Fiscales (si existen)
+            if ($request->has('fiscal')) {
+                $fiscalData = json_decode($request->fiscal, true);
+                if (!empty(array_filter($fiscalData))) {
+                    UserFiscal::create([
+                        'user_id' => $usuario->id,
+                        'rfc' => $fiscalData['rfc'] ?? null,
+                        'curp' => $request->curp, // Usamos el CURP del usuario
+                        'regimen_fiscal' => $fiscalData['regimen_fiscal'] ?? null,
+                    ]);
+                }
+            }
+
+            // 7. Crear Seguridad Social (si existe)
+            if ($request->has('seguridad_social')) {
+                $ssData = json_decode($request->seguridad_social, true);
+                if (!empty(array_filter($ssData))) {
+                    UserSeguridadSocial::create([
+                        'user_id' => $usuario->id,
+                        'numero_imss' => $ssData['numero_imss'] ?? null,
+                        'fecha_alta' => $ssData['fecha_alta'] ?? null,
+                        'tipo_seguro' => $ssData['tipo_seguro'] ?? null,
+                    ]);
+                }
+            }
+
+            // 8. Crear Nómina (si existe)
+            if ($request->has('nomina')) {
+                $nominaData = json_decode($request->nomina, true);
+                if (!empty(array_filter($nominaData))) {
+                    UserNomina::create([
+                        'user_id' => $usuario->id,
+                        'numero_tarjeta' => $nominaData['numero_tarjeta'] ?? null,
+                        'banco' => $nominaData['banco'] ?? null,
+                        'clabe_interbancaria' => $nominaData['clabe_interbancaria'] ?? null,
+                        'salario_base' => $nominaData['salario_base'] ?? null,
+                        'frecuencia_pago' => $nominaData['frecuencia_pago'] ?? null,
+                    ]);
+                }
+            }
+
             DB::commit();
 
+            // Cargar relaciones para la respuesta
+            $usuario->load([
+                'direccion',
+                'departamento',
+                'roles',
+                'nomina',
+                'empleos',
+                'fiscal',
+                'seguridadSocial'
+            ]);
+
             return response()->json([
-                'message' => 'Usuario RH creado exitosamente',
-                'user' => [
-                    'id' => $usuario->id,
-                    'name' => $usuario->nombre,
-                    'email' => $usuario->correo,
-                    'usuario' => $usuario->usuario,
-                    'departamento_id' => $usuario->departamento_id,
-                    'photo' => $usuario->photo,
-                ]
+                'message' => 'Colaborador creado exitosamente',
+                'user' => new UsuarioResource($usuario)
             ], 201);
         } catch (Exception $e) {
             DB::rollBack();
-            Log::error('Error en store RH: ' . $e->getMessage());
+            Log::error('Error en store Colaborador: ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
 
             return response()->json([
-                'message' => 'Error al crear usuario RH',
-                'error' => $e->getMessage(),
+                'message' => 'Error al crear colaborador',
+                'error' => $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Obtiene los datos de un usuario RH para editar
-     * 🔥 CORRECCIÓN: Adaptado a nueva estructura
+     * Editar colaborador
      */
     public function edit($id)
     {
         try {
-            $usuario = Users::findOrFail($id);
+            $usuario = Users::with([
+                'direccion',
+                'departamento',
+                'roles',
+                'nomina',
+                'empleos',
+                'fiscal',
+                'seguridadSocial'
+            ])->findOrFail($id);
 
             return response()->json([
                 'message' => 'Datos obtenidos',
-                'user' => [
-                    'name' => $usuario->nombre,
-                    'email' => $usuario->correo,
-                    'usuario' => $usuario->usuario,
-                    'photo' => $usuario->photo,
-                    'departamento_id' => $usuario->departamento_id,
-                ]
+                'user' => new UsuarioResource($usuario)
             ], 200);
         } catch (Exception $e) {
-            Log::error('Error en edit RH: ' . $e->getMessage());
+            Log::error('Error en edit Colaborador: ' . $e->getMessage());
+
             return response()->json([
-                'message' => 'Usuario no encontrado',
+                'message' => 'Colaborador no encontrado',
                 'error' => $e->getMessage()
             ], 404);
         }
     }
 
     /**
-     * Actualiza un usuario RH en la base de datos.
-     * 🔥 CORRECCIÓN: Adaptado a nueva estructura MySQL
+     * Actualizar colaborador con todos los datos relacionados
      */
     public function update(Request $request, $id)
     {
@@ -197,11 +269,19 @@ class ColaboradorController extends Controller
                 [
                     'name' => 'required|string|max:255',
                     'email' => 'required|email|unique:users,correo,' . $id . ',id',
+                    'telefono' => 'nullable|string|max:15',
+                    'curp' => 'nullable|string|max:18',
                     'departamento_id' => 'nullable|exists:departamentos,id',
                     'usuario' => 'nullable|string|max:255',
                     'current_password' => 'required_with:password|string',
                     'password' => 'nullable|string|min:6',
                     'photo' => 'nullable',
+
+                    'direccion' => 'nullable|json',
+                    'empleo' => 'nullable|json',
+                    'fiscal' => 'nullable|json',
+                    'seguridad_social' => 'nullable|json',
+                    'nomina' => 'nullable|json',
                 ],
                 ValidationMessages::messages()
             );
@@ -213,98 +293,139 @@ class ColaboradorController extends Controller
                 ], 422);
             }
 
-            // Validar foto si se envía
-            if ($request->hasFile('photo')) {
-                $validator = Validator::make(
-                    $request->all(),
-                    ['photo' => 'file|image|mimes:jpeg,jpg,png,gif'],
-                    ValidationMessages::messages()
-                );
-
-                if ($validator->fails()) {
-                    return response()->json([
-                        'message' => 'Datos inválidos',
-                        'errors' => $validator->errors()
-                    ], 422);
-                }
-            }
-
             $usuario = Users::findOrFail($id);
 
-            // ✔️ MANTENER FOTO ACTUAL
-            $photoPath = $usuario->photo;
-
-            // ✔️ SI SE ENVÍA UNA NUEVA FOTO
-            if ($request->hasFile('photo')) {
-                if (!file_exists(public_path('photos'))) {
-                    mkdir(public_path('photos'), 0777, true);
-                }
-
-                $file = $request->file('photo');
-                $filename = 'photo_' . $id . '_' . time() . '.' . $file->getClientOriginalExtension();
-                $file->move(public_path('photos'), $filename);
-
-                $photoPath = 'photos/' . $filename;
-
-                // Eliminar foto anterior si no es la default
-                $defaultPhoto = 'photos/users.jpg';
-                if ($usuario->photo && $usuario->photo !== $defaultPhoto) {
-                    $oldPhotoPath = public_path($usuario->photo);
-                    if (file_exists($oldPhotoPath)) {
-                        @unlink($oldPhotoPath);
+            // 1. Actualizar/Crear Dirección
+            if ($request->has('direccion')) {
+                $direccionData = json_decode($request->direccion, true);
+                if (!empty(array_filter($direccionData))) {
+                    if ($usuario->direccion_id) {
+                        Direccion::where('id', $usuario->direccion_id)->update($direccionData);
+                    } else {
+                        $direccion = Direccion::create($direccionData);
+                        $usuario->direccion_id = $direccion->id;
                     }
                 }
             }
 
-            // ✔️ VALIDAR CONTRASEÑA
+            // 2. Foto
+            $photoPath = $usuario->photo;
+            if ($request->hasFile('photo')) {
+                if (!file_exists(public_path('photos'))) {
+                    mkdir(public_path('photos'), 0777, true);
+                }
+                $file = $request->file('photo');
+                $filename = 'photo_' . $id . '_' . time() . '.' . $file->getClientOriginalExtension();
+                $file->move(public_path('photos'), $filename);
+                $photoPath = 'photos/' . $filename;
+
+                // Eliminar foto anterior
+                $defaultPhoto = 'photos/users.jpg';
+                if ($usuario->photo && $usuario->photo !== $defaultPhoto) {
+                    $oldPhoto = public_path($usuario->photo);
+                    if (file_exists($oldPhoto)) {
+                        @unlink($oldPhoto);
+                    }
+                }
+            }
+
+            // 3. Cambio de contraseña
             if ($request->filled('password')) {
                 $loggedUser = auth()->user();
-
                 if (!Hash::check($request->current_password, $loggedUser->password)) {
                     DB::rollBack();
-                    return response()->json([
-                        'message' => 'Contraseña actual incorrecta',
-                    ], 403);
+                    return response()->json(['message' => 'Contraseña actual incorrecta'], 403);
                 }
-
                 $usuario->password = Hash::make($request->password);
             }
 
-            // ✔️ ACTUALIZAR CAMPOS
+            // 4. Actualizar datos básicos del usuario
             $usuario->update([
                 'nombre' => $request->name,
                 'correo' => $request->email,
+                'telefono' => $request->telefono,
+                'curp' => $request->curp,
                 'departamento_id' => $request->departamento_id ?? $usuario->departamento_id,
                 'usuario' => $request->usuario ?? $usuario->usuario,
                 'photo' => $photoPath,
             ]);
 
+            // 5. Actualizar/Crear Empleo
+            if ($request->has('empleo')) {
+                $empleoData = json_decode($request->empleo, true);
+                if (!empty(array_filter($empleoData))) {
+                    UserEmpleo::updateOrCreate(
+                        ['user_id' => $usuario->id],
+                        $empleoData
+                    );
+                }
+            }
+
+            // 6. Actualizar/Crear Datos Fiscales
+            if ($request->has('fiscal')) {
+                $fiscalData = json_decode($request->fiscal, true);
+                if (!empty(array_filter($fiscalData))) {
+                    $fiscalData['curp'] = $request->curp; // Sincronizar CURP
+                    UserFiscal::updateOrCreate(
+                        ['user_id' => $usuario->id],
+                        $fiscalData
+                    );
+                }
+            }
+
+            // 7. Actualizar/Crear Seguridad Social
+            if ($request->has('seguridad_social')) {
+                $ssData = json_decode($request->seguridad_social, true);
+                if (!empty(array_filter($ssData))) {
+                    UserSeguridadSocial::updateOrCreate(
+                        ['user_id' => $usuario->id],
+                        $ssData
+                    );
+                }
+            }
+
+            // 8. Actualizar/Crear Nómina
+            if ($request->has('nomina')) {
+                $nominaData = json_decode($request->nomina, true);
+                if (!empty(array_filter($nominaData))) {
+                    UserNomina::updateOrCreate(
+                        ['user_id' => $usuario->id],
+                        $nominaData
+                    );
+                }
+            }
+
             DB::commit();
 
+            // Cargar relaciones para la respuesta
+            $usuario->load([
+                'direccion',
+                'departamento',
+                'roles',
+                'nomina',
+                'empleos',
+                'fiscal',
+                'seguridadSocial'
+            ]);
+
             return response()->json([
-                'message' => 'Usuario RH actualizado correctamente',
-                'user' => [
-                    'id' => $usuario->id,
-                    'name' => $usuario->nombre,
-                    'email' => $usuario->correo,
-                    'departamento_id' => $usuario->departamento_id,
-                    'usuario' => $usuario->usuario,
-                    'photo' => $usuario->photo,
-                ]
+                'message' => 'Colaborador actualizado correctamente',
+                'user' => new UsuarioResource($usuario)
             ], 200);
         } catch (Exception $e) {
             DB::rollBack();
-            Log::error('Error en update RH: ' . $e->getMessage());
+            Log::error('Error en update Colaborador: ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
+
             return response()->json([
-                'message' => 'Error al actualizar usuario RH',
+                'message' => 'Error al actualizar colaborador',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Elimina un usuario RH de la base de datos.
-     * 🔥 CORRECCIÓN: Adaptado a nueva estructura MySQL
+     * Eliminar colaborador
      */
     public function destroy($id)
     {
@@ -319,26 +440,30 @@ class ColaboradorController extends Controller
                 ], 403);
             }
 
-            $usuario = Users::findOrFail($id);
+            $usuario = Users::with(['direccion'])->findOrFail($id);
 
-            $responseUser = [
-                'id' => $usuario->id,
-                'name' => $usuario->nombre,
-                'email' => $usuario->correo,
-                'photo' => $usuario->photo ?? null,
-            ];
-
-            // Eliminar roles asociados
+            // Eliminar roles
             ModelHasRole::where('model_clave', $id)
                 ->where('model_type', Users::class)
                 ->delete();
 
-            // Eliminar foto si no es la default
+            // Eliminar datos relacionados
+            UserEmpleo::where('user_id', $id)->delete();
+            UserFiscal::where('user_id', $id)->delete();
+            UserSeguridadSocial::where('user_id', $id)->delete();
+            UserNomina::where('user_id', $id)->delete();
+
+            // Eliminar dirección
+            if ($usuario->direccion_id) {
+                Direccion::where('id', $usuario->direccion_id)->delete();
+            }
+
+            // Eliminar foto
             $defaultPhoto = 'photos/users.jpg';
             if ($usuario->photo && $usuario->photo !== $defaultPhoto) {
-                $photoPath = public_path($usuario->photo);
-                if (file_exists($photoPath) && is_writable($photoPath)) {
-                    @unlink($photoPath);
+                $photo = public_path($usuario->photo);
+                if (file_exists($photo)) {
+                    @unlink($photo);
                 }
             }
 
@@ -348,23 +473,57 @@ class ColaboradorController extends Controller
             DB::commit();
 
             return response()->json([
-                'message' => 'Usuario RH eliminado correctamente',
-                'user' => $responseUser
+                'message' => 'Colaborador eliminado correctamente'
             ], 200);
         } catch (ModelNotFoundException $e) {
             DB::rollBack();
-            Log::warning('Intento de eliminar usuario no encontrado: ' . $e->getMessage());
             return response()->json([
-                'message' => 'Usuario no encontrado',
+                'message' => 'Colaborador no encontrado',
                 'error' => $e->getMessage()
             ], 404);
         } catch (Exception $e) {
             DB::rollBack();
-            Log::error('Error en destroy RH: ' . $e->getMessage());
+            Log::error('Error en destroy Colaborador: ' . $e->getMessage());
             return response()->json([
-                'message' => 'Error al eliminar usuario RH',
+                'message' => 'Error al eliminar colaborador',
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    public function updateStatus(Request $request, $id)
+    {
+        $request->validate([
+            'status_id' => 'required|in:1,2', // Asegura que solo valores válidos
+        ]);
+
+        $usuario = Users::find($id);
+
+        if (!$usuario) {
+            return response()->json([
+                'message' => 'Usuario no encontrado'
+            ], 404);
+        }
+
+        $usuario->status_id = $request->status_id;
+        $usuario->save();
+
+        return response()->json([
+            'message' => 'Status actualizado correctamente',
+            'usuario' => $usuario
+        ]);
     }
 }

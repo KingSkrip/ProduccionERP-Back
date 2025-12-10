@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Catalogos\CatalogosController;
 use App\Http\Controllers\Personalizacion\Dashboard\DataDashboardController;
 use App\Http\Controllers\Personalizacion\Perfil\PerfilController;
 use App\Http\Controllers\RH\Nominas\EmpresaUno\EmpresaUnoController;
@@ -68,9 +69,14 @@ Route::prefix('rh')->middleware('jwt.auth')->group(function () {
 Route::prefix('colaborador')->middleware('jwt.auth')->group(function () {
     Route::get('data', [ColaboradorController::class, 'index'])->name('superadmin.colaborador.index');
     Route::post('suadmin', [ColaboradorController::class, 'store'])->name('superadmin.colaborador.store');
-    Route::get('suadmin/{id}', [ColaboradorController::class, 'edit'])->name('superadmin.colaborador.show');
-    Route::put('suadmin/{id}', [ColaboradorController::class, 'update'])->name('superadmin.colaborador.update');
-    Route::delete('suadmin/{id}', [ColaboradorController::class, 'destroy'])->name('superadmin.colaborador.destroy');
+    Route::get('{id}/edit', [ColaboradorController::class, 'edit'])->name('superadmin.colaborador.show');
+    Route::post('{id}/update', [ColaboradorController::class, 'update'])->name('superadmin.colaborador.update');
+    Route::delete('{id}', [ColaboradorController::class, 'destroy'])->name('superadmin.colaborador.destroy');
+
+
+
+    Route::put('usuarios/{id}/status', [ColaboradorController::class, 'updateStatus']);
+
 });
 
 //GESTIONAR ROLES
@@ -83,6 +89,14 @@ Route::prefix('roles')->middleware('jwt.auth')->group(function () {
 });
 
 
+//CATALOGOS
+Route::prefix('catalogos')->middleware('jwt.auth')->group(function () {
+    Route::get('getAll', [CatalogosController::class, 'getAllCatalogos']);
+    Route::get('getdepartamentos', [CatalogosController::class, 'getDepartamentos']);
+    Route::get('getroles', [CatalogosController::class, 'getRoles']);
+    Route::get('getsubroles', [CatalogosController::class, 'getSubroles']);
+    Route::get('getstatuses', [CatalogosController::class, 'getStatuses']);
+});
 
 
 
