@@ -15,103 +15,105 @@ class PerfilController extends Controller
     /**
      * Actualizar datos del usuario (nombre, correo, usuario, foto, dirección, etc)
      */
-  public function updatePerfil(Request $request)
-{
-    $user = auth()->user();
+    public function updatePerfil(Request $request)
+    {
+        $user = auth()->user();
 
-    // Mapear automáticamente inglés → español
-    $mapped = [
-        // usuario
-        'name'     => 'nombre',
-        'username' => 'usuario',
-        'email'    => 'correo',
-        'phone'    => 'telefono',
+        // Mapear automáticamente inglés → español
+        $mapped = [
+            // usuario
+            'name'     => 'nombre',
+            'username' => 'usuario',
+            'email'    => 'correo',
+            'phone'    => 'telefono',
 
-        // dirección
-        'street'   => 'calle',
-        'ext_no'   => 'no_ext',
-        'int_no'   => 'no_int',
-        'neighborhood' => 'colonia',
-        'zip'      => 'cp',
-        'city'     => 'municipio',
-        'state'    => 'estado',
-        'federal_entity' => 'entidad_federativa'
-    ];
+            // dirección
+            // 'calle'   => 'calle',
+            // 'no_ext'   => 'no_ext',
+            // 'no_int'   => 'no_int',
+            // 'colonia' => 'colonia',
+            // 'cp'      => 'cp',
+            // 'municipio'     => 'municipio',
+            // 'estado'    => 'estado',
+            // 'entidad_federativa' => 'entidad_federativa'
+        ];
 
-    // Convertir los nombres que vengan en inglés
-    foreach ($mapped as $en => $es) {
-        if ($request->has($en)) {
-            $request->merge([$es => $request->$en]);
-        }
-    }
-
-    // Validación
-    $request->validate([
-        'nombre'    => 'nullable|string|max:255',
-        'correo'    => ['nullable', 'email', 'max:255', Rule::unique('users', 'correo')->ignore($user->id)],
-        'telefono'  => ['nullable', 'string', 'max:20', Rule::unique('users', 'telefono')->ignore($user->id)],
-        'usuario'   => 'nullable|string|max:255',
-        'photo'     => 'nullable|image|mimes:jpeg,jpg,png,gif|max:2048',
-
-        // dirección
-        'calle'              => 'nullable|string|max:255',
-        'no_ext'             => 'nullable|string|max:50',
-        'no_int'             => 'nullable|string|max:50',
-        'colonia'            => 'nullable|string|max:255',
-        'cp'                 => 'nullable|string|max:10',
-        'municipio'          => 'nullable|string|max:255',
-        'estado'             => 'nullable|string|max:255',
-        'entidad_federativa' => 'nullable|string|max:255',
-    ]);
-
-    // Actualizar usuario
-    $user->update([
-        'nombre'   => $request->nombre,
-        'correo'   => $request->correo,
-        'usuario'  => $request->usuario,
-        'telefono' => $request->telefono,
-    ]);
-
-    // Foto
-    if ($request->hasFile('photo')) {
-
-        // borrar vieja si existe
-        if ($user->photo && file_exists(public_path($user->photo))) {
-            unlink(public_path($user->photo));
+        // Convertir los nombres que vengan en inglés
+        foreach ($mapped as $en => $es) {
+            if ($request->has($en)) {
+                $request->merge([$es => $request->$en]);
+            }
         }
 
-        $file = $request->file('photo');
-        $filename = 'photo_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
-        $file->move(public_path('photos'), $filename);
+        // Validación
+        $request->validate([
+            'nombre'    => 'nullable|string|max:255',
+            'correo'    => ['nullable', 'email', 'max:255', Rule::unique('users', 'correo')->ignore($user->id)],
+            'telefono'  => ['nullable', 'string', 'max:20', Rule::unique('users', 'telefono')->ignore($user->id)],
+            'usuario'   => 'nullable|string|max:255',
+            'photo'     => 'nullable|image|mimes:jpeg,jpg,png,gif|max:2048',
 
-        $user->photo = 'photos/' . $filename;
-        $user->save();
-    }
+            // dirección
+            'calle'              => 'nullable|string|max:255',
+            'no_ext'             => 'nullable|string|max:50',
+            'no_int'             => 'nullable|string|max:50',
+            'colonia'            => 'nullable|string|max:255',
+            'cp'                 => 'nullable|string|max:10',
+            'municipio'          => 'nullable|string|max:255',
+            'estado'             => 'nullable|string|max:255',
+            'entidad_federativa' => 'nullable|string|max:255',
+        ]);
 
-    // Dirección
-    $direccionData = $request->only([
-        'calle',
-        'no_ext',
-        'no_int',
-        'colonia',
-        'cp',
-        'municipio',
-        'estado',
-        'entidad_federativa'
-    ]);
+        // Actualizar usuario
+        $user->update([
+            'nombre'   => $request->nombre,
+            'correo'   => $request->correo,
+            'usuario'  => $request->usuario,
+            'telefono' => $request->telefono,
+        ]);
 
-    if ($user->direccion) {
-        $user->direccion->update($direccionData);
-    } else {
-        $user->direccion()->create($direccionData);
-    }
+        // Foto
+     try {
+    $file = $request->file('photo');
+    $filename = 'photo_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
 
+    $file->move(public_path('photos'), $filename);
+
+    $user->photo = 'photos/' . $filename;
+    $user->save();
+
+} catch (\Exception $e) {
+    Log::error("Error al subir foto: " . $e->getMessage());
     return response()->json([
-        'success' => true,
-        'message' => 'Perfil actualizado correctamente',
-        'user'    => $user->load('direccion', 'departamento')
-    ], 200);
+        'success' => false,
+        'message' => 'Error al subir la foto'
+    ], 500);
 }
+
+        // Dirección
+        $direccionData = $request->only([
+            'calle',
+            'no_ext',
+            'no_int',
+            'colonia',
+            'cp',
+            'municipio',
+            'estado',
+            'entidad_federativa'
+        ]);
+
+        if ($user->direccion) {
+            $user->direccion->update($direccionData);
+        } else {
+            $user->direccion()->create($direccionData);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Perfil actualizado correctamente',
+            'user'    => $user->load('direccion', 'departamento')
+        ], 200);
+    }
 
 
     /**
@@ -164,7 +166,7 @@ class PerfilController extends Controller
                 'success' => true,
                 'message' => 'Cuenta eliminada correctamente'
             ], 200);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             Log::error('Error al eliminar cuenta: ' . $e->getMessage());
 
             return response()->json([
