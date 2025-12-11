@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Users;
 use Closure;
 use Exception;
 use Firebase\JWT\JWT;
@@ -25,7 +26,7 @@ class JwtAuth
 
             $decoded = JWT::decode($token, new Key(env('JWT_SECRET'), 'HS256'));
 
-            $usuario = Usuario::find($decoded->sub);
+            $usuario = Users::find($decoded->sub);
 
             if (!$usuario) {
                 return response()->json([
