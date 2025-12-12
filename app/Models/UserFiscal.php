@@ -14,7 +14,6 @@ class UserFiscal extends Model
     protected $fillable = [
         'user_id',
         'rfc',
-        'curp',
         'regimen_fiscal',
     ];
 

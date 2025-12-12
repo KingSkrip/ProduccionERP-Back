@@ -9,10 +9,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('subroles', function (Blueprint $table) {
-            $table->id(); // PK obligatoria
+            $table->id();
             $table->string('nombre', 150)->nullable();
             $table->string('guard_name', 100)->nullable();
-            $table->timestamps(); // created_at y updated_at
+            $table->timestamps();
         });
     }
 

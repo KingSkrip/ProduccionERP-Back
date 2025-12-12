@@ -10,9 +10,10 @@ return new class extends Migration
     {
         Schema::create('model_has_roles', function (Blueprint $table) {
             $table->id();
-
+            
+            // ✅ CORREGIDO: role_id y user_id (antes role_clave y model_clave)
             $table->unsignedBigInteger('role_clave')->nullable();
-            $table->unsignedBigInteger('model_clave')->nullable(); // referencia a usuarios
+            $table->unsignedBigInteger('model_clave')->nullable();
             $table->unsignedBigInteger('subrol_id')->nullable();
             $table->string('model_type', 150)->nullable();
 

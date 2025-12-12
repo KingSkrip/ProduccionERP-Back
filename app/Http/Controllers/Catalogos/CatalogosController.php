@@ -7,6 +7,7 @@ use App\Models\Departamento;
 use App\Models\Rol;
 use App\Models\Subrole;
 use App\Models\Status;
+use Exception;
 use Illuminate\Http\Request;
 
 class CatalogosController extends Controller
@@ -21,14 +22,13 @@ class CatalogosController extends Controller
                 'success' => true,
                 'message' => 'Catálogos cargados correctamente.',
                 'data' => [
-                    'departamentos' => Departamento::select('id', 'nombre', 'cuenta_coi', 'clasificacion', 'costo')->get(),
+                    'departamentos' => Departamento::select('id', 'nombre')->get(),
                     'roles'         => Rol::select('id', 'nombre', 'guard_name')->get(),
                     'subroles'      => Subrole::select('id', 'nombre', 'guard_name')->get(),
                     'statuses'      => Status::select('id', 'nombre', 'descripcion')->get(),
                 ]
             ], 200);
-
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
 
             return response()->json([
                 'success' => false,
@@ -44,15 +44,14 @@ class CatalogosController extends Controller
     public function getDepartamentos()
     {
         try {
-            $data = Departamento::select('id', 'nombre', 'cuenta_coi', 'clasificacion', 'costo')->get();
+            $data = Departamento::select('id', 'nombre')->get();
 
             return response()->json([
                 'success' => true,
                 'message' => 'Departamentos cargados correctamente.',
                 'data'    => $data
             ]);
-
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al cargar departamentos.',
@@ -75,8 +74,7 @@ class CatalogosController extends Controller
                 'message' => 'Roles cargados correctamente.',
                 'data'    => $data
             ]);
-
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al cargar roles.',
@@ -99,8 +97,7 @@ class CatalogosController extends Controller
                 'message' => 'Subroles cargados correctamente.',
                 'data'    => $data
             ]);
-
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al cargar subroles.',
@@ -123,8 +120,7 @@ class CatalogosController extends Controller
                 'message' => 'Statuses cargados correctamente.',
                 'data'    => $data
             ]);
-
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al cargar statuses.',

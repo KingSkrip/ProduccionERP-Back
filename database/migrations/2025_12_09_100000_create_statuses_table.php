@@ -9,11 +9,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('statuses', function (Blueprint $table) {
-            $table->engine = 'InnoDB';
             $table->id();
             $table->string('nombre', 100)->nullable();
             $table->string('descripcion', 200)->nullable();
-            // $table->string('descrabr', 50)->nullable();
             $table->timestamps();
         });
     }

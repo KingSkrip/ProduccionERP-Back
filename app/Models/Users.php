@@ -6,13 +6,14 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class Users extends Authenticatable
 {
     use Notifiable;
 
-    protected $table = 'users'; // coincide con la migración
-    protected $primaryKey = 'id'; // ajustado a la PK de la migración
+    protected $table = 'users';
+    protected $primaryKey = 'id';
     public $timestamps = true;
 
     protected $fillable = [
@@ -56,7 +57,7 @@ class Users extends Authenticatable
     /**
      * Relación con Direccion
      */
-    public function direccion(): BelongsTo
+    public function direccion()
     {
         return $this->belongsTo(Direccion::class, 'direccion_id');
     }
@@ -108,4 +109,110 @@ class Users extends Authenticatable
     {
         return $this->hasMany(UserSeguridadSocial::class, 'user_id');
     }
+
+    /**
+     * Vacaciones
+     */
+    public function vacaciones(): HasMany
+    {
+        return $this->hasMany(Vacacion::class, 'user_id');
+    }
+
+    /**
+     * Vacaciones Historial (a través de vacaciones)
+     */
+    public function vacacionHistorial(): HasManyThrough
+    {
+        return $this->hasManyThrough(VacacionHistorial::class, Vacacion::class, 'user_id', 'vacacion_id');
+    }
+
+    /**
+     * Asistencias
+     */
+    public function asistencias(): HasMany
+    {
+        return $this->hasMany(Asistencia::class, 'user_id');
+    }
+
+    /**
+     * Bonos
+     */
+    public function bonos(): HasMany
+    {
+        return $this->hasMany(Bono::class, 'user_id');
+    }
+
+    /**
+     * Sueldos
+     */
+    public function sueldos(): HasMany
+    {
+        return $this->hasMany(Sueldo::class, 'user_id');
+    }
+
+    /**
+     * Tiempos Extra
+     */
+    public function tiemposExtra(): HasMany
+    {
+        return $this->hasMany(TiempoExtra::class, 'user_id');
+    }
+
+    /**
+     * Horarios
+     */
+    public function horarios(): HasMany
+    {
+        return $this->hasMany(HorarioEntrada::class, 'user_id');
+    }
+
+    /**
+     * Faltas Historial (CORREGIDO)
+     * La tabla correcta es 'faltas_historial', no 'faltas'
+     */
+    public function faltas(): HasMany
+    {
+        return $this->hasMany(FaltasHistorial::class, 'user_id');
+    }
+
+    /**
+     * Departamentos Historial
+     */
+    public function departamentosHistorial(): HasMany
+    {
+        return $this->hasMany(UserDepartamentoHistorial::class, 'user_id');
+    }
+
+    /**
+     * Notificaciones
+     */
+    public function notificaciones(): HasMany
+    {
+        return $this->hasMany(Notificacion::class, 'user_id');
+    }
+
+
+
+    public function passwordResets()
+    {
+        return $this->hasMany(PasswordReset::class, 'usuario_id');
+    }
+
+
+        /**
+     * WorkOrders solicitadas por el usuario
+     */
+    public function workordersSolicitadas(): HasMany
+    {
+        return $this->hasMany(WorkOrder::class, 'solicitante_id');
+    }
+
+    /**
+     * WorkOrders donde el usuario es aprobador
+     */
+    public function workordersAprobadas(): HasMany
+    {
+        return $this->hasMany(WorkOrder::class, 'aprobador_id');
+    }
+
 }

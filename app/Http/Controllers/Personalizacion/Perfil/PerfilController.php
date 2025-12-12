@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Personalizacion\Perfil;
 
 use App\Helpers\ValidationMessages;
 use App\Http\Controllers\Controller;
+use App\Models\Direccion;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -73,22 +74,25 @@ class PerfilController extends Controller
         ]);
 
         // Foto
-     try {
-    $file = $request->file('photo');
-    $filename = 'photo_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
+        // Foto
+        try {
+            if ($request->hasFile('photo')) {
+                $file = $request->file('photo');
+                $filename = 'photo_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
 
-    $file->move(public_path('photos'), $filename);
+                $file->move(public_path('photos'), $filename);
 
-    $user->photo = 'photos/' . $filename;
-    $user->save();
+                $user->photo = 'photos/' . $filename;
+                $user->save();
+            }
+        } catch (\Exception $e) {
+            Log::error("Error al subir foto: " . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al subir la foto'
+            ], 500);
+        }
 
-} catch (\Exception $e) {
-    Log::error("Error al subir foto: " . $e->getMessage());
-    return response()->json([
-        'success' => false,
-        'message' => 'Error al subir la foto'
-    ], 500);
-}
 
         // Dirección
         $direccionData = $request->only([
@@ -103,10 +107,15 @@ class PerfilController extends Controller
         ]);
 
         if ($user->direccion) {
+            // Actualiza la dirección existente
             $user->direccion->update($direccionData);
-        } else {
-            $user->direccion()->create($direccionData);
+        } else if (!empty(array_filter($direccionData))) {
+            // Solo crea si hay algún dato
+            $direccion = Direccion::create($direccionData);
+            $user->direccion_id = $direccion->id;
+            $user->save();
         }
+
 
         return response()->json([
             'success' => true,

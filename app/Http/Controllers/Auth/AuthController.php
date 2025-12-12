@@ -33,43 +33,58 @@ class AuthController extends Controller
     /**
      * Iniciar sesión con correo y contraseña
      */
-    public function signIn(Request $request)
-    {
-        try {
-            $validator = Validator::make($request->all(), [
-                'email' => 'required|email',
-                'password' => 'required|string'
-            ]);
+   public function signIn(Request $request)
+{
+    try {
+        // Validación de entrada
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email',
+            'password' => 'required|string'
+        ]);
 
-            if ($validator->fails()) {
-                return response()->json([
-                    'message' => 'Datos inválidos',
-                    'errors' => $validator->errors()
-                ], 422);
-            }
-
-            $usuario = Users::where('correo', $request->email)->first();
-
-            if (!$usuario || !Hash::check($request->password, $usuario->password)) {
-                return response()->json([
-                    'message' => 'Credenciales incorrectas'
-                ], 401);
-            }
-
-            $token = $this->generateToken($usuario);
-
+        if ($validator->fails()) {
             return response()->json([
-                'accessToken' => $token,
-                'user' => new UsuarioResource($usuario)
-            ], 200);
-        } catch (Exception $e) {
-            Log::error('Error en signIn: ' . $e->getMessage());
-            return response()->json([
-                'message' => 'Error al iniciar sesión',
-                'error' => $e->getMessage()
-            ], 500);
+                'message' => 'Datos inválidos',
+                'errors' => $validator->errors()
+            ], 422);
         }
+
+        // Buscar usuario
+        $usuario = Users::where('correo', $request->email)->first();
+
+        if (!$usuario) {
+            return response()->json([
+                'message' => 'Credenciales incorrectas'
+            ], 401);
+        }
+
+        // Verificar contraseña
+        if (!Hash::check($request->password, $usuario->password)) {
+            return response()->json([
+                'message' => 'Credenciales incorrectas'
+            ], 401);
+        }
+
+        // Generar token JWT
+        $token = $this->generateToken($usuario);
+
+        return response()->json([
+            'accessToken' => $token,
+            'token_type' => 'Bearer',
+            'expires_in' => 3600, // Opcional: 1 hora
+            'user' => new UsuarioResource($usuario)
+        ], 200);
+
+    } catch (Exception $e) {
+
+        Log::error('Error en signIn(): ' . $e->getMessage());
+
+        return response()->json([
+            'message' => 'Error al iniciar sesión'
+        ], 500);
     }
+}
+
 
     /**
      * Iniciar sesión usando token (refresh)

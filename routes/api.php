@@ -76,7 +76,6 @@ Route::prefix('colaborador')->middleware('jwt.auth')->group(function () {
 
 
     Route::put('usuarios/{id}/status', [ColaboradorController::class, 'updateStatus']);
-
 });
 
 //GESTIONAR ROLES

@@ -25,32 +25,60 @@ class DataDashboardController extends Controller
      * Obtener datos del usuario actual
      * 🔥 CORRECCIÓN: Buscar por 'id' en lugar de 'CLAVE'
      */
-    public function me(Request $request)
-    {
-        try {
-            $token = $request->bearerToken();
+   public function me(Request $request)
+{
+    try {
+        $token = $request->bearerToken();
 
-            if (!$token) {
-                return response()->json(['message' => 'Token no proporcionado'], 401);
-            }
-
-            $decoded = JWT::decode($token, new Key($this->jwtSecret, $this->jwtAlgorithm));
-
-            // 🔥 CORRECCIÓN: Usar find() porque $decoded->sub contiene el ID
-            $usuario = Users::find($decoded->sub);
-
-            if (!$usuario) {
-                return response()->json(['message' => 'Usuario no encontrado'], 404);
-            }
-
+        if (!$token) {
             return response()->json([
-                'user' => new UsuarioResource($usuario)
-            ], 200);
-        } catch (\Exception $e) {
-            Log::error('Error en me(): ' . $e->getMessage());
-            return response()->json(['message' => 'Token inválido'], 401);
+                'message' => 'Token no proporcionado'
+            ], 401);
         }
+
+        // Decodificar JWT
+        $decoded = JWT::decode(
+            $token,
+            new Key($this->jwtSecret, $this->jwtAlgorithm)
+        );
+
+        // El campo "sub" siempre es el ID del usuario
+        $usuario = Users::find($decoded->sub);
+
+        if (!$usuario) {
+            return response()->json([
+                'message' => 'Usuario no encontrado'
+            ], 404);
+        }
+
+        // Retornar el usuario autenticado
+        return response()->json([
+            'user' => new UsuarioResource($usuario)
+        ], 200);
+
+    } catch (\Firebase\JWT\ExpiredException $e) {
+        // Token expirado
+        Log::warning('Token expirado en me(): ' . $e->getMessage());
+        return response()->json([
+            'message' => 'El token ha expirado'
+        ], 401);
+
+    } catch (\Firebase\JWT\SignatureInvalidException $e) {
+        // Firma inválida
+        Log::error('Firma inválida en token: ' . $e->getMessage());
+        return response()->json([
+            'message' => 'Token con firma inválida'
+        ], 401);
+
+    } catch (Exception $e) {
+        // Cualquier otro error de token
+        Log::error('Error en me(): ' . $e->getMessage());
+        return response()->json([
+            'message' => 'Token inválido'
+        ], 401);
     }
+}
+
 
     /**
      * Actualizar status del usuario

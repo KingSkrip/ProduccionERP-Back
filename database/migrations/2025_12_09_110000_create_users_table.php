@@ -9,31 +9,21 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('users', function (Blueprint $table) {
-
-            $table->engine = 'InnoDB';
-
-            $table->id(); // ID PK
-
-            // Campos normales
+            $table->id();
             $table->string('nombre', 150)->nullable();
-            $table->string('usuario', 100)->unique()->nullable();
-            $table->string('curp', 150)->nullable();
-            $table->string('telefono', 150)->nullable();
-            $table->string('correo', 150)->nullable();
+            $table->string('usuario', 100)->nullable();
+            $table->string('curp', 150)->nullable()->unique();
+            $table->string('telefono', 150)->nullable()->unique();
+            $table->string('correo', 150)->nullable()->unique();
             $table->string('password')->nullable();
-            $table->string('verify_field')->nullable();
-            $table->string('photo')->nullable();
+            // ❌ ELIMINADO: verify_field
+            $table->string('photo')->nullable()->default('photos/users.jpg');
 
-
-            // 🔥 FOREIGN KEYS (nullable)
+            // Foreign Keys
             $table->unsignedBigInteger('status_id')->nullable();
             $table->unsignedBigInteger('departamento_id')->nullable();
             $table->unsignedBigInteger('direccion_id')->nullable();
 
-            // DATOS NORMALES
-            $table->string('photo')->nullable();
-
-            // 🔥 FOREIGN KEY RELATIONS
             $table->foreign('status_id')->references('id')->on('statuses')->onDelete('cascade');
             $table->foreign('departamento_id')->references('id')->on('departamentos')->onDelete('cascade');
             $table->foreign('direccion_id')->references('id')->on('direcciones')->onDelete('cascade');

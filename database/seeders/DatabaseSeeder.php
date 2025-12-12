@@ -13,6 +13,8 @@ class DatabaseSeeder extends Seeder
             RolesTableSeeder::class,
             SubrolesTableSeeder::class,
             DepartamentosTableSeeder::class,
+            TiposFaltasSeeder::class,
+            TipoAfectacionesSeeder::class,
             // Agrega aquí todos los seeders que vayas creando
         ]);
     }
