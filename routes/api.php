@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Colaboradores\SoliVacacionesController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Catalogos\CatalogosController;
 use App\Http\Controllers\Personalizacion\Dashboard\DataDashboardController;
@@ -101,4 +102,16 @@ Route::prefix('catalogos')->middleware('jwt.auth')->group(function () {
 
 Route::prefix('rh/E_ONE')->middleware('jwt.auth')->group(function () {
     Route::get('empresa1/empleados', [EmpresaUnoController::class, 'index'])->name('EONE.index');
+});
+
+
+
+Route::prefix('colaboradores')->middleware('jwt.auth')->group(function () {
+    Route::get('vacaciones', [SoliVacacionesController::class, 'index']);     
+    Route::get('vacaciones/create', [SoliVacacionesController::class, 'create']);
+    Route::post('vacaciones/store', [SoliVacacionesController::class, 'store']);      
+    Route::get('vacaciones/{id}/show', [SoliVacacionesController::class, 'show']);     
+    Route::get('vacaciones/{id}/edit', [SoliVacacionesController::class, 'edit']);
+    Route::put('vacaciones/{id}/update', [SoliVacacionesController::class, 'update']);    
+    Route::delete('vacaciones/{id}/delete', [SoliVacacionesController::class, 'destroy']);
 });

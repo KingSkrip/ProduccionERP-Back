@@ -215,4 +215,34 @@ class Users extends Authenticatable
         return $this->hasMany(WorkOrder::class, 'aprobador_id');
     }
 
+
+
+     /**
+     * NUEVAS RELACIONES PARA DEPARTAMENTOS
+     */
+
+    /**
+     * Departamentos donde el usuario es supervisor/jefe
+     */
+    public function departamentosSupervisa(): HasMany
+    {
+        return $this->hasMany(DepSupervisor::class, 'user_id');
+    }
+
+    /**
+     * Verifica si el usuario es jefe de algún departamento
+     */
+    public function esJefeDeDepartamento(): bool
+    {
+        return $this->departamentosSupervisa()->exists();
+    }
+
+    /**
+     * Obtiene los IDs de los departamentos que supervisa
+     */
+    public function getDepartamentosQueSupervisa()
+    {
+        return $this->departamentosSupervisa()->pluck('departamento_id');
+    }
+
 }
