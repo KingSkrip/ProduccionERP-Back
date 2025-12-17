@@ -38,4 +38,6 @@ class Vacacion extends Model
     {
         return $this->hasMany(VacacionHistorial::class, 'vacacion_id');
     }
+
+    
 }

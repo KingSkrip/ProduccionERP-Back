@@ -30,4 +30,6 @@ class VacacionHistorial extends Model
     {
         return $this->belongsTo(Vacacion::class, 'vacacion_id');
     }
+
+    
 }

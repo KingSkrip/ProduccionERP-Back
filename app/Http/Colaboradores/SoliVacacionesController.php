@@ -44,82 +44,123 @@ class SoliVacacionesController extends Controller
      */
     public function store(Request $request)
     {
-        // Validación
+        // Validación básica
         $request->validate([
             'fecha_inicio' => 'required|date|after_or_equal:today',
             'fecha_fin' => 'required|date|after_or_equal:fecha_inicio',
             'comentarios' => 'nullable|string|max:500',
+            'dias' => 'required|integer|min:1'
         ]);
 
         $usuario = Auth::user();
 
-        // Obtener el departamento actual del usuario desde su historial
+        // Obtener departamento activo
         $departamentoHistorial = $usuario->departamentosHistorial()
-            ->whereNull('fecha_fin') // si usas null para indicar departamento activo
-            ->orWhere('fecha_fin', '>=', now()->toDateString()) // o departamento que todavía está vigente
+            ->whereNull('fecha_fin')
+            ->orWhere('fecha_fin', '>=', now()->toDateString())
             ->orderBy('fecha_inicio', 'desc')
             ->first();
 
         if (!$departamentoHistorial) {
             return response()->json([
+                'success' => false,
                 'error' => 'No tienes un departamento activo asignado.'
             ], 400);
         }
 
-
-
         $departamentoId = $departamentoHistorial->departamento_id;
 
-        // Buscar supervisor en ese departamento
+        // Buscar supervisor
         $supervisor = DepSupervisor::where('departamento_id', $departamentoId)
             ->where('user_id', '!=', $usuario->id)
             ->first();
 
         if (!$supervisor) {
             return response()->json([
+                'success' => false,
                 'error' => 'No se encontró un supervisor asignado para tu departamento.'
             ], 400);
         }
 
-        // 'fecha_inicio' => $request->fecha_inicio,
-        // 'fecha_fin' => $request->fecha_fin,
+        try {
+            $resultado = DB::transaction(function () use ($request, $usuario, $supervisor) {
 
-        $vacacion = Vacacion::where('user_id', $usuario->id)
-            ->where('anio', date('Y')) // ajusta si usas otro año
-            ->first();
+                // Crear o recuperar Vacacion del año actual
+                $vacacion = Vacacion::firstOrCreate(
+                    ['user_id' => $usuario->id, 'anio' => date('Y')],
+                    ['dias_totales' => 12, 'dias_disfrutados' => 0]
+                );
 
-        // Crear la WorkOrder
-        $workOrder = WorkOrder::create([
-            'solicitante_id' => $usuario->id,
-            'aprobador_id' => $supervisor->user_id,
-            'status_id' => 5,
-            'titulo' => 'Vacaciones',
-            'descripcion' => "Solicitud de vacaciones del {$request->fecha_inicio} al {$request->fecha_fin}",
-            'fecha_solicitud' => now()->toDateString(),
-            'comentarios_solicitante' => $request->comentarios,
-        ]);
+                // 1️⃣ Revisar si hay WorkOrders pendientes
+                $pendienteExistente = WorkOrder::where('solicitante_id', $usuario->id)
+                    ->where('titulo', 'Vacaciones')
+                    ->where('status_id', 5) // pendiente
+                    ->exists();
 
-        //   Log::info("departamento", $departamentoId);
-        // return;
+                if ($pendienteExistente) {
+                    throw new Exception('Ya tienes una solicitud de vacaciones pendiente. No puedes crear otra hasta que sea aprobada o rechazada.');
+                }
 
-        // Create Vacaciones Historial
-        $VHisotiral = VacacionHistorial::create([
-            'vacacion_id' => $vacacion->id,
-            'fecha_inicio' => $request->fecha_inicio,
-            'fecha_fin' => $request->fecha_fin,
-            'dias' => $request->dias,
-            'comentarios' => $request->comentarios_solicitante,
-        ]);
+                // 2️⃣ Revisar solapamiento de fechas con historial existente
+                $solapamiento = VacacionHistorial::where('vacacion_id', $vacacion->id)
+                    ->where(function ($q) use ($request) {
+                        $q->whereBetween('fecha_inicio', [$request->fecha_inicio, $request->fecha_fin])
+                            ->orWhereBetween('fecha_fin', [$request->fecha_inicio, $request->fecha_fin]);
+                    })
+                    ->whereExists(function ($query) use ($usuario) {
+                        $query->select(DB::raw(1))
+                            ->from('workorders')
+                            ->where('workorders.solicitante_id', $usuario->id)
+                            ->whereIn('workorders.status_id', [3, 5])
+                            ->where('workorders.titulo', 'Vacaciones');
+                    })
+                    ->first();
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'vacacion' => $vacacion,
-                'solicitud' => $workOrder,
-                'historial' => $VHisotiral
-            ]
-        ]);
+
+                if ($solapamiento) {
+                    throw new Exception("Ya existe una solicitud de vacaciones que se choca con estas fechas.");
+                }
+
+                // 3️⃣ Crear WorkOrder
+                $workOrder = WorkOrder::create([
+                    'solicitante_id' => $usuario->id,
+                    'aprobador_id' => $supervisor->user_id,
+                    'status_id' => 5, // pendiente
+                    'titulo' => 'Vacaciones',
+                    'descripcion' => "Solicitud de vacaciones del {$request->fecha_inicio} al {$request->fecha_fin}",
+                    'fecha_solicitud' => now()->toDateString(),
+                    'comentarios_solicitante' => $request->comentarios,
+                ]);
+
+                // 4️⃣ Crear VacacionHistorial
+                $historial = VacacionHistorial::create([
+                    'vacacion_id' => $vacacion->id,
+                    'fecha_inicio' => $request->fecha_inicio,
+                    'fecha_fin' => $request->fecha_fin,
+                    'dias' => $request->dias,
+                    'comentarios' => $request->comentarios,
+                ]);
+
+                return [
+                    'vacacion' => $vacacion,
+                    'solicitud' => $workOrder,
+                    'historial' => $historial
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $resultado
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 400);
+        }
     }
+
+
 
     /**
      * Mostrar detalles de un colaborador
