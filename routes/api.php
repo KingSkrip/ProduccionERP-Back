@@ -6,9 +6,11 @@ use App\Http\Controllers\Catalogos\CatalogosController;
 use App\Http\Controllers\Personalizacion\Dashboard\DataDashboardController;
 use App\Http\Controllers\Personalizacion\Perfil\PerfilController;
 use App\Http\Controllers\RH\Nominas\EmpresaUno\EmpresaUnoController;
+use App\Http\Controllers\SuperAdmin\AutorizacionPedidos\AutorizacionPedidosController;
 use App\Http\Controllers\SuperAdmin\GestionarUsuarios\Colaborador\ColaboradorController;
 use App\Http\Controllers\SuperAdmin\GestionarUsuarios\RH\RHController;
 use App\Http\Controllers\SuperAdmin\GestionarUsuarios\SuAdmin\SuAdminController;
+use App\Http\Controllers\SuperAdmin\ReportesProduccion\ReportesProduccionController;
 use App\Http\Controllers\SuperAdmin\Roles\RolesController;
 use Illuminate\Support\Facades\Route;
 
@@ -107,11 +109,34 @@ Route::prefix('rh/E_ONE')->middleware('jwt.auth')->group(function () {
 
 
 Route::prefix('colaboradores')->middleware('jwt.auth')->group(function () {
-    Route::get('vacaciones', [SoliVacacionesController::class, 'index']);     
+    Route::get('vacaciones', [SoliVacacionesController::class, 'index']);
     Route::get('vacaciones/create', [SoliVacacionesController::class, 'create']);
-    Route::post('vacaciones/store', [SoliVacacionesController::class, 'store']);      
-    Route::get('vacaciones/{id}/show', [SoliVacacionesController::class, 'show']);     
+    Route::post('vacaciones/store', [SoliVacacionesController::class, 'store']);
+    Route::get('vacaciones/{id}/show', [SoliVacacionesController::class, 'show']);
     Route::get('vacaciones/{id}/edit', [SoliVacacionesController::class, 'edit']);
-    Route::put('vacaciones/{id}/update', [SoliVacacionesController::class, 'update']);    
+    Route::put('vacaciones/{id}/update', [SoliVacacionesController::class, 'update']);
     Route::delete('vacaciones/{id}/delete', [SoliVacacionesController::class, 'destroy']);
+});
+
+
+
+Route::middleware(['jwt.auth'])  // Keep only your JWT auth
+    ->prefix('firebird')     // Combine the prefixes manually
+    ->group(function () {
+        Route::get('pedidos', [AutorizacionPedidosController::class, 'index']);
+        Route::put('pedidos/{id}/autorizar-credito', [AutorizacionPedidosController::class, 'update']);
+    });
+
+
+
+    Route::prefix('reportes-produccion')->group(function () {
+    
+    // GET: Obtener reportes con filtros de fecha
+    Route::get('/', [ReportesProduccionController::class, 'index']);
+    
+    // GET: Obtener resumen estadístico (opcional)
+    Route::get('/summary', [ReportesProduccionController::class, 'getSummary']);
+    
+    // GET: Obtener reportes por departamento específico (opcional)
+    Route::get('/departamento/{id}', [ReportesProduccionController::class, 'getByDepartment']);
 });

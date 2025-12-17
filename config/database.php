@@ -16,7 +16,7 @@ return [
     |
     */
 
-   'default' => env('DB_CONNECTION', 'mysql'),
+    'default' => env('DB_CONNECTION', 'mysql'),
 
 
     /*
@@ -113,21 +113,22 @@ return [
             // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
         ],
 
-  
+
 
         // ---------------------------------------
         //  🔥 Firebird Principal (PRODUCCIÓN)
         // ---------------------------------------
         'firebird' => [
             'driver'   => 'firebird',
-            'host'     => env('DB_HOST'),
-            'port'     => env('DB_PORT'),
-            'database' => env('DB_DATABASE'),
-            'username' => env('DB_USERNAME'),
-            'password' => env('DB_PASSWORD'),
-            'charset'  => env('DB_CHARSET', 'UTF8'),
+            'host'     => env('FB_HOST'),
+            'port'     => env('FB_PORT'),
+            'database' => env('FB_DATABASE'),
+            'username' => env('FB_USERNAME'),
+            'password' => env('FB_PASSWORD'),
+            'charset'  => env('FB_CHARSET', 'UTF8'),
             'role'     => null,
         ],
+
 
         // ---------------------------------------
         // 🔥 Empresa 1
@@ -220,7 +221,7 @@ return [
 
         'options' => [
             'cluster' => env('REDIS_CLUSTER', 'redis'),
-            'prefix' => env('REDIS_PREFIX', Str::slug(env('APP_NAME', 'laravel'), '_').'_database_'),
+            'prefix' => env('REDIS_PREFIX', Str::slug(env('APP_NAME', 'laravel'), '_') . '_database_'),
         ],
 
         'default' => [
