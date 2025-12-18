@@ -24,6 +24,7 @@ class UsuarioResource extends JsonResource
             'created_at'        => $this->created_at ? $this->created_at->format('d/m/Y H:i:s') : null,
             'updated_at'        => $this->updated_at ? $this->updated_at->format('d/m/Y H:i:s') : null,
             'permissions'       => $this->roles()->pluck('role_clave'),
+            'sub_permissions'       => $this->roles()->pluck('subrol_id'),
 
             // Relación: Status
             'status' => $this->status ? [
@@ -51,20 +52,20 @@ class UsuarioResource extends JsonResource
                 'nombre' => $this->departamento->nombre,
             ] : null,
 
-            'roles' => $this->roles->map(function ($role) {
-                return [
-                    'id'              => $role->id,
-                    'role_clave'      => $role->role_clave,
-                    'model_clave'     => $role->model_clave,
-                    'subrol_id'       => $role->subrol_id,
-                    'model_type'      => $role->model_type,
-                    'subrol'          => $role->subrol ? [
-                        'id'         => $role->subrol->id,
-                        'nombre'     => $role->subrol->nombre,
-                        'guard_name' => $role->subrol->guard_name,
-                    ] : null,
-                ];
-            }),
+            // 'roles' => $this->roles->map(function ($role) {
+            //     return [
+            //         'id'              => $role->id,
+            //         'role_clave'      => $role->role_clave,
+            //         'model_clave'     => $role->model_clave,
+            //         'subrol_id'       => $role->subrol_id,
+            //         'model_type'      => $role->model_type,
+            //         'subrol'          => $role->subrol ? [
+            //             'id'         => $role->subrol->id,
+            //             'nombre'     => $role->subrol->nombre,
+            //             'guard_name' => $role->subrol->guard_name,
+            //         ] : null,
+            //     ];
+            // }),
 
             'model_has_statuses' => $this->modelHasStatuses->map(function ($mhs) {
                 return [

@@ -14,6 +14,7 @@ class RolesTableSeeder extends Seeder
             ['nombre' => 'RH', 'guard_name' => 'web'],
             ['nombre' => 'SUADMIN', 'guard_name' => 'web'],
             ['nombre' => 'ADMIN', 'guard_name' => 'web'],
+            ['nombre' => 'JEFE', 'guard_name' => 'web'],
         ];
 
         foreach ($roles as $role) {
