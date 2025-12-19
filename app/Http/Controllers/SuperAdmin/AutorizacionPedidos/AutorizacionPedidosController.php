@@ -16,15 +16,66 @@ class AutorizacionPedidosController extends Controller
     public function index()
     {
         try {
-            $pedidos = DB::connection('firebird')
-                ->table('PEDIDOSENC')
-                ->where(function ($q) {
-                    $q->where('AUTORIZACRED', 0)
-                        ->orWhereNull('AUTORIZACRED');
-                })
-                ->orderBy('FECHAELAB', 'desc')
-                ->get();
+            $empresa = '01';
 
+            // 1️⃣ Pedidos (SP)
+            $pedidos = DB::connection('firebird')->select("
+            SELECT *
+            FROM P_PEDIDOSENCMAIN(?)
+            WHERE COALESCE(AUTORIZACRED, 0) = 0
+              AND COALESCE(NESTATUS, 0) <> 99
+            ORDER BY \"FECHA ELAB.\" DESC
+        ", [$empresa]);
+
+            // Si no hay pedidos
+            if (empty($pedidos)) {
+                return response()->json([
+                    'success' => true,
+                    'data' => []
+                ], 200);
+            }
+
+            // 2️⃣ IDs de pedidos
+            $pedidoIds = array_map(fn($p) => (int) $p->ID, $pedidos);
+
+            // 3️⃣ Artículos (una sola query)
+            $articulos = DB::connection('firebird')->select("
+            SELECT CVE_PED, ARTICULO, SUM(CANTIDAD) AS CANTIDAD
+            FROM V_PED_PART
+            WHERE CVE_PED IN (" . implode(',', $pedidoIds) . ")
+            GROUP BY CVE_PED, ARTICULO
+        ");
+
+            // 4️⃣ Cardigan (una sola query)
+            $cardigans = DB::connection('firebird')->select("
+            SELECT CVE_PED,
+                   \"CARDIGAN DESCR.\" AS DESCRIPCION,
+                   SUM(\"CANT. CARD.\") AS CANTIDAD
+            FROM V_PED_PART
+            WHERE CVE_PED IN (" . implode(',', $pedidoIds) . ")
+              AND \"CANT. CARD.\" > 0
+            GROUP BY CVE_PED, \"CARDIGAN DESCR.\"
+        ");
+
+            // 5️⃣ Indexar artículos por pedido
+            $articulosPorPedido = [];
+            foreach ($articulos as $a) {
+                $articulosPorPedido[$a->CVE_PED][] = $a;
+            }
+
+            // 6️⃣ Indexar cardigan por pedido
+            $cardiganPorPedido = [];
+            foreach ($cardigans as $c) {
+                $cardiganPorPedido[$c->CVE_PED][] = $c;
+            }
+
+            // 7️⃣ Asignar a cada pedido
+            foreach ($pedidos as $pedido) {
+                $pedido->articulos = $articulosPorPedido[$pedido->ID] ?? [];
+                $pedido->cardigan  = $cardiganPorPedido[$pedido->ID] ?? [];
+            }
+
+            // 8️⃣ Response
             return response()->json([
                 'success' => true,
                 'data' => $pedidos
@@ -32,11 +83,13 @@ class AutorizacionPedidosController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error al consultar PEDIDOSENC',
+                'message' => 'Error al consultar pedidos con partidas',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
+
+
 
 
 //     public function index()
