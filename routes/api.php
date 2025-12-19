@@ -129,14 +129,24 @@ Route::middleware(['jwt.auth'])  // Keep only your JWT auth
 
 
 
-    Route::prefix('reportes-produccion')->group(function () {
-    
+Route::prefix('reportes-produccion')->group(function () {
+
     // GET: Obtener reportes con filtros de fecha
     Route::get('/', [ReportesProduccionController::class, 'index']);
-    
+
     // GET: Obtener resumen estadístico (opcional)
     Route::get('/summary', [ReportesProduccionController::class, 'getSummary']);
-    
+
+
+
+    Route::get('/tejido', [ReportesProduccionController::class, 'getProduccionTejido']);
+    Route::get('/revisado', [ReportesProduccionController::class, 'getRevisadoTejido']);
+    Route::get('/pendientes', [ReportesProduccionController::class, 'getPorRevisarTejido']); // porrevisar → pendientes
+   Route::get('/con-saldo', [ReportesProduccionController::class, 'getSaldosTejido']);
+   Route::get('/entregado-embarques', [ReportesProduccionController::class, 'getEntregadoaEmbarques']);
+
+
+
     // GET: Obtener reportes por departamento específico (opcional)
     Route::get('/departamento/{id}', [ReportesProduccionController::class, 'getByDepartment']);
 });
