@@ -16,7 +16,10 @@ class AutorizacionPedidosController extends Controller
     public function index()
     {
         try {
-            $empresa = '01';
+            $fbDatabase = env('FB_DATABASE');
+            preg_match('/\d{2}/', $fbDatabase, $matches);
+            $empresa = $matches[0] ?? '01';
+
 
             // 1️⃣ Pedidos (SP)
             $pedidos = DB::connection('firebird')->select("
