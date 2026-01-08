@@ -27,6 +27,7 @@ class AutorizacionPedidosController extends Controller
             FROM P_PEDIDOSENCMAIN(?)
             WHERE COALESCE(AUTORIZACRED, 0) = 0
               AND COALESCE(NESTATUS, 0) <> 99
+              AND COALESCE(AUTORIZA, 0) = 0
             ORDER BY \"FECHA ELAB.\" DESC
         ", [$empresa]);
 
