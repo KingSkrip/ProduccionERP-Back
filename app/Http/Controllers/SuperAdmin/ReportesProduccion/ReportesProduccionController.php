@@ -140,11 +140,9 @@ class ReportesProduccionController extends Controller
             SELECT SUM(psd.PNETO) AS PNETO, psd.PARTIDA 
             FROM PSDTABPZAS psd 
             LEFT JOIN PTPLISTENC pl ON pl.id = psd.id_fol_pl 
-                AND pl.FECHAYHORA >= ? 
-                AND pl.FECHAYHORA < ? 
-            GROUP BY psd.PARTIDA
-            ORDER BY psd.PARTIDA
-        ";
+            WHERE pl.FECHAYHORA >= ? AND pl.FECHAYHORA < ? 
+            AND PSD.estatus = 1 AND PSD.tipo = 51
+            GROUP BY psd.PARTIDA";
 
             DB::connection('firebird')->enableQueryLog();
 
