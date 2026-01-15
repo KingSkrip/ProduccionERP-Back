@@ -3,35 +3,26 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Carbon;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PasswordReset extends Model
 {
+    protected $connection = 'mysql';
     protected $table = 'password_resets';
-
-    protected $primaryKey = 'id';
-    public $incrementing = true;
-    public $keyType = 'int';
-
-    public $timestamps = true; // Usamos timestamps automáticos
-    const CREATED_AT = 'created_at';
-    const UPDATED_AT = null; // No necesitamos updated_at
+    public $timestamps = false;
 
     protected $fillable = [
         'email',
         'token',
         'usuario_id',
+        'created_at',
     ];
 
-    protected $casts = [
-        'created_at' => 'datetime',
-    ];
-
-    /**
-     * Relación con Usuario
-     */
-    public function usuario()
+    public function user(): BelongsTo
     {
-        return $this->belongsTo(Users::class, 'usuario_id', 'id');
+        return $this->belongsTo(
+            UserFirebirdIdentity::class,
+            'usuario_id'
+        );
     }
 }

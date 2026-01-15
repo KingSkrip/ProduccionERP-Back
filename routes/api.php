@@ -1,8 +1,8 @@
 <?php
 
-use App\Http\Colaboradores\SoliVacacionesController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Catalogos\CatalogosController;
+use App\Http\Controllers\Colaboradores\SoliVacacionesController;
 use App\Http\Controllers\Personalizacion\Dashboard\DataDashboardController;
 use App\Http\Controllers\Personalizacion\Perfil\PerfilController;
 use App\Http\Controllers\RH\Nominas\EmpresaUno\EmpresaUnoController;
@@ -138,12 +138,17 @@ Route::prefix('reportes-produccion')->group(function () {
     Route::get('/summary', [ReportesProduccionController::class, 'getSummary']);
 
 
+    Route::get('/estampados', [ReportesProduccionController::class, 'getEstampado']);
+    Route::get('/tintoreria', [ReportesProduccionController::class, 'getTintoreria']);
 
     Route::get('/tejido', [ReportesProduccionController::class, 'getProduccionTejido']);
     Route::get('/revisado', [ReportesProduccionController::class, 'getRevisadoTejido']);
     Route::get('/pendientes', [ReportesProduccionController::class, 'getPorRevisarTejido']); // porrevisar → pendientes
-   Route::get('/con-saldo', [ReportesProduccionController::class, 'getSaldosTejido']);
-   Route::get('/entregado-embarques', [ReportesProduccionController::class, 'getEntregadoaEmbarques']);
+    Route::get('/con-saldo', [ReportesProduccionController::class, 'getSaldosTejido']);
+    Route::get('/entregado-embarques', [ReportesProduccionController::class, 'getEntregadoaEmbarques']);
+
+
+     Route::get('/factuado', [ReportesProduccionController::class, 'getFacturado']);
 
 
 

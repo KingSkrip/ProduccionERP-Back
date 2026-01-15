@@ -4,7 +4,7 @@ namespace App\Http\Controllers\SuperAdmin\GestionarUsuarios\RH;
 
 use App\Helpers\ValidationMessages;
 use App\Http\Controllers\Controller;
-use App\Models\Users;
+use App\Models\Firebird;
 use App\Http\Resources\UsuarioResource;
 use App\Models\ModelHasRole;
 use Exception;
@@ -19,7 +19,7 @@ use Throwable;
 class RHController extends Controller
 {
     /**
-     * Muestra la lista de usuarios RH (usuarios con role_clave = 2).
+     * Muestra la lista de usuarios RH (usuarios con ROLE_CLAVE = 2).
      * 🔥 CORRECCIÓN: Adaptado a nueva estructura MySQL
      *
      * @return \Illuminate\Http\JsonResponse
@@ -29,9 +29,9 @@ class RHController extends Controller
         try {
             $userId = auth()->id(); // ← Usar auth()->id() en lugar de auth()->user()->CLAVE
 
-            // Traer usuarios con role_clave = 2 excepto el usuario autenticado
+            // Traer usuarios con ROLE_CLAVE = 2 excepto el usuario autenticado
             $usuarios = Users::whereHas('roles', function ($query) {
-                $query->where('role_clave', 2);
+                $query->where('ROLE_CLAVE', 2);
             })
                 ->where('id', '!=', $userId)
                 ->get();
@@ -121,12 +121,12 @@ class RHController extends Controller
             ]);
 
             // ----------------------------------------
-            // 📌 ASIGNAR ROL RH (role_clave = 2)
+            // 📌 ASIGNAR ROL RH (ROLE_CLAVE = 2)
             // ----------------------------------------
             ModelHasRole::create([
-                'role_clave' => 2, // ROL RH
-                'model_clave' => $usuario->id,
-                'model_type' => Users::class,
+                'ROLE_CLAVE' => 2, // ROL RH
+                'MODEL_CLAVE' => $usuario->id,
+                'MODEL_TYPE' => Users::class,
             ]);
 
             DB::commit();
@@ -328,8 +328,8 @@ class RHController extends Controller
             ];
 
             // Eliminar roles asociados
-            ModelHasRole::where('model_clave', $id)
-                ->where('model_type', Users::class)
+            ModelHasRole::where('MODEL_CLAVE', $id)
+                ->where('MODEL_TYPE', Users::class)
                 ->delete();
 
             // Eliminar foto si no es la default

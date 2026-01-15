@@ -62,21 +62,21 @@ class TestDBSeeder extends Seeder
          * ROLES
          * ========================================== */
         DB::table('roles')->insert([
-            ['id'=>1, 'nombre'=>'COLABORADOR', 'guard_name'=>'web'],
-            ['id'=>2, 'nombre'=>'RH',          'guard_name'=>'web'],
-            ['id'=>3, 'nombre'=>'SUADMIN',     'guard_name'=>'web'],
-            ['id'=>4, 'nombre'=>'ADMIN',       'guard_name'=>'web'],
+            ['id'=>1, 'nombre'=>'COLABORADOR', 'GUARD_NAME'=>'web'],
+            ['id'=>2, 'nombre'=>'RH',          'GUARD_NAME'=>'web'],
+            ['id'=>3, 'nombre'=>'SUADMIN',     'GUARD_NAME'=>'web'],
+            ['id'=>4, 'nombre'=>'ADMIN',       'GUARD_NAME'=>'web'],
         ]);
 
         /* ==========================================
          * SUBROLES
          * ========================================== */
         DB::table('subroles')->insert([
-            ['id'=>1, 'nombre'=>'OPERARIO', 'guard_name'=>'web'],
-            ['id'=>2, 'nombre'=>'SUPERVISOR', 'guard_name'=>'web'],
-            ['id'=>3, 'nombre'=>'GERENTE', 'guard_name'=>'web'],
-            ['id'=>4, 'nombre'=>'CONTADOR', 'guard_name'=>'web'],
-            ['id'=>5, 'nombre'=>'AUXILIAR ADMINISTRATIVO', 'guard_name'=>'web'],
+            ['id'=>1, 'nombre'=>'OPERARIO', 'GUARD_NAME'=>'web'],
+            ['id'=>2, 'nombre'=>'SUPERVISOR', 'GUARD_NAME'=>'web'],
+            ['id'=>3, 'nombre'=>'GERENTE', 'GUARD_NAME'=>'web'],
+            ['id'=>4, 'nombre'=>'CONTADOR', 'GUARD_NAME'=>'web'],
+            ['id'=>5, 'nombre'=>'AUXILIAR ADMINISTRATIVO', 'GUARD_NAME'=>'web'],
         ]);
 
         /* ==========================================
@@ -187,8 +187,8 @@ class TestDBSeeder extends Seeder
          * MODEL_HAS_ROLES
          * ========================================== */
         DB::table('model_has_roles')->insert([
-            ['id'=>1, 'role_clave'=>3, 'model_clave'=>1, 'subrol_id'=>null, 'model_type'=>'App\\Models\\Users'],
-            ['id'=>2, 'role_clave'=>1, 'model_clave'=>2, 'subrol_id'=>null, 'model_type'=>'App\\Models\\Users'],
+            ['id'=>1, 'ROLE_CLAVE'=>3, 'MODEL_CLAVE'=>1, 'SUBROL_ID'=>null, 'MODEL_TYPE'=>'App\\Models\\Users'],
+            ['id'=>2, 'ROLE_CLAVE'=>1, 'MODEL_CLAVE'=>2, 'SUBROL_ID'=>null, 'MODEL_TYPE'=>'App\\Models\\Users'],
         ]);
 
         /* ==========================================

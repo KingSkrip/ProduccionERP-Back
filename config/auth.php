@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\Users;
+use App\Models\Firebird\Users;
 
 return [
 

@@ -30,7 +30,7 @@ class ColaboradoresAreaResource extends ResourceCollection
                     'photo'             => $usuario->photo,
                     'created_at'        => $usuario->created_at ? $usuario->created_at->format('d/m/Y H:i:s') : null,
                     'updated_at'        => $usuario->updated_at ? $usuario->updated_at->format('d/m/Y H:i:s') : null,
-                    'permissions'       => $usuario->roles()->pluck('role_clave'),
+                    'permissions'       => $usuario->roles()->pluck('ROLE_CLAVE'),
 
                     // Relación: Status
                     'status' => $usuario->status ? [
@@ -61,19 +61,19 @@ class ColaboradoresAreaResource extends ResourceCollection
                     'roles' => $usuario->roles->map(function ($role) {
                         return [
                             'id'              => $role->id,
-                            'role_clave'      => $role->role_clave,
-                            'model_clave'     => $role->model_clave,
-                            'subrol_id'       => $role->subrol_id,
-                            'model_type'      => $role->model_type,
+                            'ROLE_CLAVE'      => $role->ROLE_CLAVE,
+                            'MODEL_CLAVE'     => $role->MODEL_CLAVE,
+                            'SUBROL_ID'       => $role->SUBROL_ID,
+                            'MODEL_TYPE'      => $role->MODEL_TYPE,
                             'subrol'          => $role->subrol ? [
                                 'id'         => $role->subrol->id,
                                 'nombre'     => $role->subrol->nombre,
-                                'guard_name' => $role->subrol->guard_name,
+                                'GUARD_NAME' => $role->subrol->GUARD_NAME,
                             ] : null,
                         ];
                     }),
 
-                    'model_has_statuses' => $usuario->modelHasStatuses->map(function ($mhs) {
+                    'MODEL_HAS_STATUSES' => $usuario->modelHasStatuses->map(function ($mhs) {
                         return [
                             'id'                 => $mhs->id,
                             'status_id'          => $mhs->status_id,

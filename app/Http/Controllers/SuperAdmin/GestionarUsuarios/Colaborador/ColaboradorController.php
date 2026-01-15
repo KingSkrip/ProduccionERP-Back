@@ -11,7 +11,7 @@ use App\Models\ModelHasRole;
 use App\Models\UserEmpleo;
 use App\Models\UserFiscal;
 use App\Models\UserNomina;
-use App\Models\Users;
+use App\Models\Firebird;
 use App\Models\UserSeguridadSocial;
 use Exception;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\Validator;
 class ColaboradorController extends Controller
 {
     /**
-     * Lista los colaboradores (role_clave = 1)
+     * Lista los colaboradores (ROLE_CLAVE = 1)
      */
     public function index()
     {
@@ -41,7 +41,7 @@ class ColaboradorController extends Controller
                 'seguridadSocial'
             ])
                 ->whereHas('roles', function ($query) {
-                    $query->where('role_clave', 1);
+                    $query->where('ROLE_CLAVE', 1);
                 })
                 ->where('id', '!=', $userId)
                 ->get();
@@ -136,9 +136,9 @@ class ColaboradorController extends Controller
 
             // 4. Asignar rol colaborador (1)
             ModelHasRole::create([
-                'role_clave' => 1,
-                'model_clave' => $usuario->id,
-                'model_type' => Users::class,
+                'ROLE_CLAVE' => 1,
+                'MODEL_CLAVE' => $usuario->id,
+                'MODEL_TYPE' => Users::class,
             ]);
 
             // 5. Crear Empleo (si existe)
@@ -443,8 +443,8 @@ class ColaboradorController extends Controller
             $usuario = Users::with(['direccion'])->findOrFail($id);
 
             // Eliminar roles
-            ModelHasRole::where('model_clave', $id)
-                ->where('model_type', Users::class)
+            ModelHasRole::where('MODEL_CLAVE', $id)
+                ->where('MODEL_TYPE', Users::class)
                 ->delete();
 
             // Eliminar datos relacionados

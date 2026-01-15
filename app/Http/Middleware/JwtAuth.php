@@ -2,7 +2,7 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\Users;
+use App\Models\Firebird\Users;
 use Closure;
 use Exception;
 use Firebase\JWT\JWT;

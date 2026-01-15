@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\pendientes;
 
 use App\Models\Bono;
 use App\Http\Controllers\Controller;

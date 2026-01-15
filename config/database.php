@@ -18,7 +18,6 @@ return [
 
     'default' => env('DB_CONNECTION', 'mysql'),
 
-
     /*
     |--------------------------------------------------------------------------
     | Database Connections
@@ -41,6 +40,38 @@ return [
             'busy_timeout' => null,
             'journal_mode' => null,
             'synchronous' => null,
+        ],
+
+
+        // ---------------------------------------
+        //  🔥 Firebird Principal (PRODUCCIÓN)
+        // ---------------------------------------
+        'firebird' => [
+            'driver'   => 'firebird',
+            'host'     => env('FB_HOST'),
+            'port'     => env('FB_PORT'),
+            'database' => env('FB_DATABASE'),
+            'username' => env('FB_USERNAME'),
+            'password' => env('FB_PASSWORD'),
+            'charset'  => env('FB_CHARSET', 'UTF8'),
+            'role'     => null,
+            'dialect' => 3,
+            'quote_identifiers' => false,
+
+        ],
+
+        // ---------------------------------------
+        // 🔥 Empresa
+        // ---------------------------------------
+        'firebird_srvnoi' => [
+            'driver'   => 'firebird',
+            'host'     => env('DB_HOST_SRVNOI'),
+            'port'     => env('DB_PORT_SRVNOI'),
+            'database' => env('DB_DATABASE_SRVNOI'),
+            'username' => env('DB_USERNAME_SRVNOI'),
+            'password' => env('DB_PASSWORD_SRVNOI'),
+            'charset'  => env('DB_CHARSET_SRVNOI', 'UTF8'),
+            'role'     => null,
         ],
 
         'mysql' => [
@@ -111,37 +142,6 @@ return [
             'prefix_indexes' => true,
             // 'encrypt' => env('DB_ENCRYPT', 'yes'),
             // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
-        ],
-
-
-
-        // ---------------------------------------
-        //  🔥 Firebird Principal (PRODUCCIÓN)
-        // ---------------------------------------
-        'firebird' => [
-            'driver'   => 'firebird',
-            'host'     => env('FB_HOST'),
-            'port'     => env('FB_PORT'),
-            'database' => env('FB_DATABASE'),
-            'username' => env('FB_USERNAME'),
-            'password' => env('FB_PASSWORD'),
-            'charset'  => env('FB_CHARSET', 'UTF8'),
-            'role'     => null,
-        ],
-
-
-        // ---------------------------------------
-        // 🔥 Empresa 1
-        // ---------------------------------------
-        'firebird_e1' => [
-            'driver'   => 'firebird',
-            'host'     => env('DB_HOST_E1'),
-            'port'     => env('DB_PORT_E1'),
-            'database' => env('DB_DATABASE_E1'),
-            'username' => env('DB_USERNAME_E1'),
-            'password' => env('DB_PASSWORD_E1'),
-            'charset'  => env('DB_CHARSET_E1', 'UTF8'),
-            'role'     => null,
         ],
 
         // ---------------------------------------

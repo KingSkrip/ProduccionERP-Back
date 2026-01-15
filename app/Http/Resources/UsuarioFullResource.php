@@ -23,7 +23,7 @@ class UsuarioFullResource extends JsonResource
             'photo'             => $this->photo,
             'created_at'        => $this->created_at ? $this->created_at->format('d/m/Y H:i:s') : null,
             'updated_at'        => $this->updated_at ? $this->updated_at->format('d/m/Y H:i:s') : null,
-            'permissions'       => $this->roles()->pluck('role_clave'),
+            'permissions'       => $this->roles()->pluck('ROLE_CLAVE'),
 
             // Relación: Status
             'status' => $this->status ? [
@@ -54,19 +54,19 @@ class UsuarioFullResource extends JsonResource
             'roles' => $this->roles->map(function ($role) {
                 return [
                     'id'              => $role->id,
-                    'role_clave'      => $role->role_clave,
-                    'model_clave'     => $role->model_clave,
-                    'subrol_id'       => $role->subrol_id,
-                    'model_type'      => $role->model_type,
+                    'ROLE_CLAVE'      => $role->ROLE_CLAVE,
+                    'MODEL_CLAVE'     => $role->MODEL_CLAVE,
+                    'SUBROL_ID'       => $role->SUBROL_ID,
+                    'MODEL_TYPE'      => $role->MODEL_TYPE,
                     'subrol'          => $role->subrol ? [
                         'id'         => $role->subrol->id,
                         'nombre'     => $role->subrol->nombre,
-                        'guard_name' => $role->subrol->guard_name,
+                        'GUARD_NAME' => $role->subrol->GUARD_NAME,
                     ] : null,
                 ];
             }),
 
-            'model_has_statuses' => $this->modelHasStatuses->map(function ($mhs) {
+            'MODEL_HAS_STATUSES' => $this->modelHasStatuses->map(function ($mhs) {
                 return [
                     'id'             => $mhs->id,
                     'status_id'      => $mhs->status_id,
@@ -185,7 +185,7 @@ class UsuarioFullResource extends JsonResource
 
 
             // Relación: ModelHasStatus (todos los registros)
-            'model_has_statuses' => $this->modelHasStatuses->map(function ($mhs) {
+            'MODEL_HAS_STATUSES' => $this->modelHasStatuses->map(function ($mhs) {
                 return [
                     'id'          => $mhs->id,
                     'nombre'      => $mhs->nombre,          // nombre específico de este registro

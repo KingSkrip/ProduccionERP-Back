@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Models\Users;
+
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -13,7 +13,10 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use App\Http\Resources\UsuarioResource;
 use App\Mail\ForgotPasswordMail;
+use App\Models\Firebird\Users;
 use App\Models\ModelHasRole;
+use App\Models\UserFirebirdIdentity;
+use App\Services\FirebirdEmpresaManualService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
@@ -31,59 +34,242 @@ class AuthController extends Controller
     }
 
     /**
-     * Iniciar sesión con correo y contraseña
-     */
-   public function signIn(Request $request)
+ * Iniciar sesión con correo y contraseña
+ * - AUTH/JWT: USUARIOS.ID
+ * - Relación NOI (TB/SL/VC/etc): USUARIOS.CLAVE
+ */
+public function signIn(Request $request)
 {
     try {
-        // Validación de entrada
-        $validator = Validator::make($request->all(), [
+        $request->validate([
             'email' => 'required|email',
             'password' => 'required|string'
         ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Datos inválidos',
-                'errors' => $validator->errors()
-            ], 422);
-        }
+        $email = strtolower(trim($request->email));
 
-        // Buscar usuario
-        $usuario = Users::where('correo', $request->email)->first();
+        Log::info('🔍 LOGIN_ATTEMPT', [
+            'email' => $email,
+            'ip' => $request->ip(),
+            'ua' => substr((string) $request->userAgent(), 0, 120),
+        ]);
+
+        // 🔹 Buscar usuario Firebird por CORREO
+        $usuario = Users::whereRaw('LOWER(CORREO) = ?', [$email])->first();
+
+        Log::info('👤 FIREBIRD_USER_LOOKUP', [
+            'found' => $usuario ? true : false,
+            'firebird_id' => $usuario->ID ?? null,
+            'firebird_clave' => $usuario->CLAVE ?? null,
+            'correo_db' => $usuario->CORREO ?? null,
+            'nombre' => $usuario->NOMBRE ?? null,
+        ]);
 
         if (!$usuario) {
-            return response()->json([
-                'message' => 'Credenciales incorrectas'
-            ], 401);
+            Log::warning('❌ LOGIN_FAIL_USER_NOT_FOUND', ['email' => $email]);
+            return response()->json(['message' => 'Credenciales incorrectas'], 401);
         }
 
-        // Verificar contraseña
-        if (!Hash::check($request->password, $usuario->password)) {
-            return response()->json([
-                'message' => 'Credenciales incorrectas'
-            ], 401);
+        // 🔐 Verificar password
+        $match = Hash::check($request->password, $usuario->PASSWORD2);
+
+        Log::info('🔐 FIREBIRD_PASSWORD_CHECK', [
+            'firebird_id' => $usuario->ID,
+            'match' => $match,
+            'hash_length' => isset($usuario->PASSWORD2) ? strlen((string)$usuario->PASSWORD2) : null,
+        ]);
+
+        if (!$match) {
+            Log::warning('❌ LOGIN_FAIL_BAD_PASSWORD', [
+                'firebird_id' => $usuario->ID,
+                'email' => $email
+            ]);
+            return response()->json(['message' => 'Credenciales incorrectas'], 401);
         }
 
-        // Generar token JWT
-        $token = $this->generateToken($usuario);
+        // ✅ ID para sesión
+        $userId = (int) $usuario->ID;
+
+        // ✅ CLAVE para relacionar NOI
+        $claveTrab = isset($usuario->CLAVE) ? trim((string) $usuario->CLAVE) : null;
+
+        Log::info('🧠 LOGIN_KEYS_RESOLVED', [
+            'auth_uses' => 'ID',
+            'noi_uses' => 'CLAVE',
+            'firebird_id' => $userId,
+            'firebird_clave' => $claveTrab,
+            'type_id' => gettype($userId),
+            'type_clave' => gettype($claveTrab),
+        ]);
+
+        // 🔹 Pivote MySQL (roles/empresa)
+        $identity = UserFirebirdIdentity::where('firebird_user_clave', $userId)->first();
+
+        Log::info('📌 MYSQL_IDENTITY_LOOKUP', [
+            'found' => $identity ? true : false,
+            'identity_id' => $identity->id ?? null,
+            'identity_firebird_user_clave' => $identity->firebird_user_clave ?? null,
+            'identity_firebird_tb_clave' => $identity->firebird_tb_clave ?? null,
+            'identity_empresa' => $identity->firebird_empresa ?? null,
+            'identity_tb_tabla' => $identity->firebird_tb_tabla ?? null,
+        ]);
+
+        $roles = collect();
+        if ($identity) {
+            $roles = $identity->roles()->get();
+        }
+
+        Log::info('🎭 MYSQL_ROLES', [
+            'identity_id' => $identity->id ?? null,
+            'roles_count' => $roles->count(),
+            'roles' => $roles->pluck('name')->values()->all(), // si tu tabla roles trae "name"
+        ]);
+
+        // ✅ JWT sub = ID
+        $payload = [
+            'sub'     => $userId,
+            'correo'  => $usuario->CORREO,
+            'usuario' => $usuario->USUARIO,
+            'iat'     => time(),
+            'exp'     => time() + 86400
+        ];
+
+        // 🧨 ASSERT para que quede clarísimo en log
+        if ((int)$payload['sub'] !== (int)$usuario->ID) {
+            Log::error('🚨 JWT_SUB_NOT_ID', [
+                'payload_sub' => $payload['sub'],
+                'usuario_id' => $usuario->ID,
+                'usuario_clave' => $usuario->CLAVE,
+            ]);
+        } else {
+            Log::info('✅ JWT_SUB_IS_ID', [
+                'payload_sub' => $payload['sub'],
+                'usuario_id' => $usuario->ID,
+            ]);
+        }
+
+        $token = JWT::encode($payload, env('JWT_SECRET'), 'HS256');
+
+        // 🔥 Datos NOI usando CLAVE (no ID)
+        $departamentos = collect();
+        $slRow = null;
+        $vcRow = null;
+        $hvcRow = null;
+        $mfRow = null;
+        $acRows = collect();
+        $tbRow = null;
+        $turnoActivo = null;
+
+        $empresaNoi = $identity->firebird_empresa ?? '04';
+
+        Log::info('🏢 NOI_CONTEXT', [
+            'empresaNoi' => $empresaNoi,
+            'claveTrab_for_NOI' => $claveTrab,
+            'will_query_noi' => (bool) $claveTrab,
+        ]);
+
+        if ($claveTrab) {
+            try {
+                $firebirdNoi = new FirebirdEmpresaManualService($empresaNoi, 'SRVNOI');
+
+                // TB (base)
+                $tb = $firebirdNoi->getOperationalTable('TB')
+                    ->keyBy(fn($row) => trim((string)$row->CLAVE));
+                $tbRow = $tb[$claveTrab] ?? null;
+
+                Log::info('📘 NOI_TB_LOOKUP', [
+                    'claveTrab' => $claveTrab,
+                    'tb_found' => $tbRow ? true : false,
+                ]);
+
+                // SL
+                $sl = $firebirdNoi->getOperationalTable('SL')
+                    ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
+                $slRow = $sl[$claveTrab] ?? null;
+
+                Log::info('💰 NOI_SL_LOOKUP', [
+                    'claveTrab' => $claveTrab,
+                    'sl_found' => $slRow ? true : false,
+                ]);
+
+                // VC
+                $vc = $firebirdNoi->getOperationalTable('VC')
+                    ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
+                $vcRow = $vc[$claveTrab] ?? null;
+
+                Log::info('🏖️ NOI_VC_LOOKUP', [
+                    'claveTrab' => $claveTrab,
+                    'vc_found' => $vcRow ? true : false,
+                ]);
+
+                // Turno
+                if ($identity) {
+                    $turnoActivo = $identity->turnoActivo()
+                        ->with(['turno.turnoDias', 'status'])
+                        ->first();
+                }
+
+                Log::info('✅ NOI_DATA_OK', [
+                    'claveTrab' => $claveTrab,
+                    'has_tb' => (bool) $tbRow,
+                    'has_sl' => (bool) $slRow,
+                    'has_vc' => (bool) $vcRow,
+                ]);
+
+            } catch (\Throwable $e) {
+                Log::error('⚠️ NOI_DATA_ERROR', [
+                    'empresa' => $empresaNoi,
+                    'claveTrab' => $claveTrab,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        } else {
+            Log::warning('⚠️ NOI_SKIPPED_NO_CLAVE', [
+                'firebird_id' => $userId,
+                'firebird_clave' => $usuario->CLAVE ?? null
+            ]);
+        }
+
+        Log::info('✅ LOGIN_SUCCESS', [
+            'firebird_id' => $userId,
+            'firebird_clave' => $claveTrab,
+            'identity_id' => $identity->id ?? null,
+        ]);
 
         return response()->json([
-            'accessToken' => $token,
-            'token_type' => 'Bearer',
-            'expires_in' => 3600, // Opcional: 1 hora
-            'user' => new UsuarioResource($usuario)
+            'encrypt' => $token,
+            'user' => new UsuarioResource($usuario, [
+                'departamentos' => $departamentos,
+                'sl' => $slRow,
+                'vacaciones' => $vcRow,
+                'historialvacaciones' => $hvcRow,
+                'faltas' => $mfRow,
+                'acumuladosperiodos' => $acRows,
+                'roles' => $roles,
+                'TB' => $tbRow,
+
+                // 🧾 explícito para que lo veas en response también
+                'firebird_user_id' => $userId,        // ✅ AUTH
+                'firebird_user_clave' => $claveTrab,  // ✅ NOI
+                'turnoActivo' => $turnoActivo,
+            ])
         ], 200);
 
-    } catch (Exception $e) {
-
-        Log::error('Error en signIn(): ' . $e->getMessage());
+    } catch (\Throwable $e) {
+        Log::error('💥 Error en signIn()', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+            'email' => $request->email ?? null
+        ]);
 
         return response()->json([
-            'message' => 'Error al iniciar sesión'
+            'message' => 'Error al iniciar sesión',
+            'debug' => config('app.debug') ? $e->getMessage() : null
         ], 500);
     }
 }
+
+
 
 
     /**
@@ -93,7 +279,7 @@ class AuthController extends Controller
     public function signInWithToken(Request $request)
     {
         try {
-            $token = $request->input('accessToken');
+            $token = $request->input('encrypt');
 
             if (!$token) {
                 return response()->json([
@@ -115,16 +301,20 @@ class AuthController extends Controller
             $newToken = $this->generateToken($usuario);
 
             return response()->json([
-                'accessToken' => $newToken,
                 'user' => [
-                    'nombre' => $usuario->nombre,
-                    'correo' => $usuario->correo,
-                    'usuario' => $usuario->usuario,
-                    'status_id' => $usuario->status_id,
-                    'departamento_id' => $usuario->departamento_id,
+                    'id' => $usuario->CLAVE,
+                    'name' => $usuario->NOMBRE,
+                    'email' => $usuario->CORREO,
+                    'usuario' => $usuario->USUARIO,
+                    'status' => $usuario->STATUS,
+                    'depto' => $usuario->DEPTO,
+                    'departamento' => $usuario->DEPARTAMENTO,
                     'direccion_id' => $usuario->direccion_id,
-                    'photo' => $usuario->photo
-                ]
+                    'photo' => $usuario->PHOTO
+                ],
+                'encrypt' => $newToken,
+                'token_type'  => 'Bearer',
+                'expires_in'  => 86400
             ], 200);
         } catch (Exception $e) {
             Log::error('Error en signInWithToken: ' . $e->getMessage());
@@ -144,11 +334,11 @@ class AuthController extends Controller
 
         $payload = [
             'iss' => env('APP_URL', 'http://localhost'),
-            'sub' => $usuario->id,
+            'sub' => $usuario->CLAVE,
             'iat' => $issuedAt,
             'exp' => $expirationTime,
-            'correo' => $usuario->correo,
-            'usuario' => $usuario->usuario,
+            'correo' => $usuario->CORREO,
+            'usuario' => $usuario->USUARIO,
         ];
 
         return JWT::encode($payload, $this->jwtSecret, $this->jwtAlgorithm);
@@ -171,26 +361,26 @@ class AuthController extends Controller
             }
 
             $usuario = Users::create([
-                'nombre' => $request->name,
-                'correo' => $request->email,
-                'password' => Hash::make($request->password),
-                'photo' => 'photos/users.jpg',
+                'NOMBRE' => $request->name,
+                'CORREO' => $request->email,
+                'PASSWORD2' => Hash::make($request->password),
+                'PHOTO' => 'photos/users.jpg',
             ]);
 
             // Crear registro en model_has_roles
             ModelHasRole::create([
-                'role_clave' => 1, // ID del rol COLABORADOR
-                'model_clave' => $usuario->id,
-                'subrol_id' => null,
-                'model_type' => Users::class,
+                'ROLE_CLAVE' => 1, // ID del rol COLABORADOR
+                'MODEL_CLAVE' => $usuario->CLAVE,
+                'SUBROL_ID' => null,
+                'MODEL_TYPE' => Users::class,
             ]);
 
             return response()->json([
                 'message' => 'Usuario creado exitosamente',
                 'user' => [
-                    'id' => $usuario->id,
-                    'name' => $usuario->nombre,
-                    'email' => $usuario->correo,
+                    'id' => $usuario->CLAVE,
+                    'name' => $usuario->NOMBRE,
+                    'email' => $usuario->CORREO,
                 ]
             ], 201);
         } catch (Exception $e) {
@@ -320,7 +510,7 @@ class AuthController extends Controller
 
             $token = $this->generateToken($usuario);
 
-            return response()->json(['accessToken' => $token], 200);
+            return response()->json(['encrypt' => $token], 200);
         } catch (Exception $e) {
             Log::error('Error en unlockSession: ' . $e->getMessage());
             return response()->json(['message' => 'Error al desbloquear sesión'], 500);

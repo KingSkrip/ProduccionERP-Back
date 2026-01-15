@@ -23,8 +23,8 @@ class CatalogosController extends Controller
                 'message' => 'Catálogos cargados correctamente.',
                 'data' => [
                     'departamentos' => Departamento::select('id', 'nombre')->get(),
-                    'roles'         => Rol::select('id', 'nombre', 'guard_name')->get(),
-                    'subroles'      => Subrole::select('id', 'nombre', 'guard_name')->get(),
+                    'roles'         => Rol::select('id', 'nombre', 'GUARD_NAME')->get(),
+                    'subroles'      => Subrole::select('id', 'nombre', 'GUARD_NAME')->get(),
                     'statuses'      => Status::select('id', 'nombre', 'descripcion')->get(),
                 ]
             ], 200);
@@ -67,7 +67,7 @@ class CatalogosController extends Controller
     public function getRoles()
     {
         try {
-            $data = Rol::select('id', 'nombre', 'guard_name')->get();
+            $data = Rol::select('id', 'nombre', 'GUARD_NAME')->get();
 
             return response()->json([
                 'success' => true,
@@ -90,7 +90,7 @@ class CatalogosController extends Controller
     public function getSubroles()
     {
         try {
-            $data = Subrole::select('id', 'nombre', 'guard_name')->get();
+            $data = Subrole::select('id', 'nombre', 'GUARD_NAME')->get();
 
             return response()->json([
                 'success' => true,

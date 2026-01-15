@@ -1,0 +1,27 @@
+<?php
+
+namespace App\Models\Antiguos;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Models\Firebird\Users;
+
+class HorarioEntrada extends Model
+{
+    protected $table = 'horarios';
+
+    protected $fillable = [
+        'user_id',
+        'hora_entrada',
+        'hora_salida',
+        'comentarios',
+    ];
+
+    /**
+     * Relación con User
+     */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(Users::class, 'user_id');
+    }
+}

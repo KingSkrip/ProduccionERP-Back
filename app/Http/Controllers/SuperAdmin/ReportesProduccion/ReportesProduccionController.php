@@ -6,10 +6,23 @@ use App\Http\Controllers\Controller;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class ReportesProduccionController extends Controller
 {
+    /**
+     * Departamentos excluidos del reporte
+     */
+    private $departamentosExcluidos = [
+        'ACABADO',
+        'ACABADO TUBULAR',
+        'ALMACEN TELA ACABADA PT',
+        'CONTROL DE CALIDAD',
+        'PROGRAMACION Y PLANEACION',
+    ];
+
+
     /**
      * Display a listing of the resource with date filters.
      */
@@ -26,26 +39,25 @@ class ReportesProduccionController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Parámetros inválidos',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 400);
             }
 
             $fechaInicio = $request->input('fecha_inicio');
             $fechaFin = $request->input('fecha_fin');
 
-            // Validar formato de fechas Firebird (dd.MM.yyyy HH:mm:ss)
+            // Validar formato de fechas Firebird
             if ($fechaInicio && $fechaFin) {
                 if (
-                    !$this->validarFormatoFechaFirebird($fechaInicio) ||
-                    !$this->validarFormatoFechaFirebird($fechaFin)
+                    ! $this->validarFormatoFechaFirebird($fechaInicio) ||
+                    ! $this->validarFormatoFechaFirebird($fechaFin)
                 ) {
                     return response()->json([
                         'success' => false,
-                        'message' => 'Formato de fecha inválido. Use: dd.MM.yyyy HH:mm:ss'
+                        'message' => 'Formato de fecha inválido. Use: dd.MM.yyyy HH:mm:ss',
                     ], 400);
                 }
             }
-
 
             // Consulta a Firebird con filtros de fecha
             $query = DB::connection('firebird')
@@ -58,13 +70,16 @@ class ReportesProduccionController extends Controller
                     DB::raw('SUM("op"."CANTENT") as CANTIDAD')
                 );
 
-            // ✅ Excluir TEJIDO
+            // ✅ Excluir TEJIDO y departamentos específicos
             $query->where(function ($q) {
                 $q->where('p.PROCESO', '<>', 'TEJIDO')
                     ->where('d.DEPTO', '<>', 'TEJIDO');
             });
 
-            // ✅ SOLO filtra si vienen fechas
+            // 🔥 NUEVO: Excluir departamentos adicionales
+            $query->whereNotIn('d.DEPTO', $this->departamentosExcluidos);
+
+            // Filtrar por fechas si vienen
             if ($fechaInicio && $fechaFin) {
                 $query->whereBetween('op.FECHAENT', [$fechaInicio, $fechaFin]);
             }
@@ -76,6 +91,171 @@ class ReportesProduccionController extends Controller
                 )
                 ->get();
 
+            return response()->json([
+                'success' => true,
+                'data' => $reportes,
+                'filtros' => [
+                    'fecha_inicio' => $fechaInicio,
+                    'fecha_fin' => $fechaFin,
+                    'total_registros' => $reportes->count(),
+                    'departamentos_excluidos' => $this->departamentosExcluidos,
+                ],
+            ], 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al consultar reportes de producción',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * 🔥 FACTURADO DETALLE: Desglose por partida
+     */
+    public function getFacturado(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'fecha_inicio' => 'required|string',
+                'fecha_fin'    => 'required|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Parámetros inválidos',
+                    'errors' => $validator->errors(),
+                ], 400);
+            }
+
+            // Extraer solo la parte de fecha (YYYY-MM-DD)
+            $fechaInicio = substr($request->input('fecha_inicio'), 0, 10);
+            $fechaFin    = substr($request->input('fecha_fin'), 0, 10);
+            // Log::info('=== FACTURADO DETALLE DEBUG ===');
+            // Log::info('Fecha inicio: ' . $fechaInicio);
+            // Log::info('Fecha fin: ' . $fechaFin);
+
+            $sql = "
+            SELECT SUM(psd.PNETO) AS PNETO, psd.PARTIDA 
+            FROM PSDTABPZAS psd 
+            LEFT JOIN PTPLISTENC pl ON pl.id = psd.id_fol_pl 
+                AND pl.FECHAYHORA >= ? 
+                AND pl.FECHAYHORA < ? 
+            GROUP BY psd.PARTIDA
+            ORDER BY psd.PARTIDA
+        ";
+
+            DB::connection('firebird')->enableQueryLog();
+
+            $detalle = DB::connection('firebird')->select($sql, [$fechaInicio, $fechaFin]);
+
+            $queries = DB::connection('firebird')->getQueryLog();
+
+            // Log::info('SQL ejecutado:');
+            // Log::info(json_encode($queries, JSON_PRETTY_PRINT));
+            // Log::info('Total registros: ' . count($detalle));
+            // Log::info('=== FIN DEBUG ===');
+
+            // Calcular total sumando todos los registros
+            $total = array_reduce($detalle, function ($carry, $item) {
+                return $carry + ($item->PNETO ?? 0);
+            }, 0);
+
+            // Formatear detalle para response
+            $detalleFormateado = array_map(function ($item) {
+                return [
+                    'partida' => $item->PARTIDA,
+                    'pneto' => (float) ($item->PNETO ?? 0),
+                ];
+            }, $detalle);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'total' => [
+                        'pneto' => (float) $total,
+                    ],
+                    'detalle' => $detalleFormateado,
+                ],
+                'filtros' => [
+                    'fecha_inicio' => $fechaInicio,
+                    'fecha_fin' => $fechaFin,
+                    'total_partidas' => count($detalle),
+                ],
+            ], 200);
+        } catch (\Throwable $e) {
+            // Log::error('Error en getFacturadoDetalle: ' . $e->getMessage());
+            // Log::error('Stack trace: ' . $e->getTraceAsString());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener detalle de FACTURADO',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * 🔥 Obtener solo datos de ESTAMPADO con filtros de fecha.
+     */
+    public function getEstampado(Request $request)
+    {
+        try {
+            // Validar parámetros de entrada
+            $validator = Validator::make($request->all(), [
+                'fecha_inicio' => 'nullable|string',
+                'fecha_fin' => 'nullable|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Parámetros inválidos',
+                    'errors' => $validator->errors(),
+                ], 400);
+            }
+
+            $fechaInicio = $request->input('fecha_inicio');
+            $fechaFin = $request->input('fecha_fin');
+
+            // Validar formato de fechas Firebird
+            if ($fechaInicio && $fechaFin) {
+                if (
+                    ! $this->validarFormatoFechaFirebird($fechaInicio) ||
+                    ! $this->validarFormatoFechaFirebird($fechaFin)
+                ) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Formato de fecha inválido. Use: dd.MM.yyyy HH:mm:ss',
+                    ], 400);
+                }
+            }
+
+            // Consulta a Firebird SOLO ESTAMPADO
+            $query = DB::connection('firebird')
+                ->table('ORDENESPROC as op')
+                ->join('PROCESOS as p', 'p.CODIGO', '=', 'op.PROC')
+                ->join('DEPTOS as d', 'd.CLAVE', '=', 'op.DEPTO')
+                ->select(
+                    'd.DEPTO as departamento',
+                    'p.PROCESO as proceso',
+                    DB::raw('SUM("op"."CANTENT") as CANTIDAD'),
+                    DB::raw('SUM("op"."PZASENT") as PIEZAS')
+                )
+                ->where('d.DEPTO', 'ESTAMPADO')  // 🔥 Filtrar por DEPARTAMENTO también
+                ->where('p.PROCESO', 'ESTAMPADO'); // 🔥 Y por PROCESO
+
+            // 🔥 IMPORTANTE: Aplicar exclusiones igual que index()
+            $query->whereNotIn('d.DEPTO', $this->departamentosExcluidos);
+
+            // 🔥 Filtrar por fechas si vienen (igual que index)
+            if ($fechaInicio && $fechaFin) {
+                $query->whereBetween('op.FECHAENT', [$fechaInicio, $fechaFin]);
+            }
+
+            $reportes = $query
+                ->groupBy('d.DEPTO', 'p.PROCESO')
+                ->get();
 
             return response()->json([
                 'success' => true,
@@ -83,18 +263,99 @@ class ReportesProduccionController extends Controller
                 'filtros' => [
                     'fecha_inicio' => $fechaInicio,
                     'fecha_fin' => $fechaFin,
-                    'total_registros' => $reportes->count()
-                ]
+                    'total_registros' => $reportes->count(),
+                    'departamentos_excluidos' => $this->departamentosExcluidos,
+                    'proceso' => 'ESTAMPADO',
+                ],
             ], 200);
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error al consultar reportes de producción',
-                'error' => $e->getMessage()
+                'message' => 'Error al consultar reportes de producción (ESTAMPADO)',
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
 
+    /**
+     * 🔥 Obtener solo datos de TINTORERIA con filtros de fecha.
+     */
+    public function getTintoreria(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'fecha_inicio' => 'nullable|string',
+                'fecha_fin' => 'nullable|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Parámetros inválidos',
+                    'errors' => $validator->errors(),
+                ], 400);
+            }
+
+            $fechaInicio = $request->input('fecha_inicio');
+            $fechaFin = $request->input('fecha_fin');
+
+            // 🔥 Validar formato igual que index()
+            if ($fechaInicio && $fechaFin) {
+                if (
+                    ! $this->validarFormatoFechaFirebird($fechaInicio) ||
+                    ! $this->validarFormatoFechaFirebird($fechaFin)
+                ) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Formato de fecha inválido. Use: dd.MM.yyyy HH:mm:ss',
+                    ], 400);
+                }
+            }
+
+            $query = DB::connection('firebird')
+                ->table('ORDENESPROC as op')
+                ->join('PROCESOS as p', 'p.CODIGO', '=', 'op.PROC')
+                ->join('DEPTOS as d', 'd.CLAVE', '=', 'op.DEPTO')
+                ->select(
+                    'd.DEPTO as departamento',
+                    'p.PROCESO as proceso',
+                    DB::raw('SUM("op"."CANTENT") as CANTIDAD'),
+                    DB::raw('SUM("op"."PZASENT") as PIEZAS')
+                )
+                ->where('d.DEPTO', 'TINTORERIA')
+                ->where('p.PROCESO', 'TEÑIDO'); // 🔥 Mantén este filtro si solo quieres TEÑIDO
+
+            // 🔥 IMPORTANTE: Aplicar exclusiones igual que index()
+            $query->whereNotIn('d.DEPTO', $this->departamentosExcluidos);
+
+            // 🔥 Filtrar por fechas si vienen (igual que index)
+            if ($fechaInicio && $fechaFin) {
+                $query->whereBetween('op.FECHAENT', [$fechaInicio, $fechaFin]);
+            }
+
+            $reportes = $query
+                ->groupBy('d.DEPTO', 'p.PROCESO')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $reportes,
+                'filtros' => [
+                    'fecha_inicio' => $fechaInicio,
+                    'fecha_fin' => $fechaFin,
+                    'total_registros' => $reportes->count(),
+                    'departamento' => 'TINTORERIA',
+                    'proceso' => 'TEÑIDO',
+                ],
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al consultar reportes de TINTORERIA',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 
     /**
      * 🔥 Obtener producción de TEJIDO por artículo (con filtros de fecha)
@@ -103,7 +364,7 @@ class ReportesProduccionController extends Controller
     {
         try {
             $fechaInicio = $request->input('fecha_inicio');
-            $fechaFin    = $request->input('fecha_fin');
+            $fechaFin = $request->input('fecha_fin');
 
             $query = "
             SELECT
@@ -129,10 +390,10 @@ class ReportesProduccionController extends Controller
             ";
             }
 
-            $query .= "
+            $query .= '
             GROUP BY a.NOMBRE
             ORDER BY a.NOMBRE
-        ";
+        ';
 
             $data = DB::connection('firebird')->select($query);
 
@@ -141,14 +402,14 @@ class ReportesProduccionController extends Controller
                 'data' => $data,
                 'filtros' => [
                     'fecha_inicio' => $fechaInicio,
-                    'fecha_fin' => $fechaFin
-                ]
+                    'fecha_fin' => $fechaFin,
+                ],
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener producción de tejido',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -160,7 +421,7 @@ class ReportesProduccionController extends Controller
     {
         try {
             $fechaInicio = $request->input('fecha_inicio');
-            $fechaFin    = $request->input('fecha_fin');
+            $fechaFin = $request->input('fecha_fin');
 
             $query = "
         SELECT
@@ -188,7 +449,7 @@ class ReportesProduccionController extends Controller
 
             if ($fechaInicio && $fechaFin) {
                 $fechaInicioTS = date('d.m.Y H:i:s', strtotime($fechaInicio));
-                $fechaFinTS    = date('d.m.Y H:i:s', strtotime($fechaFin . ' +1 day'));
+                $fechaFinTS = date('d.m.Y H:i:s', strtotime($fechaFin . ' +1 day'));
 
                 $query .= "
             WHERE (p.FECHAYHORAREV >= CAST('$fechaInicioTS' AS TIMESTAMP)
@@ -196,10 +457,10 @@ class ReportesProduccionController extends Controller
             ";
             }
 
-            $query .= "
+            $query .= '
         GROUP BY a.NOMBRE
         ORDER BY a.NOMBRE
-        ";
+        ';
 
             $data = DB::connection('firebird')->select($query);
 
@@ -208,23 +469,18 @@ class ReportesProduccionController extends Controller
                 'data' => $data,
                 'filtros' => [
                     'fecha_inicio' => $fechaInicio,
-                    'fecha_fin' => $fechaFin
-                ]
+                    'fecha_fin' => $fechaFin,
+                ],
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener revisado de tejido',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
 
-
-
-    /**
-     * 🔥 Obtener por revisar por artículo (con filtros de fecha) + conteo total
-     */
     /**
      * 🔥 Obtener por revisar por artículo (con filtros de fecha) + conteo total
      */
@@ -232,11 +488,11 @@ class ReportesProduccionController extends Controller
     {
         try {
             $fechaInicio = $request->input('fecha_inicio');
-            $fechaFin    = $request->input('fecha_fin');
+            $fechaFin = $request->input('fecha_fin');
 
             // Formatear fechas a TIMESTAMP Firebird (YYYY-MM-DD HH:MM:SS)
             $fechaInicioTS = $fechaInicio ? date('Y-m-d 00:00:00', strtotime($fechaInicio)) : null;
-            $fechaFinTS    = $fechaFin ? date('Y-m-d 23:59:59', strtotime($fechaFin)) : null;
+            $fechaFinTS = $fechaFin ? date('Y-m-d 23:59:59', strtotime($fechaFin)) : null;
 
             // Query por artículo
             $query = "
@@ -261,22 +517,22 @@ class ReportesProduccionController extends Controller
             AND p.FECHAYHORAPSD <= CAST('$fechaFinTS' AS TIMESTAMP)
             ";
             } else {
-                $query .= " WHERE COALESCE(p.ISREV,0) = 0 ";
+                $query .= ' WHERE COALESCE(p.ISREV,0) = 0 ';
             }
 
-            $query .= "
+            $query .= '
             GROUP BY a.NOMBRE
             ORDER BY a.NOMBRE
-            ";
+            ';
 
             $data = DB::connection('firebird')->select($query);
 
             // Query total de registros por fecha
-            $totalQuery = "
+            $totalQuery = '
             SELECT COUNT(*) AS TOTAL_REGISTROS
             FROM PSDTABPZASTJ p
             WHERE COALESCE(p.ISREV,0) = 0
-            ";
+            ';
 
             if ($fechaInicioTS && $fechaFinTS) {
                 $totalQuery .= "
@@ -293,19 +549,17 @@ class ReportesProduccionController extends Controller
                 'total' => $total[0]->TOTAL_REGISTROS ?? 0,
                 'filtros' => [
                     'fecha_inicio' => $fechaInicio,
-                    'fecha_fin' => $fechaFin
-                ]
+                    'fecha_fin' => $fechaFin,
+                ],
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener saldos por revisar de tejido',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
-
-
 
     /**
      * 🔥 Obtener saldos por artículo (con filtros de fecha)
@@ -314,7 +568,7 @@ class ReportesProduccionController extends Controller
     {
         try {
             $fechaInicio = $request->input('fecha_inicio');
-            $fechaFin    = $request->input('fecha_fin');
+            $fechaFin = $request->input('fecha_fin');
 
             $query = "
             SELECT
@@ -339,7 +593,7 @@ class ReportesProduccionController extends Controller
 
             if ($fechaInicio && $fechaFin) {
                 $fechaInicioTS = date('Y-m-d 00:00:00', strtotime($fechaInicio));
-                $fechaFinTS    = date('Y-m-d 23:59:59', strtotime($fechaFin));
+                $fechaFinTS = date('Y-m-d 23:59:59', strtotime($fechaFin));
 
                 $query .= "
                 WHERE p.FECHAYHORAREV BETWEEN CAST('$fechaInicioTS' AS TIMESTAMP)
@@ -348,10 +602,10 @@ class ReportesProduccionController extends Controller
             ";
             }
 
-            $query .= "
+            $query .= '
             GROUP BY a.NOMBRE
             ORDER BY a.NOMBRE
-        ";
+        ';
 
             $data = DB::connection('firebird')->select($query);
 
@@ -360,21 +614,17 @@ class ReportesProduccionController extends Controller
                 'data' => $data,
                 'filtros' => [
                     'fecha_inicio' => $fechaInicio,
-                    'fecha_fin' => $fechaFin
-                ]
+                    'fecha_fin' => $fechaFin,
+                ],
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener saldos de tejido revisado',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
-
-
-
-
 
     /**
      * 🔥 Obtener producción por tipo de tejido y artículo
@@ -387,7 +637,7 @@ class ReportesProduccionController extends Controller
 
             // Formatear fechas a TIMESTAMP Firebird (dd.MM.yyyy HH:mm:ss)
             $fechaInicioTS = $fechaInicio ? date('d.m.Y 00:00:00', strtotime($fechaInicio)) : null;
-            $fechaFinTS    = $fechaFin ? date('d.m.Y 23:59:59', strtotime($fechaFin)) : null;
+            $fechaFinTS = $fechaFin ? date('d.m.Y 23:59:59', strtotime($fechaFin)) : null;
 
             $query = "
             SELECT
@@ -414,13 +664,13 @@ class ReportesProduccionController extends Controller
                   AND P.ESTATUS = 1
             ";
             } else {
-                $query .= " WHERE P.ESTATUS = 1 ";
+                $query .= ' WHERE P.ESTATUS = 1 ';
             }
 
-            $query .= "
+            $query .= '
             GROUP BY P.TIPO, VA.ARTICULO
             ORDER BY VA.ARTICULO ASC, P.TIPO ASC
-        ";
+        ';
 
             $data = DB::connection('firebird')->select($query);
 
@@ -429,19 +679,17 @@ class ReportesProduccionController extends Controller
                 'data' => $data,
                 'filtros' => [
                     'fecha_inicio' => $fechaInicio,
-                    'fecha_fin' => $fechaFin
-                ]
+                    'fecha_fin' => $fechaFin,
+                ],
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener producción por tipo de tejido',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
-
-
 
     /**
      * Validar formato de fecha Firebird (dd.MM.yyyy HH:mm:ss)
@@ -449,6 +697,7 @@ class ReportesProduccionController extends Controller
     private function validarFormatoFechaFirebird(string $fecha): bool
     {
         $pattern = '/^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2}$/';
+
         return preg_match($pattern, $fecha) === 1;
     }
 
@@ -478,13 +727,13 @@ class ReportesProduccionController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $summary
+                'data' => $summary,
             ], 200);
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener resumen',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -519,13 +768,13 @@ class ReportesProduccionController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $reportes
+                'data' => $reportes,
             ], 200);
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al consultar reportes por departamento',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }

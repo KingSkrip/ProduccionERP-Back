@@ -3,9 +3,11 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class WorkOrder extends Model
 {
+    protected $connection = 'mysql';
     protected $table = 'workorders';
 
     protected $fillable = [
@@ -21,20 +23,23 @@ class WorkOrder extends Model
         'comentarios_solicitante',
     ];
 
-    // Relación: solicitante (usuario que creó la orden)
-    public function solicitante()
+    public function solicitante(): BelongsTo
     {
-        return $this->belongsTo(Users::class, 'solicitante_id');
+        return $this->belongsTo(
+            UserFirebirdIdentity::class,
+            'solicitante_id'
+        );
     }
 
-    // Relación: aprobador (jefe directo)
-    public function aprobador()
+    public function aprobador(): BelongsTo
     {
-        return $this->belongsTo(Users::class, 'aprobador_id');
+        return $this->belongsTo(
+            UserFirebirdIdentity::class,
+            'aprobador_id'
+        );
     }
 
-    // Relación: status actual
-    public function status()
+    public function status(): BelongsTo
     {
         return $this->belongsTo(Status::class, 'status_id');
     }

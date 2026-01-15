@@ -6,7 +6,7 @@ use App\Helpers\ValidationMessages;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UsuarioResource;
 use App\Models\ModelHasRole;
-use App\Models\Users;
+use App\Models\Firebird;
 use Exception;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Validator;
 class SuAdminController extends Controller
 {
     /**
-     * Listado de usuarios con role_clave = 3 (RH)
+     * Listado de usuarios con ROLE_CLAVE = 3 (RH)
      */
     public function index()
     {
@@ -26,7 +26,7 @@ class SuAdminController extends Controller
             $userId = auth()->id();
 
             $usuarios = Users::whereHas('roles', function ($query) {
-                $query->where('role_clave', 3);
+                $query->where('ROLE_CLAVE', 3);
             })
                 ->where('id', '!=', $userId)
                 ->get();
@@ -57,7 +57,7 @@ class SuAdminController extends Controller
     }
 
     /**
-     * Registrar nuevo usuario RH (role_clave = 3)
+     * Registrar nuevo usuario RH (ROLE_CLAVE = 3)
      */
     public function store(Request $request)
     {
@@ -113,9 +113,9 @@ class SuAdminController extends Controller
 
             // Asignar rol RH
             ModelHasRole::create([
-                'role_clave' => 3,
-                'model_clave' => $usuario->id,
-                'model_type' => Users::class,
+                'ROLE_CLAVE' => 3,
+                'MODEL_CLAVE' => $usuario->id,
+                'MODEL_TYPE' => Users::class,
             ]);
 
             DB::commit();
@@ -269,8 +269,8 @@ class SuAdminController extends Controller
             $usuario = Users::findOrFail($id);
 
             // Eliminar roles
-            ModelHasRole::where('model_clave', $id)
-                ->where('model_type', Users::class)
+            ModelHasRole::where('MODEL_CLAVE', $id)
+                ->where('MODEL_TYPE', Users::class)
                 ->delete();
 
             // Eliminar foto si no es la default
