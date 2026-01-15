@@ -148,7 +148,9 @@ Route::prefix('reportes-produccion')->group(function () {
     Route::get('/entregado-embarques', [ReportesProduccionController::class, 'getEntregadoaEmbarques']);
 
 
-     Route::get('/factuado', [ReportesProduccionController::class, 'getFacturado']);
+     Route::get('/facturado', [ReportesProduccionController::class, 'getFacturado']);
+     Route::get('/tejido-resumen', [ReportesProduccionController::class, 'getTejido']);
+
 
 
 
