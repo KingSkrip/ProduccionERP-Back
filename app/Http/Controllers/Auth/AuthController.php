@@ -34,11 +34,11 @@ class AuthController extends Controller
     }
 
     /**
- * Iniciar sesión con correo y contraseña
- * - AUTH/JWT: USUARIOS.ID
- * - Relación NOI (TB/SL/VC/etc): USUARIOS.CLAVE
- */
-public function signIn(Request $request)
+     * Iniciar sesión con correo y contraseña
+     * - AUTH/JWT: USUARIOS.ID
+     * - Relación NOI (TB/SL/VC/etc): USUARIOS.CLAVE
+     */
+   public function signIn(Request $request)
 {
     try {
         $request->validate([
@@ -87,19 +87,13 @@ public function signIn(Request $request)
             return response()->json(['message' => 'Credenciales incorrectas'], 401);
         }
 
-        // ✅ ID para sesión
+        // ✅ ID para sesión (JWT)
         $userId = (int) $usuario->ID;
 
-        // ✅ CLAVE para relacionar NOI
-        $claveTrab = isset($usuario->CLAVE) ? trim((string) $usuario->CLAVE) : null;
-
-        Log::info('🧠 LOGIN_KEYS_RESOLVED', [
-            'auth_uses' => 'ID',
-            'noi_uses' => 'CLAVE',
+        Log::info('🧠 LOGIN_AUTH_KEY', [
+            'auth_uses' => 'USUARIOS.ID',
             'firebird_id' => $userId,
-            'firebird_clave' => $claveTrab,
             'type_id' => gettype($userId),
-            'type_clave' => gettype($claveTrab),
         ]);
 
         // 🔹 Pivote MySQL (roles/empresa)
@@ -122,10 +116,10 @@ public function signIn(Request $request)
         Log::info('🎭 MYSQL_ROLES', [
             'identity_id' => $identity->id ?? null,
             'roles_count' => $roles->count(),
-            'roles' => $roles->pluck('name')->values()->all(), // si tu tabla roles trae "name"
+            'roles' => $roles->pluck('name')->values()->all(),
         ]);
 
-        // ✅ JWT sub = ID
+        // ✅ JWT sub = USUARIOS.ID
         $payload = [
             'sub'     => $userId,
             'correo'  => $usuario->CORREO,
@@ -134,23 +128,14 @@ public function signIn(Request $request)
             'exp'     => time() + 86400
         ];
 
-        // 🧨 ASSERT para que quede clarísimo en log
-        if ((int)$payload['sub'] !== (int)$usuario->ID) {
-            Log::error('🚨 JWT_SUB_NOT_ID', [
-                'payload_sub' => $payload['sub'],
-                'usuario_id' => $usuario->ID,
-                'usuario_clave' => $usuario->CLAVE,
-            ]);
-        } else {
-            Log::info('✅ JWT_SUB_IS_ID', [
-                'payload_sub' => $payload['sub'],
-                'usuario_id' => $usuario->ID,
-            ]);
-        }
+        Log::info('✅ JWT_SUB_IS_ID', [
+            'payload_sub' => $payload['sub'],
+            'usuario_id' => $usuario->ID,
+        ]);
 
         $token = JWT::encode($payload, env('JWT_SECRET'), 'HS256');
 
-        // 🔥 Datos NOI usando CLAVE (no ID)
+        // 🔥 Datos NOI usando TB.CLAVE (de identity)
         $departamentos = collect();
         $slRow = null;
         $vcRow = null;
@@ -160,45 +145,49 @@ public function signIn(Request $request)
         $tbRow = null;
         $turnoActivo = null;
 
+        // ✅ Obtener TB.CLAVE desde identity (NO USUARIOS.CLAVE)
+        $tbClave = $identity->firebird_tb_clave ?? null;
+        $tbClaveNorm = is_string($tbClave) ? trim($tbClave) : $tbClave;
         $empresaNoi = $identity->firebird_empresa ?? '04';
 
         Log::info('🏢 NOI_CONTEXT', [
             'empresaNoi' => $empresaNoi,
-            'claveTrab_for_NOI' => $claveTrab,
-            'will_query_noi' => (bool) $claveTrab,
+            'tb_clave_for_NOI' => $tbClaveNorm,
+            'usuarios_clave' => $usuario->CLAVE, // solo para comparar en log
+            'will_query_noi' => (bool) $tbClaveNorm,
         ]);
 
-        if ($claveTrab) {
+        if ($tbClaveNorm) {
             try {
                 $firebirdNoi = new FirebirdEmpresaManualService($empresaNoi, 'SRVNOI');
 
-                // TB (base)
+                // TB (base) - usando TB.CLAVE
                 $tb = $firebirdNoi->getOperationalTable('TB')
                     ->keyBy(fn($row) => trim((string)$row->CLAVE));
-                $tbRow = $tb[$claveTrab] ?? null;
+                $tbRow = $tb[$tbClaveNorm] ?? null;
 
                 Log::info('📘 NOI_TB_LOOKUP', [
-                    'claveTrab' => $claveTrab,
+                    'tb_clave' => $tbClaveNorm,
                     'tb_found' => $tbRow ? true : false,
                 ]);
 
-                // SL
+                // SL - usando TB.CLAVE
                 $sl = $firebirdNoi->getOperationalTable('SL')
                     ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
-                $slRow = $sl[$claveTrab] ?? null;
+                $slRow = $sl[$tbClaveNorm] ?? null;
 
                 Log::info('💰 NOI_SL_LOOKUP', [
-                    'claveTrab' => $claveTrab,
+                    'tb_clave' => $tbClaveNorm,
                     'sl_found' => $slRow ? true : false,
                 ]);
 
-                // VC
+                // VC - usando TB.CLAVE
                 $vc = $firebirdNoi->getOperationalTable('VC')
                     ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
-                $vcRow = $vc[$claveTrab] ?? null;
+                $vcRow = $vc[$tbClaveNorm] ?? null;
 
                 Log::info('🏖️ NOI_VC_LOOKUP', [
-                    'claveTrab' => $claveTrab,
+                    'tb_clave' => $tbClaveNorm,
                     'vc_found' => $vcRow ? true : false,
                 ]);
 
@@ -210,7 +199,7 @@ public function signIn(Request $request)
                 }
 
                 Log::info('✅ NOI_DATA_OK', [
-                    'claveTrab' => $claveTrab,
+                    'tb_clave' => $tbClaveNorm,
                     'has_tb' => (bool) $tbRow,
                     'has_sl' => (bool) $slRow,
                     'has_vc' => (bool) $vcRow,
@@ -219,20 +208,21 @@ public function signIn(Request $request)
             } catch (\Throwable $e) {
                 Log::error('⚠️ NOI_DATA_ERROR', [
                     'empresa' => $empresaNoi,
-                    'claveTrab' => $claveTrab,
+                    'tb_clave' => $tbClaveNorm,
                     'error' => $e->getMessage(),
                 ]);
             }
         } else {
-            Log::warning('⚠️ NOI_SKIPPED_NO_CLAVE', [
+            Log::warning('⚠️ NOI_SKIPPED_NO_TB_CLAVE', [
                 'firebird_id' => $userId,
-                'firebird_clave' => $usuario->CLAVE ?? null
+                'identity_id' => $identity->id ?? null,
+                'identity_tb_clave' => $identity->firebird_tb_clave ?? null,
             ]);
         }
 
         Log::info('✅ LOGIN_SUCCESS', [
             'firebird_id' => $userId,
-            'firebird_clave' => $claveTrab,
+            'tb_clave' => $tbClaveNorm,
             'identity_id' => $identity->id ?? null,
         ]);
 
@@ -248,9 +238,9 @@ public function signIn(Request $request)
                 'roles' => $roles,
                 'TB' => $tbRow,
 
-                // 🧾 explícito para que lo veas en response también
-                'firebird_user_id' => $userId,        // ✅ AUTH
-                'firebird_user_clave' => $claveTrab,  // ✅ NOI
+                // 🧾 para debug/response
+                'firebird_user_id' => $userId,           // ✅ AUTH (JWT sub)
+                'firebird_user_clave' => $tbClaveNorm,   // ✅ NOI (TB.CLAVE)
                 'turnoActivo' => $turnoActivo,
             ])
         ], 200);

@@ -33,8 +33,8 @@ class UsuarioResource extends JsonResource
 
         return [
             // 🔹 IDENTIDAD FIREBIRD (MISMO CONTRATO)
-            // 'idUSUARIOS'       => $this->CLAVE ? trim((string) $this->CLAVE) : null,
-            // 'idPIVOTE'       => $this->ID ? trim((string) $this->ID) : null,
+            'firebird_user_clave'       => $this->CLAVE ? trim((string) $this->CLAVE) : null,
+            'firebird_user_id'       => $this->ID ? trim((string) $this->ID) : null,
             'name'     => $this->NOMBRE ? trim((string) $this->NOMBRE) : null,
             'email'    => $this->CORREO ? trim((string) $this->CORREO) : null,
             'usuario'  => $this->USUARIO ? trim((string) $this->USUARIO) : null,
