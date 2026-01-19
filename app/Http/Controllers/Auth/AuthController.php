@@ -133,7 +133,18 @@ class AuthController extends Controller
                 'usuario_id' => $usuario->ID,
             ]);
 
-            $token = JWT::encode($payload, env('JWT_SECRET'), 'HS256');
+            $key = config('jwt.secret');
+
+            if (!is_string($key) || $key === '') {
+                Log::error('JWT secret missing (config jwt.secret)', [
+                    'jwt_secret_env' => env('JWT_SECRET'),
+                    'jwt_secret_config' => $key,
+                ]);
+                return response()->json(['message' => 'JWT secret no configurado'], 500);
+            }
+            
+            $token = JWT::encode($payload, $key, 'HS256');
+            
 
             // 🔥 Datos NOI usando TB.CLAVE (de identity)
             $departamentos = collect();
