@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\SuperAdmin\AutorizacionPedidos;
 
-use App\Models\create_departamentos_table;
 use App\Http\Controllers\Controller;
 use Exception;
 use Illuminate\Http\Request;
@@ -22,23 +21,20 @@ class AutorizacionPedidosController extends Controller
             $empresa = $matches[0] ?? '01';
             Log::info('empresa de pedidos', ['empresa' => $empresa]);
 
-
-
             // 1️⃣ Pedidos (SP)
-            $pedidos = DB::connection('firebird')->select("
-    SELECT *
-    FROM P_PEDIDOSENCMAIN(?)
-    WHERE COALESCE(AUTORIZACRED, 0) = 0
-      AND COALESCE(NESTATUS, 0) <> 99
-    ORDER BY \"FECHA ELAB.\" DESC
-", [$empresa]);
-
+            $pedidos = DB::connection('firebird')->select('
+                SELECT *
+                FROM P_PEDIDOSENCMAIN(?)
+                WHERE COALESCE(AUTORIZACRED, 0) = 0
+                AND COALESCE(NESTATUS, 0) <> 99
+                ORDER BY "FECHA ELAB." DESC
+            ', [$empresa]);
 
             // Si no hay pedidos
             if (empty($pedidos)) {
                 return response()->json([
                     'success' => true,
-                    'data' => []
+                    'data' => [],
                 ], 200);
             }
 
@@ -46,23 +42,23 @@ class AutorizacionPedidosController extends Controller
             $pedidoIds = array_map(fn($p) => (int) $p->ID, $pedidos);
 
             // 3️⃣ Artículos (una sola query)
-            $articulos = DB::connection('firebird')->select("
+            $articulos = DB::connection('firebird')->select('
             SELECT CVE_PED, ARTICULO, SUM(CANTIDAD) AS CANTIDAD
             FROM V_PED_PART
-            WHERE CVE_PED IN (" . implode(',', $pedidoIds) . ")
+            WHERE CVE_PED IN (' . implode(',', $pedidoIds) . ')
             GROUP BY CVE_PED, ARTICULO
-        ");
+        ');
 
             // 4️⃣ Cardigan (una sola query)
-            $cardigans = DB::connection('firebird')->select("
+            $cardigans = DB::connection('firebird')->select('
             SELECT CVE_PED,
-                   \"CARDIGAN DESCR.\" AS DESCRIPCION,
-                   SUM(\"CANT. CARD.\") AS CANTIDAD
+                   "CARDIGAN DESCR." AS DESCRIPCION,
+                   SUM("CANT. CARD.") AS CANTIDAD
             FROM V_PED_PART
-            WHERE CVE_PED IN (" . implode(',', $pedidoIds) . ")
-              AND \"CANT. CARD.\" > 0
-            GROUP BY CVE_PED, \"CARDIGAN DESCR.\"
-        ");
+            WHERE CVE_PED IN (' . implode(',', $pedidoIds) . ')
+              AND "CANT. CARD." > 0
+            GROUP BY CVE_PED, "CARDIGAN DESCR."
+        ');
 
             // 5️⃣ Indexar artículos por pedido
             $articulosPorPedido = [];
@@ -79,52 +75,47 @@ class AutorizacionPedidosController extends Controller
             // 7️⃣ Asignar a cada pedido
             foreach ($pedidos as $pedido) {
                 $pedido->articulos = $articulosPorPedido[$pedido->ID] ?? [];
-                $pedido->cardigan  = $cardiganPorPedido[$pedido->ID] ?? [];
+                $pedido->cardigan = $cardiganPorPedido[$pedido->ID] ?? [];
             }
 
             // 8️⃣ Response
             return response()->json([
                 'success' => true,
-                'data' => $pedidos
+                'data' => $pedidos,
             ], 200);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al consultar pedidos con partidas',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
 
+    //     public function index()
+    // {
+    //     try {
+    //         $pedidos = DB::connection('firebird')
+    //             ->select("
+    //                 SELECT *
+    //                 FROM PEDIDOSENC
+    //                 WHERE COALESCE(AUTORIZACRED, 0) = 0
+    //                 ORDER BY FECHAELAB DESC
+    //             ");
 
+    //         return response()->json([
+    //             'success' => true,
+    //             'data' => $pedidos
+    //         ], 200);
 
-
-//     public function index()
-// {
-//     try {
-//         $pedidos = DB::connection('firebird')
-//             ->select("
-//                 SELECT *
-//                 FROM PEDIDOSENC
-//                 WHERE COALESCE(AUTORIZACRED, 0) = 0
-//                 ORDER BY FECHAELAB DESC
-//             ");
-
-//         return response()->json([
-//             'success' => true,
-//             'data' => $pedidos
-//         ], 200);
-
-//     } catch (\Exception $e) {
-//         return response()->json([
-//             'success' => false,
-//             'message' => 'Error al consultar PEDIDOSENC',
-//             'error' => $e->getMessage()
-//         ], 500);
-//     }
-// }
-
-
+    //     } catch (\Exception $e) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Error al consultar PEDIDOSENC',
+    //             'error' => $e->getMessage()
+    //         ], 500);
+    //     }
+    // }
 
     /**
      * Show the form for creating a new resource.
@@ -161,7 +152,6 @@ class AutorizacionPedidosController extends Controller
     /**
      * Update the specified resource in storage.
      */
-
     public function update(Request $request, $id)
     {
         try {
@@ -172,10 +162,10 @@ class AutorizacionPedidosController extends Controller
                 ->first();
 
             // 2️⃣ Validar existencia
-            if (!$pedido) {
+            if (! $pedido) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Pedido no encontrado'
+                    'message' => 'Pedido no encontrado',
                 ], 404);
             }
 
@@ -183,7 +173,7 @@ class AutorizacionPedidosController extends Controller
             if ((int) $pedido->AUTORIZACRED === 1) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'El pedido ya está autorizado'
+                    'message' => 'El pedido ya está autorizado',
                 ], 409);
             }
 
@@ -194,19 +184,19 @@ class AutorizacionPedidosController extends Controller
                 ->update([
                     'AUTORIZACRED' => 1,
                     'FECHAAUTC' => now()->format('Y-m-d H:i:s'),
-                    'USAUTC'       => auth()->user()->id,
+                    'USAUTC' => auth()->user()->id,
                 ]);
 
             // 5️⃣ Respuesta OK
             return response()->json([
                 'success' => true,
-                'message' => 'Pedido autorizado correctamente'
+                'message' => 'Pedido autorizado correctamente',
             ], 200);
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al autorizar el pedido',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
