@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class AutorizacionPedidosController extends Controller
 {
@@ -19,17 +20,19 @@ class AutorizacionPedidosController extends Controller
             $fbDatabase = env('FB_DATABASE');
             preg_match('/\d{2}/', $fbDatabase, $matches);
             $empresa = $matches[0] ?? '01';
+            Log::info('empresa de pedidos', ['empresa' => $empresa]);
+
 
 
             // 1️⃣ Pedidos (SP)
             $pedidos = DB::connection('firebird')->select("
-            SELECT *
-            FROM P_PEDIDOSENCMAIN(?)
-            WHERE COALESCE(AUTORIZACRED, 0) = 0
-              AND COALESCE(NESTATUS, 0) <> 99
-              AND COALESCE(AUTORIZA, 0) = 0
-            ORDER BY \"FECHA ELAB.\" DESC
-        ", [$empresa]);
+    SELECT *
+    FROM P_PEDIDOSENCMAIN(?)
+    WHERE COALESCE(AUTORIZACRED, 0) = 0
+      AND COALESCE(NESTATUS, 0) <> 99
+    ORDER BY \"FECHA ELAB.\" DESC
+", [$empresa]);
+
 
             // Si no hay pedidos
             if (empty($pedidos)) {
