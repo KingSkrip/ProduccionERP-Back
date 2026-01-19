@@ -25,7 +25,7 @@ class DataDashboardController extends Controller
 
     public function __construct()
     {
-        $this->jwtSecret = env('JWT_SECRET');
+        $this->jwtSecret = config('jwt.secret');
     }
 
     /**
