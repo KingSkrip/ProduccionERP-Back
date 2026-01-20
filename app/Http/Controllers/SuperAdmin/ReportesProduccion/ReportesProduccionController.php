@@ -67,7 +67,7 @@ class ReportesProduccionController extends Controller
                 ->select(
                     'd.DEPTO as departamento',
                     'p.PROCESO as proceso',
-                    DB::raw('SUM("op"."CANTENT") as CANTIDAD')
+                    DB::raw('CAST(CEILING(SUM("op"."CANTENT")) AS DECIMAL(18,3)) as CANTIDAD')
                 );
 
             // ✅ Excluir TEJIDO y departamentos específicos
@@ -237,7 +237,7 @@ class ReportesProduccionController extends Controller
                 ->select(
                     'd.DEPTO as departamento',
                     'p.PROCESO as proceso',
-                    DB::raw('SUM("op"."CANTENT") as CANTIDAD'),
+                    DB::raw('CAST(CEILING(SUM("op"."CANTENT")) AS DECIMAL(18,3)) as CANTIDAD'),
                     DB::raw('SUM("op"."PZASENT") as PIEZAS')
                 )
                 ->where('d.DEPTO', 'ESTAMPADO')  // 🔥 Filtrar por DEPARTAMENTO también
@@ -317,7 +317,7 @@ class ReportesProduccionController extends Controller
                 ->select(
                     'd.DEPTO as departamento',
                     'p.PROCESO as proceso',
-                    DB::raw('SUM("op"."CANTENT") as CANTIDAD'),
+                    DB::raw('CAST(CEILING(SUM("op"."CANTENT")) AS DECIMAL(18,3)) as CANTIDAD'),
                     DB::raw('SUM("op"."PZASENT") as PIEZAS')
                 )
                 ->where('d.DEPTO', 'TINTORERIA')
@@ -399,9 +399,10 @@ class ReportesProduccionController extends Controller
                 ->select(
                     'd.DEPTO as departamento',
                     'p.PROCESO as proceso',
-                    DB::raw('SUM("op"."CANTENT") as CANTIDAD'),
+                    DB::raw('CAST(CEILING(SUM("op"."CANTENT")) AS DECIMAL(18,3)) as CANTIDAD'),
                     DB::raw('SUM("op"."PZASENT") as PIEZAS')
                 )
+
                 ->where('d.DEPTO', 'TEJIDO')     // 🔥 Filtrar por DEPARTAMENTO
                 ->where('p.PROCESO', 'TEJIDO');  // 🔥 Filtrar por PROCESO
 
@@ -837,7 +838,7 @@ class ReportesProduccionController extends Controller
                 ->select(
                     'd.DEPTO as departamento',
                     'p.PROCESO as proceso',
-                    DB::raw('SUM(op.CANTENT) as CANTIDAD')
+                    DB::raw('CAST(CEILING(SUM(op.CANTENT)) AS DECIMAL(18,3)) as CANTIDAD')
                 )
                 ->where('op.DEPTO', '=', $departmentId);
 
@@ -858,6 +859,94 @@ class ReportesProduccionController extends Controller
                 'success' => false,
                 'message' => 'Error al consultar reportes por departamento',
                 'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
+
+
+
+
+
+
+
+    /**
+     * 🔥 Obtener solo datos de ACABADO con filtros de fecha.
+     */
+    public function getAcabadoReal(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'fecha_inicio' => 'nullable|string',
+                'fecha_fin'    => 'nullable|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Parámetros inválidos',
+                    'errors'  => $validator->errors(),
+                ], 400);
+            }
+
+            $fechaInicio = $request->input('fecha_inicio');
+            $fechaFin    = $request->input('fecha_fin');
+
+            if ($fechaInicio && $fechaFin) {
+                if (
+                    ! $this->validarFormatoFechaFirebird($fechaInicio) ||
+                    ! $this->validarFormatoFechaFirebird($fechaFin)
+                ) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Formato de fecha inválido. Use: dd.MM.yyyy HH:mm:ss',
+                    ], 400);
+                }
+            }
+
+            $query = DB::connection('firebird')
+                ->table('ORDENESPROC as op')
+                ->join('PROCESOS as p', 'p.CODIGO', '=', 'op.PROC')
+                ->join('DEPTOS as d', 'd.CLAVE', '=', 'op.DEPTO')
+                ->select(
+                    'd.DEPTO as departamento',
+                    'p.PROCESO as proceso',
+                    DB::raw('CAST(CEILING(SUM("op"."CANTENT")) AS DECIMAL(18,3)) as CANTIDAD'),
+                    DB::raw('SUM("op"."PZASENT") as PIEZAS')
+                )
+                ->where('d.DEPTO', 'CONTROL DE CALIDAD')
+                ->where('p.PROCESO', 'CONTROL DE CALIDAD');
+
+            // ✅ Aplicar excluidos pero sin tumbar CONTROL DE CALIDAD
+            $excluidos = array_values(array_diff($this->departamentosExcluidos, ['CONTROL DE CALIDAD']));
+            $query->whereNotIn('d.DEPTO', $excluidos);
+
+            if ($fechaInicio && $fechaFin) {
+                $query->whereBetween('op.FECHAENT', [$fechaInicio, $fechaFin]);
+            }
+
+            $reportes = $query
+                ->groupBy('d.DEPTO', 'p.PROCESO')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data'    => $reportes,
+                'filtros' => [
+                    'fecha_inicio' => $fechaInicio,
+                    'fecha_fin'    => $fechaFin,
+                    'total_registros' => $reportes->count(),
+                    'departamentos_excluidos' => $excluidos, // 👈 para debug real
+                    'departamento' => 'CONTROL DE CALIDAD',
+                    'proceso'      => 'CONTROL DE CALIDAD',
+                ],
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al consultar reportes de CONTROL DE CALIDAD',
+                'error'   => $e->getMessage(),
             ], 500);
         }
     }

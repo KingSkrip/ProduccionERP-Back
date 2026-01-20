@@ -152,7 +152,7 @@ Route::prefix('reportes-produccion')->group(function () {
      Route::get('/tejido-resumen', [ReportesProduccionController::class, 'getTejido']);
 
 
-
+  Route::get('/acabado', [ReportesProduccionController::class, 'getAcabadoReal']);
 
     // GET: Obtener reportes por departamento específico (opcional)
     Route::get('/departamento/{id}', [ReportesProduccionController::class, 'getByDepartment']);
