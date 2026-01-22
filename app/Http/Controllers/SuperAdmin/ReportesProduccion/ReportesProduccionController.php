@@ -111,40 +111,37 @@ class ReportesProduccionController extends Controller
     }
 
     /**
-     * 🔥 FACTURADO DETALLE: Desglose por partida
+     * 🔥 FACTURADO DETALLE: Desglose por factura (con cliente, UM y totales)
      */
-   /**
- * 🔥 FACTURADO DETALLE: Desglose por factura (con cliente, UM y totales)
- */
-public function getFacturado(Request $request)
-{
-    try {
-        $validator = Validator::make($request->all(), [
-            'fecha_inicio' => 'required|string',
-            'fecha_fin'    => 'required|string',
-        ]);
+    public function getFacturado(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'fecha_inicio' => 'required|string',
+                'fecha_fin'    => 'required|string',
+            ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Parámetros inválidos',
-                'errors'  => $validator->errors(),
-            ], 400);
-        }
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Parámetros inválidos',
+                    'errors'  => $validator->errors(),
+                ], 400);
+            }
 
-        // Extraer solo YYYY-MM-DD
-        $fechaInicio = substr($request->input('fecha_inicio'), 0, 10);
-        $fechaFin    = substr($request->input('fecha_fin'), 0, 10);
+            // Extraer solo YYYY-MM-DD
+            $fechaInicio = substr($request->input('fecha_inicio'), 0, 10);
+            $fechaFin    = substr($request->input('fecha_fin'), 0, 10);
 
-        /**
-         * Para que el fin sea inclusivo SIN depender si FECHA_DOC es DATE o TIMESTAMP:
-         * usamos:
-         *   FECHA_DOC >= inicio
-         *   FECHA_DOC < (fin + 1 día)
-         */
-        $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFin . ' +1 day'));
+            /**
+             * Para que el fin sea inclusivo SIN depender si FECHA_DOC es DATE o TIMESTAMP:
+             * usamos:
+             *   FECHA_DOC >= inicio
+             *   FECHA_DOC < (fin + 1 día)
+             */
+            $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFin . ' +1 day'));
 
-        $sql = "
+            $sql = "
             SELECT
                 C.nombre            AS CLIENTE,
                 F.cve_doc           AS FACTURA,
@@ -185,74 +182,73 @@ public function getFacturado(Request $request)
             ORDER BY F.cve_doc
         ";
 
-        $rows = DB::connection('firebird')->select($sql, [$fechaInicio, $fechaFinExclusiva]);
+            $rows = DB::connection('firebird')->select($sql, [$fechaInicio, $fechaFinExclusiva]);
 
-        // Formateo detalle
-        $detalle = array_map(function ($r) {
-            return [
-                'cliente'   => $r->CLIENTE,
-                'factura'   => $r->FACTURA,
-                'cant'      => (float) ($r->CANT ?? 0),
-                'um'        => $r->UM,
-                'importe'   => (float) ($r->IMPORTE ?? 0),
-                'impuestos' => (float) ($r->IMPUESTOS ?? 0),
-                'total'     => (float) ($r->TOTAL ?? 0),
-            ];
-        }, $rows);
-
-        /**
-         * Totales monetarios SIN duplicar por UM:
-         * sumamos 1 vez por FACTURA.
-         */
-        $facturas = [];
-        foreach ($rows as $r) {
-            $fac = $r->FACTURA;
-            if (!isset($facturas[$fac])) {
-                $facturas[$fac] = [
+            // Formateo detalle
+            $detalle = array_map(function ($r) {
+                return [
+                    'cliente'   => $r->CLIENTE,
+                    'factura'   => $r->FACTURA,
+                    'cant'      => (float) ($r->CANT ?? 0),
+                    'um'        => $r->UM,
                     'importe'   => (float) ($r->IMPORTE ?? 0),
                     'impuestos' => (float) ($r->IMPUESTOS ?? 0),
                     'total'     => (float) ($r->TOTAL ?? 0),
                 ];
+            }, $rows);
+
+            /**
+             * Totales monetarios SIN duplicar por UM:
+             * sumamos 1 vez por FACTURA.
+             */
+            $facturas = [];
+            foreach ($rows as $r) {
+                $fac = $r->FACTURA;
+                if (!isset($facturas[$fac])) {
+                    $facturas[$fac] = [
+                        'importe'   => (float) ($r->IMPORTE ?? 0),
+                        'impuestos' => (float) ($r->IMPUESTOS ?? 0),
+                        'total'     => (float) ($r->TOTAL ?? 0),
+                    ];
+                }
             }
-        }
 
-        $totalImporte   = array_sum(array_column($facturas, 'importe'));
-        $totalImpuestos = array_sum(array_column($facturas, 'impuestos'));
-        $totalGeneral   = array_sum(array_column($facturas, 'total'));
+            $totalImporte   = array_sum(array_column($facturas, 'importe'));
+            $totalImpuestos = array_sum(array_column($facturas, 'impuestos'));
+            $totalGeneral   = array_sum(array_column($facturas, 'total'));
 
-        // Cantidad total (esta sí la sumo de todas las filas porque está por UM)
-        $totalCant = array_reduce($rows, function ($carry, $item) {
-            return $carry + (float) ($item->CANT ?? 0);
-        }, 0);
+            // Cantidad total (esta sí la sumo de todas las filas porque está por UM)
+            $totalCant = array_reduce($rows, function ($carry, $item) {
+                return $carry + (float) ($item->CANT ?? 0);
+            }, 0);
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'totales' => [
-                    'facturas'  => count($facturas),
-                    'cant'      => (float) $totalCant,
-                    'importe'   => (float) $totalImporte,
-                    'impuestos' => (float) $totalImpuestos,
-                    'total'     => (float) $totalGeneral,
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'totales' => [
+                        'facturas'  => count($facturas),
+                        'cant'      => (float) $totalCant,
+                        'importe'   => (float) $totalImporte,
+                        'impuestos' => (float) $totalImpuestos,
+                        'total'     => (float) $totalGeneral,
+                    ],
+                    'detalle' => $detalle,
                 ],
-                'detalle' => $detalle,
-            ],
-            'filtros' => [
-                'fecha_inicio'       => $fechaInicio,
-                'fecha_fin'          => $fechaFin,
-                'fecha_fin_exclusiva'=> $fechaFinExclusiva,
-                'total_registros'    => count($rows),
-            ],
-        ], 200);
-
-    } catch (\Throwable $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Error al obtener FACTURADO',
-            'error'   => $e->getMessage(),
-        ], 500);
+                'filtros' => [
+                    'fecha_inicio'       => $fechaInicio,
+                    'fecha_fin'          => $fechaFin,
+                    'fecha_fin_exclusiva' => $fechaFinExclusiva,
+                    'total_registros'    => count($rows),
+                ],
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener FACTURADO',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
     }
-}
 
 
     /**
