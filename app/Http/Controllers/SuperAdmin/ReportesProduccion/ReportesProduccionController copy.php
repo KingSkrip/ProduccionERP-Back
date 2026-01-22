@@ -22,7 +22,6 @@ class ReportesProduccionController extends Controller
         'PROGRAMACION Y PLANEACION',
     ];
 
-
     /**
      * Display a listing of the resource with date filters.
      */
@@ -118,7 +117,7 @@ class ReportesProduccionController extends Controller
         try {
             $validator = Validator::make($request->all(), [
                 'fecha_inicio' => 'required|string',
-                'fecha_fin'    => 'required|string',
+                'fecha_fin' => 'required|string',
             ]);
 
             if ($validator->fails()) {
@@ -131,18 +130,18 @@ class ReportesProduccionController extends Controller
 
             // Extraer solo la parte de fecha (YYYY-MM-DD)
             $fechaInicio = substr($request->input('fecha_inicio'), 0, 10);
-            $fechaFin    = substr($request->input('fecha_fin'), 0, 10);
+            $fechaFin = substr($request->input('fecha_fin'), 0, 10);
             // Log::info('=== FACTURADO DETALLE DEBUG ===');
             // Log::info('Fecha inicio: ' . $fechaInicio);
             // Log::info('Fecha fin: ' . $fechaFin);
 
-            $sql = "
+            $sql = '
             SELECT SUM(psd.PNETO) AS PNETO, psd.PARTIDA 
             FROM PSDTABPZAS psd 
             LEFT JOIN PTPLISTENC pl ON pl.id = psd.id_fol_pl 
             WHERE pl.FECHAYHORA >= ? AND pl.FECHAYHORA < ? 
             AND PSD.estatus = 1 AND PSD.tipo = 51
-            GROUP BY psd.PARTIDA";
+            GROUP BY psd.PARTIDA';
 
             DB::connection('firebird')->enableQueryLog();
 
@@ -320,7 +319,6 @@ class ReportesProduccionController extends Controller
                     DB::raw('CAST(SUM(CEILING(COALESCE("op"."CANTENT", 0))) AS DECIMAL(18,3)) as CANTIDAD'),
                     DB::raw('SUM(COALESCE("op"."PZASENT", 0)) as PIEZAS')
 
-
                 )
                 ->where('d.DEPTO', 'TINTORERIA')
                 ->where('p.PROCESO', 'TEÑIDO'); // 🔥 Mantén este filtro si solo quieres TEÑIDO
@@ -440,8 +438,6 @@ class ReportesProduccionController extends Controller
             ], 500);
         }
     }
-
-
 
     /**
      * 🔥 Obtener producción de TEJIDO por artículo (con filtros de fecha)
@@ -865,14 +861,6 @@ class ReportesProduccionController extends Controller
         }
     }
 
-
-
-
-
-
-
-
-
     /**
      * 🔥 Obtener solo datos de ACABADO con filtros de fecha.
      */
@@ -881,19 +869,19 @@ class ReportesProduccionController extends Controller
         try {
             $validator = Validator::make($request->all(), [
                 'fecha_inicio' => 'nullable|string',
-                'fecha_fin'    => 'nullable|string',
+                'fecha_fin' => 'nullable|string',
             ]);
 
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Parámetros inválidos',
-                    'errors'  => $validator->errors(),
+                    'errors' => $validator->errors(),
                 ], 400);
             }
 
             $fechaInicio = $request->input('fecha_inicio');
-            $fechaFin    = $request->input('fecha_fin');
+            $fechaFin = $request->input('fecha_fin');
 
             if ($fechaInicio && $fechaFin) {
                 if (
@@ -934,21 +922,21 @@ class ReportesProduccionController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data'    => $reportes,
+                'data' => $reportes,
                 'filtros' => [
                     'fecha_inicio' => $fechaInicio,
-                    'fecha_fin'    => $fechaFin,
+                    'fecha_fin' => $fechaFin,
                     'total_registros' => $reportes->count(),
                     'departamentos_excluidos' => $excluidos, // 👈 para debug real
                     'departamento' => 'CONTROL DE CALIDAD',
-                    'proceso'      => 'CONTROL DE CALIDAD',
+                    'proceso' => 'CONTROL DE CALIDAD',
                 ],
             ], 200);
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al consultar reportes de CONTROL DE CALIDAD',
-                'error'   => $e->getMessage(),
+                'error' => $e->getMessage(),
             ], 500);
         }
     }

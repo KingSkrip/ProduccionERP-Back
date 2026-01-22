@@ -113,85 +113,147 @@ class ReportesProduccionController extends Controller
     /**
      * 🔥 FACTURADO DETALLE: Desglose por partida
      */
-    public function getFacturado(Request $request)
-    {
-        try {
-            $validator = Validator::make($request->all(), [
-                'fecha_inicio' => 'required|string',
-                'fecha_fin'    => 'required|string',
-            ]);
+   /**
+ * 🔥 FACTURADO DETALLE: Desglose por factura (con cliente, UM y totales)
+ */
+public function getFacturado(Request $request)
+{
+    try {
+        $validator = Validator::make($request->all(), [
+            'fecha_inicio' => 'required|string',
+            'fecha_fin'    => 'required|string',
+        ]);
 
-            if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Parámetros inválidos',
-                    'errors' => $validator->errors(),
-                ], 400);
-            }
-
-            // Extraer solo la parte de fecha (YYYY-MM-DD)
-            $fechaInicio = substr($request->input('fecha_inicio'), 0, 10);
-            $fechaFin    = substr($request->input('fecha_fin'), 0, 10);
-            // Log::info('=== FACTURADO DETALLE DEBUG ===');
-            // Log::info('Fecha inicio: ' . $fechaInicio);
-            // Log::info('Fecha fin: ' . $fechaFin);
-
-            $sql = "
-            SELECT SUM(psd.PNETO) AS PNETO, psd.PARTIDA 
-            FROM PSDTABPZAS psd 
-            LEFT JOIN PTPLISTENC pl ON pl.id = psd.id_fol_pl 
-            WHERE pl.FECHAYHORA >= ? AND pl.FECHAYHORA < ? 
-            AND PSD.estatus = 1 AND PSD.tipo = 51
-            GROUP BY psd.PARTIDA";
-
-            DB::connection('firebird')->enableQueryLog();
-
-            $detalle = DB::connection('firebird')->select($sql, [$fechaInicio, $fechaFin]);
-
-            $queries = DB::connection('firebird')->getQueryLog();
-
-            // Log::info('SQL ejecutado:');
-            // Log::info(json_encode($queries, JSON_PRETTY_PRINT));
-            // Log::info('Total registros: ' . count($detalle));
-            // Log::info('=== FIN DEBUG ===');
-
-            // Calcular total sumando todos los registros
-            $total = array_reduce($detalle, function ($carry, $item) {
-                return $carry + ($item->PNETO ?? 0);
-            }, 0);
-
-            // Formatear detalle para response
-            $detalleFormateado = array_map(function ($item) {
-                return [
-                    'partida' => $item->PARTIDA,
-                    'pneto' => (float) ($item->PNETO ?? 0),
-                ];
-            }, $detalle);
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'total' => [
-                        'pneto' => (float) $total,
-                    ],
-                    'detalle' => $detalleFormateado,
-                ],
-                'filtros' => [
-                    'fecha_inicio' => $fechaInicio,
-                    'fecha_fin' => $fechaFin,
-                    'total_partidas' => count($detalle),
-                ],
-            ], 200);
-        } catch (\Throwable $e) {
-            // Log::error('Error en getFacturadoDetalle: ' . $e->getMessage());
-            // Log::error('Stack trace: ' . $e->getTraceAsString());
+        if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error al obtener detalle de FACTURADO',
-                'error' => $e->getMessage(),
-            ], 500);
+                'message' => 'Parámetros inválidos',
+                'errors'  => $validator->errors(),
+            ], 400);
         }
+
+        // Extraer solo YYYY-MM-DD
+        $fechaInicio = substr($request->input('fecha_inicio'), 0, 10);
+        $fechaFin    = substr($request->input('fecha_fin'), 0, 10);
+
+        /**
+         * Para que el fin sea inclusivo SIN depender si FECHA_DOC es DATE o TIMESTAMP:
+         * usamos:
+         *   FECHA_DOC >= inicio
+         *   FECHA_DOC < (fin + 1 día)
+         */
+        $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFin . ' +1 day'));
+
+        $sql = "
+            SELECT
+                C.nombre            AS CLIENTE,
+                F.cve_doc           AS FACTURA,
+                SUM(P.CANT)         AS CANT,
+                P.UNI_VENTA         AS UM,
+
+                CASE
+                    WHEN COALESCE(F.tipcamb, 1) = 1 THEN COALESCE(F.can_tot, 0)
+                    ELSE COALESCE(F.can_tot, 0) * COALESCE(F.tipcamb, 1)
+                END AS IMPORTE,
+
+                CASE
+                    WHEN COALESCE(F.tipcamb, 1) = 1 THEN COALESCE(F.imp_tot4, 0)
+                    ELSE COALESCE(F.imp_tot4, 0) * COALESCE(F.tipcamb, 1)
+                END AS IMPUESTOS,
+
+                CASE
+                    WHEN COALESCE(F.tipcamb, 1) = 1 THEN (COALESCE(F.can_tot, 0) + COALESCE(F.imp_tot4, 0))
+                    ELSE (COALESCE(F.can_tot, 0) * COALESCE(F.tipcamb, 1)) + (COALESCE(F.imp_tot4, 0) * COALESCE(F.tipcamb, 1))
+                END AS TOTAL
+
+            FROM PAR_FACTF03 P
+            LEFT JOIN FACTF03 F ON F.cve_doc = P.cve_doc
+            LEFT JOIN CLIE03 C  ON C.clave  = F.cve_clpv
+
+            WHERE F.status IN ('E','O')
+              AND F.FECHA_DOC >= ?
+              AND F.FECHA_DOC < ?
+
+            GROUP BY
+                C.nombre,
+                F.cve_doc,
+                P.UNI_VENTA,
+                F.can_tot,
+                F.imp_tot4,
+                F.tipcamb
+
+            ORDER BY F.cve_doc
+        ";
+
+        $rows = DB::connection('firebird')->select($sql, [$fechaInicio, $fechaFinExclusiva]);
+
+        // Formateo detalle
+        $detalle = array_map(function ($r) {
+            return [
+                'cliente'   => $r->CLIENTE,
+                'factura'   => $r->FACTURA,
+                'cant'      => (float) ($r->CANT ?? 0),
+                'um'        => $r->UM,
+                'importe'   => (float) ($r->IMPORTE ?? 0),
+                'impuestos' => (float) ($r->IMPUESTOS ?? 0),
+                'total'     => (float) ($r->TOTAL ?? 0),
+            ];
+        }, $rows);
+
+        /**
+         * Totales monetarios SIN duplicar por UM:
+         * sumamos 1 vez por FACTURA.
+         */
+        $facturas = [];
+        foreach ($rows as $r) {
+            $fac = $r->FACTURA;
+            if (!isset($facturas[$fac])) {
+                $facturas[$fac] = [
+                    'importe'   => (float) ($r->IMPORTE ?? 0),
+                    'impuestos' => (float) ($r->IMPUESTOS ?? 0),
+                    'total'     => (float) ($r->TOTAL ?? 0),
+                ];
+            }
+        }
+
+        $totalImporte   = array_sum(array_column($facturas, 'importe'));
+        $totalImpuestos = array_sum(array_column($facturas, 'impuestos'));
+        $totalGeneral   = array_sum(array_column($facturas, 'total'));
+
+        // Cantidad total (esta sí la sumo de todas las filas porque está por UM)
+        $totalCant = array_reduce($rows, function ($carry, $item) {
+            return $carry + (float) ($item->CANT ?? 0);
+        }, 0);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'totales' => [
+                    'facturas'  => count($facturas),
+                    'cant'      => (float) $totalCant,
+                    'importe'   => (float) $totalImporte,
+                    'impuestos' => (float) $totalImpuestos,
+                    'total'     => (float) $totalGeneral,
+                ],
+                'detalle' => $detalle,
+            ],
+            'filtros' => [
+                'fecha_inicio'       => $fechaInicio,
+                'fecha_fin'          => $fechaFin,
+                'fecha_fin_exclusiva'=> $fechaFinExclusiva,
+                'total_registros'    => count($rows),
+            ],
+        ], 200);
+
+    } catch (\Throwable $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Error al obtener FACTURADO',
+            'error'   => $e->getMessage(),
+        ], 500);
     }
+}
+
 
     /**
      * 🔥 Obtener solo datos de ESTAMPADO con filtros de fecha.
