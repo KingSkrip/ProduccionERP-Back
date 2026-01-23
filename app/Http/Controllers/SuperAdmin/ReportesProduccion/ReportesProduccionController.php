@@ -147,6 +147,8 @@ class ReportesProduccionController extends Controller
                 F.cve_doc           AS FACTURA,
                 SUM(P.CANT)         AS CANT,
                 P.UNI_VENTA         AS UM,
+                F.FECHA_DOC         AS FECHA,
+
 
                 CASE
                     WHEN COALESCE(F.tipcamb, 1) = 1 THEN COALESCE(F.can_tot, 0)
@@ -177,7 +179,8 @@ class ReportesProduccionController extends Controller
                 P.UNI_VENTA,
                 F.can_tot,
                 F.imp_tot4,
-                F.tipcamb
+                F.tipcamb,
+                F.FECHA_DOC
 
             ORDER BY F.cve_doc
         ";
@@ -185,17 +188,19 @@ class ReportesProduccionController extends Controller
             $rows = DB::connection('firebird')->select($sql, [$fechaInicio, $fechaFinExclusiva]);
 
             // Formateo detalle
-            $detalle = array_map(function ($r) {
-                return [
-                    'cliente'   => $r->CLIENTE,
-                    'factura'   => $r->FACTURA,
-                    'cant'      => (float) ($r->CANT ?? 0),
-                    'um'        => $r->UM,
-                    'importe'   => (float) ($r->IMPORTE ?? 0),
-                    'impuestos' => (float) ($r->IMPUESTOS ?? 0),
-                    'total'     => (float) ($r->TOTAL ?? 0),
-                ];
-            }, $rows);
+           $detalle = array_map(function ($r) {
+    return [
+        'cliente'   => $r->CLIENTE,
+        'factura'   => $r->FACTURA,
+        'fecha'     => $r->FECHA, // ✅ IMPORTANTE
+        'cant'      => (float) ($r->CANT ?? 0),
+        'um'        => $r->UM,
+        'importe'   => (float) ($r->IMPORTE ?? 0),
+        'impuestos' => (float) ($r->IMPUESTOS ?? 0),
+        'total'     => (float) ($r->TOTAL ?? 0),
+    ];
+}, $rows);
+
 
             /**
              * Totales monetarios SIN duplicar por UM:
