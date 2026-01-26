@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Throwable;
 
 class ReportesProduccionController extends Controller
 {
@@ -188,18 +189,18 @@ class ReportesProduccionController extends Controller
             $rows = DB::connection('firebird')->select($sql, [$fechaInicio, $fechaFinExclusiva]);
 
             // Formateo detalle
-           $detalle = array_map(function ($r) {
-    return [
-        'cliente'   => $r->CLIENTE,
-        'factura'   => $r->FACTURA,
-        'fecha'     => $r->FECHA, // ✅ IMPORTANTE
-        'cant'      => (float) ($r->CANT ?? 0),
-        'um'        => $r->UM,
-        'importe'   => (float) ($r->IMPORTE ?? 0),
-        'impuestos' => (float) ($r->IMPUESTOS ?? 0),
-        'total'     => (float) ($r->TOTAL ?? 0),
-    ];
-}, $rows);
+            $detalle = array_map(function ($r) {
+                return [
+                    'cliente'   => $r->CLIENTE,
+                    'factura'   => $r->FACTURA,
+                    'fecha'     => $r->FECHA, // ✅ IMPORTANTE
+                    'cant'      => (float) ($r->CANT ?? 0),
+                    'um'        => $r->UM,
+                    'importe'   => (float) ($r->IMPORTE ?? 0),
+                    'impuestos' => (float) ($r->IMPUESTOS ?? 0),
+                    'total'     => (float) ($r->TOTAL ?? 0),
+                ];
+            }, $rows);
 
 
             /**
@@ -773,70 +774,71 @@ class ReportesProduccionController extends Controller
         }
     }
 
-    /**
-     * 🔥 Obtener producción por tipo de tejido y artículo
-     */
-    public function getEntregadoaEmbarques(Request $request)
-    {
-        try {
-            $fechaInicio = $request->input('fecha_inicio');
-            $fechaFin = $request->input('fecha_fin');
+   /**
+ * 🔥 Obtener producción por tipo de tejido, artículo Y FECHA
+ */
+public function getEntregadoaEmbarques(Request $request)
+{
+    try {
+        $fechaInicio = $request->input('fecha_inicio');
+        $fechaFin = $request->input('fecha_fin');
 
-            // Formatear fechas a TIMESTAMP Firebird (dd.MM.yyyy HH:mm:ss)
-            $fechaInicioTS = $fechaInicio ? date('d.m.Y 00:00:00', strtotime($fechaInicio)) : null;
-            $fechaFinTS = $fechaFin ? date('d.m.Y 23:59:59', strtotime($fechaFin)) : null;
+        // Formatear fechas a TIMESTAMP Firebird (dd.MM.yyyy HH:mm:ss)
+        $fechaInicioTS = $fechaInicio ? date('d.m.Y 00:00:00', strtotime($fechaInicio)) : null;
+        $fechaFinTS = $fechaFin ? date('d.m.Y 23:59:59', strtotime($fechaFin)) : null;
 
-            $query = "
-            SELECT
-                CASE P.TIPO
-                    WHEN 51 THEN 'PRIMERA'
-                    WHEN 52 THEN 'PREFERIDA'
-                    WHEN 73 THEN 'ORILLAS'
-                    WHEN 74 THEN 'RETAZO'
-                    WHEN 77 THEN 'SEGUNDA'
-                    WHEN 81 THEN 'MUESTRAS'
-                    ELSE 'SIN CLASIFICAR'
-                END AS TIPO,
-                VA.ARTICULO,
-                SUM(P.PNETO) AS CANTIDAD
-            FROM PSDTABPZAS P
-            INNER JOIN PSDENC PE ON PE.CLAVE = P.CVE_ENC
-            INNER JOIN V_ARTICULOS VA ON VA.ID = CAST(SUBSTRING(PE.CVE_ART FROM 4 FOR 7) AS NUMERIC)
+        $query = "
+        SELECT
+            CASE P.TIPO
+                WHEN 51 THEN 'PRIMERA'
+                WHEN 52 THEN 'PREFERIDA'
+                WHEN 73 THEN 'ORILLAS'
+                WHEN 74 THEN 'RETAZO'
+                WHEN 77 THEN 'SEGUNDA'
+                WHEN 81 THEN 'MUESTRAS'
+                ELSE 'SIN CLASIFICAR'
+            END AS TIPO,
+            VA.ARTICULO,
+            CAST(P.FECHAYHORA AS DATE) AS FECHA,
+            SUM(P.PNETO) AS CANTIDAD
+        FROM PSDTABPZAS P
+        INNER JOIN PSDENC PE ON PE.CLAVE = P.CVE_ENC
+        INNER JOIN V_ARTICULOS VA ON VA.ID = CAST(SUBSTRING(PE.CVE_ART FROM 4 FOR 7) AS NUMERIC)
+    ";
+
+        if ($fechaInicioTS && $fechaFinTS) {
+            $query .= "
+            WHERE P.FECHAYHORA >= '$fechaInicioTS'
+              AND P.FECHAYHORA <= '$fechaFinTS'
+              AND P.ESTATUS = 1
         ";
-
-            if ($fechaInicioTS && $fechaFinTS) {
-                $query .= "
-                WHERE P.FECHAYHORA >= '$fechaInicioTS'
-                  AND P.FECHAYHORA <= '$fechaFinTS'
-                  AND P.ESTATUS = 1
-            ";
-            } else {
-                $query .= ' WHERE P.ESTATUS = 1 ';
-            }
-
-            $query .= '
-            GROUP BY P.TIPO, VA.ARTICULO
-            ORDER BY VA.ARTICULO ASC, P.TIPO ASC
-        ';
-
-            $data = DB::connection('firebird')->select($query);
-
-            return response()->json([
-                'success' => true,
-                'data' => $data,
-                'filtros' => [
-                    'fecha_inicio' => $fechaInicio,
-                    'fecha_fin' => $fechaFin,
-                ],
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error al obtener producción por tipo de tejido',
-                'error' => $e->getMessage(),
-            ], 500);
+        } else {
+            $query .= ' WHERE P.ESTATUS = 1 ';
         }
+
+        $query .= '
+        GROUP BY CAST(P.FECHAYHORA AS DATE), P.TIPO, VA.ARTICULO
+        ORDER BY CAST(P.FECHAYHORA AS DATE) ASC, P.TIPO ASC, VA.ARTICULO ASC
+    ';
+
+        $data = DB::connection('firebird')->select($query);
+
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+            'filtros' => [
+                'fecha_inicio' => $fechaInicio,
+                'fecha_fin' => $fechaFin,
+            ],
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Error al obtener producción por tipo de tejido',
+            'error' => $e->getMessage(),
+        ], 500);
     }
+}
 
     /**
      * Validar formato de fecha Firebird (dd.MM.yyyy HH:mm:ss)
@@ -1005,7 +1007,7 @@ class ReportesProduccionController extends Controller
                     'proceso'      => 'CONTROL DE CALIDAD',
                 ],
             ], 200);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al consultar reportes de CONTROL DE CALIDAD',

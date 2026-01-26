@@ -452,6 +452,8 @@ class ReportesProduccionController extends Controller
             SELECT
                 a.NOMBRE AS ARTICULO,
 
+                CAST(p.FECHAYHORAPSD AS DATE) AS FECHA_PRODUCCION,
+                
                 COUNT(*) AS PIEZAS,
 
                 SUM(
@@ -473,14 +475,19 @@ class ReportesProduccionController extends Controller
             }
 
             $query .= '
-            GROUP BY a.NOMBRE
-            ORDER BY a.NOMBRE
+            GROUP BY 
+            a.NOMBRE,
+            CAST(p.FECHAYHORAPSD AS DATE)
+            
+            ORDER BY 
+           FECHA_PRODUCCION, ARTICULO
         ';
 
             $data = DB::connection('firebird')->select($query);
 
             return response()->json([
                 'success' => true,
+                'debug' => 'REV-NEW-1',
                 'data' => $data,
                 'filtros' => [
                     'fecha_inicio' => $fechaInicio,
@@ -506,28 +513,30 @@ class ReportesProduccionController extends Controller
             $fechaFin = $request->input('fecha_fin');
 
             $query = "
-        SELECT
-            a.NOMBRE AS ARTICULO,
+                SELECT
+                a.NOMBRE AS ARTICULO,
 
-            COUNT(
-                CASE
-                    WHEN p.PESORV SIMILAR TO '[0-9]+([.,][0-9]+)?'
-                    THEN 1
-                    ELSE NULL
-                END
-            ) AS PIEZAS,
+                CAST(p.FECHAYHORAREV AS DATE) AS FECHA_REVISION,
 
-            SUM(
-                CASE
-                    WHEN p.PESORV SIMILAR TO '[0-9]+([.,][0-9]+)?'
-                    THEN CAST(p.PESORV AS DECIMAL(18,2))
-                    ELSE 0
-                END
-            ) AS TOTAL_RV
+                COUNT(
+                    CASE
+                        WHEN p.PESORV SIMILAR TO '[0-9]+([.,][0-9]+)?'
+                        THEN 1
+                        ELSE NULL
+                    END
+                ) AS PIEZAS,
 
-        FROM PSDTABPZASTJ p
-        INNER JOIN ARTICULOS a ON a.ID = p.CVE_ART
-        ";
+                SUM(
+                    CASE
+                        WHEN p.PESORV SIMILAR TO '[0-9]+([.,][0-9]+)?'
+                        THEN CAST(p.PESORV AS DECIMAL(18,2))
+                        ELSE 0
+                    END
+                ) AS TOTAL_RV
+            FROM PSDTABPZASTJ p
+            INNER JOIN ARTICULOS a ON a.ID = p.CVE_ART
+
+                ";
 
             if ($fechaInicio && $fechaFin) {
                 $fechaInicioTS = date('d.m.Y H:i:s', strtotime($fechaInicio));
@@ -540,14 +549,19 @@ class ReportesProduccionController extends Controller
             }
 
             $query .= '
-        GROUP BY a.NOMBRE
-        ORDER BY a.NOMBRE
-        ';
+                GROUP BY
+                a.NOMBRE,
+                CAST(p.FECHAYHORAREV AS DATE)
+                ORDER BY
+                FECHA_REVISION, ARTICULO
+
+            ';
 
             $data = DB::connection('firebird')->select($query);
 
             return response()->json([
                 'success' => true,
+                'debug' => 'REV-NEW-1',
                 'data' => $data,
                 'filtros' => [
                     'fecha_inicio' => $fechaInicio,
