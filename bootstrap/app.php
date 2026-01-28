@@ -14,7 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->append(\Illuminate\Http\Middleware\HandleCors::class);
-
+        $middleware->append(\App\Http\Middleware\EncryptJsonResponse::class);
 
         $middleware->alias([
             'jwt.auth' => \App\Http\Middleware\JwtAuth::class,

@@ -130,50 +130,25 @@ Route::middleware(['jwt.auth'])  // Keep only your JWT auth
 
 
 Route::prefix('reportes-produccion')->group(function () {
-
-    // GET: Obtener reportes con filtros de fecha
     Route::get('/', [ReportesProduccionController::class, 'index']);
-
-    // GET: Obtener resumen estadístico (opcional)
     Route::get('/summary', [ReportesProduccionController::class, 'getSummary']);
-
-
     Route::get('/estampados', [ReportesProduccionController::class, 'getEstampado']);
     Route::get('/tintoreria', [ReportesProduccionController::class, 'getTintoreria']);
-
     Route::get('/tejido', [ReportesProduccionController::class, 'getProduccionTejido']);
     Route::get('/revisado', [ReportesProduccionController::class, 'getRevisadoTejido']);
-    Route::get('/pendientes', [ReportesProduccionController::class, 'getPorRevisarTejido']); // porrevisar → pendientes
+    Route::get('/pendientes', [ReportesProduccionController::class, 'getPorRevisarTejido']);
     Route::get('/con-saldo', [ReportesProduccionController::class, 'getSaldosTejido']);
     Route::get('/entregado-embarques', [ReportesProduccionController::class, 'getEntregadoaEmbarques']);
-
-
     Route::get('/facturado', [ReportesProduccionController::class, 'getFacturado']);
     Route::get('/tejido-resumen', [ReportesProduccionController::class, 'getTejido']);
-
-
     Route::get('/acabado', [ReportesProduccionController::class, 'getAcabadoReal']);
-
-    // GET: Obtener reportes por departamento específico (opcional)
     Route::get('/departamento/{id}', [ReportesProduccionController::class, 'getByDepartment']);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    // Ruta consolidada (agregar después de las otras rutas de reportes-produccion)
-Route::get('all', [ReportesProduccionController::class, 'getAllReports']);
+    Route::get('all', [ReportesProduccionController::class, 'getAllReports']);
 });
+
+
+/**
+ * SIEMPRE QUE SE AGREGE UNA NUEVA RUTA HAY QUE AGREGARLA A  
+ * app/Http/Middleware/EncryptJsonResponse.php
+ * PARA ENCRIPTAR LA PETICION
+ */
