@@ -774,20 +774,20 @@ class ReportesProduccionController extends Controller
         }
     }
 
-   /**
- * 🔥 Obtener producción por tipo de tejido, artículo Y FECHA
- */
-public function getEntregadoaEmbarques(Request $request)
-{
-    try {
-        $fechaInicio = $request->input('fecha_inicio');
-        $fechaFin = $request->input('fecha_fin');
+    /**
+     * 🔥 Obtener producción por tipo de tejido, artículo Y FECHA
+     */
+    public function getEntregadoaEmbarques(Request $request)
+    {
+        try {
+            $fechaInicio = $request->input('fecha_inicio');
+            $fechaFin = $request->input('fecha_fin');
 
-        // Formatear fechas a TIMESTAMP Firebird (dd.MM.yyyy HH:mm:ss)
-        $fechaInicioTS = $fechaInicio ? date('d.m.Y 00:00:00', strtotime($fechaInicio)) : null;
-        $fechaFinTS = $fechaFin ? date('d.m.Y 23:59:59', strtotime($fechaFin)) : null;
+            // Formatear fechas a TIMESTAMP Firebird (dd.MM.yyyy HH:mm:ss)
+            $fechaInicioTS = $fechaInicio ? date('d.m.Y 00:00:00', strtotime($fechaInicio)) : null;
+            $fechaFinTS = $fechaFin ? date('d.m.Y 23:59:59', strtotime($fechaFin)) : null;
 
-        $query = "
+            $query = "
         SELECT
             CASE P.TIPO
                 WHEN 51 THEN 'PRIMERA'
@@ -804,41 +804,41 @@ public function getEntregadoaEmbarques(Request $request)
         FROM PSDTABPZAS P
         INNER JOIN PSDENC PE ON PE.CLAVE = P.CVE_ENC
         INNER JOIN V_ARTICULOS VA ON VA.ID = CAST(SUBSTRING(PE.CVE_ART FROM 4 FOR 7) AS NUMERIC)
-    ";
-
-        if ($fechaInicioTS && $fechaFinTS) {
-            $query .= "
-            WHERE P.FECHAYHORA >= '$fechaInicioTS'
-              AND P.FECHAYHORA <= '$fechaFinTS'
-              AND P.ESTATUS = 1
         ";
-        } else {
-            $query .= ' WHERE P.ESTATUS = 1 ';
+
+                if ($fechaInicioTS && $fechaFinTS) {
+                    $query .= "
+                WHERE P.FECHAYHORA >= '$fechaInicioTS'
+                AND P.FECHAYHORA <= '$fechaFinTS'
+                AND P.ESTATUS = 1
+            ";
+                } else {
+                    $query .= ' WHERE P.ESTATUS = 1 ';
+                }
+
+                $query .= '
+            GROUP BY CAST(P.FECHAYHORA AS DATE), P.TIPO, VA.ARTICULO
+            ORDER BY CAST(P.FECHAYHORA AS DATE) ASC, P.TIPO ASC, VA.ARTICULO ASC
+        ';
+
+            $data = DB::connection('firebird')->select($query);
+
+            return response()->json([
+                'success' => true,
+                'data' => $data,
+                'filtros' => [
+                    'fecha_inicio' => $fechaInicio,
+                    'fecha_fin' => $fechaFin,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener producción por tipo de tejido',
+                'error' => $e->getMessage(),
+            ], 500);
         }
-
-        $query .= '
-        GROUP BY CAST(P.FECHAYHORA AS DATE), P.TIPO, VA.ARTICULO
-        ORDER BY CAST(P.FECHAYHORA AS DATE) ASC, P.TIPO ASC, VA.ARTICULO ASC
-    ';
-
-        $data = DB::connection('firebird')->select($query);
-
-        return response()->json([
-            'success' => true,
-            'data' => $data,
-            'filtros' => [
-                'fecha_inicio' => $fechaInicio,
-                'fecha_fin' => $fechaFin,
-            ],
-        ]);
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Error al obtener producción por tipo de tejido',
-            'error' => $e->getMessage(),
-        ], 500);
     }
-}
 
     /**
      * Validar formato de fecha Firebird (dd.MM.yyyy HH:mm:ss)
