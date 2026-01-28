@@ -256,7 +256,6 @@ class ReportesProduccionController extends Controller
         }
     }
 
-
     /**
      * 🔥 Obtener solo datos de ESTAMPADO con filtros de fecha.
      */
@@ -502,8 +501,6 @@ class ReportesProduccionController extends Controller
             ], 500);
         }
     }
-
-
 
     /**
      * 🔥 Obtener producción de TEJIDO por artículo (con filtros de fecha)
@@ -806,17 +803,17 @@ class ReportesProduccionController extends Controller
         INNER JOIN V_ARTICULOS VA ON VA.ID = CAST(SUBSTRING(PE.CVE_ART FROM 4 FOR 7) AS NUMERIC)
         ";
 
-                if ($fechaInicioTS && $fechaFinTS) {
-                    $query .= "
+            if ($fechaInicioTS && $fechaFinTS) {
+                $query .= "
                 WHERE P.FECHAYHORA >= '$fechaInicioTS'
                 AND P.FECHAYHORA <= '$fechaFinTS'
                 AND P.ESTATUS = 1
             ";
-                } else {
-                    $query .= ' WHERE P.ESTATUS = 1 ';
-                }
+            } else {
+                $query .= ' WHERE P.ESTATUS = 1 ';
+            }
 
-                $query .= '
+            $query .= '
             GROUP BY CAST(P.FECHAYHORA AS DATE), P.TIPO, VA.ARTICULO
             ORDER BY CAST(P.FECHAYHORA AS DATE) ASC, P.TIPO ASC, VA.ARTICULO ASC
         ';
@@ -928,14 +925,6 @@ class ReportesProduccionController extends Controller
         }
     }
 
-
-
-
-
-
-
-
-
     /**
      * 🔥 Obtener solo datos de ACABADO con filtros de fecha.
      */
@@ -1014,5 +1003,355 @@ class ReportesProduccionController extends Controller
                 'error'   => $e->getMessage(),
             ], 500);
         }
+    }
+
+
+
+    /***
+     * 
+     */
+
+
+    /**
+     * 🔥 NUEVO: Obtener TODOS los reportes en una sola petición
+     */
+    public function getAllReports(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'fecha_inicio' => 'required|string',
+                'fecha_fin'    => 'required|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Parámetros inválidos',
+                    'errors'  => $validator->errors(),
+                ], 400);
+            }
+
+            $fechaInicio = $request->input('fecha_inicio');
+            $fechaFin = $request->input('fecha_fin');
+
+            // Validar formato
+            if (
+                !$this->validarFormatoFechaFirebird($fechaInicio) ||
+                !$this->validarFormatoFechaFirebird($fechaFin)
+            ) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Formato de fecha inválido. Use: dd.MM.yyyy HH:mm:ss',
+                ], 400);
+            }
+
+            // 🔥 Ejecutar TODAS las consultas en paralelo
+            $data = [
+                'facturado' => $this->getFacturadoData($fechaInicio, $fechaFin),
+                'embarques' => $this->getEmbarquesData($fechaInicio, $fechaFin),
+                'tejido' => $this->getTejidoResumenData($fechaInicio, $fechaFin),
+                'tintoreria' => $this->getTintoreriaData($fechaInicio, $fechaFin),
+                'estampados' => $this->getEstampadosData($fechaInicio, $fechaFin),
+                'acabado' => $this->getAcabadoData($fechaInicio, $fechaFin),
+                'produccion' => $this->getProduccionTejidoData($fechaInicio, $fechaFin),
+                'revisado' => $this->getRevisadoTejidoData($fechaInicio, $fechaFin),
+                'porRevisar' => $this->getPorRevisarTejidoData($fechaInicio, $fechaFin),
+                'saldos' => $this->getSaldosTejidoData($fechaInicio, $fechaFin),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $data,
+                'filtros' => [
+                    'fecha_inicio' => $fechaInicio,
+                    'fecha_fin' => $fechaFin,
+                ],
+            ], 200);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener reportes consolidados',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    // 🔥 Métodos auxiliares para cada consulta
+    private function getFacturadoData($fechaInicio, $fechaFin)
+    {
+        $fechaInicioISO = substr($fechaInicio, 6, 4) . '-' . substr($fechaInicio, 3, 2) . '-' . substr($fechaInicio, 0, 2);
+        $fechaFinISO = substr($fechaFin, 6, 4) . '-' . substr($fechaFin, 3, 2) . '-' . substr($fechaFin, 0, 2);
+        $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFinISO . ' +1 day'));
+
+        $sql = "
+        SELECT
+            C.nombre AS CLIENTE,
+            F.cve_doc AS FACTURA,
+            SUM(P.CANT) AS CANT,
+            P.UNI_VENTA AS UM,
+            F.FECHA_DOC AS FECHA,
+            CASE WHEN COALESCE(F.tipcamb, 1) = 1 THEN COALESCE(F.can_tot, 0)
+                 ELSE COALESCE(F.can_tot, 0) * COALESCE(F.tipcamb, 1) END AS IMPORTE,
+            CASE WHEN COALESCE(F.tipcamb, 1) = 1 THEN COALESCE(F.imp_tot4, 0)
+                 ELSE COALESCE(F.imp_tot4, 0) * COALESCE(F.tipcamb, 1) END AS IMPUESTOS,
+            CASE WHEN COALESCE(F.tipcamb, 1) = 1 THEN (COALESCE(F.can_tot, 0) + COALESCE(F.imp_tot4, 0))
+                 ELSE (COALESCE(F.can_tot, 0) * COALESCE(F.tipcamb, 1)) + (COALESCE(F.imp_tot4, 0) * COALESCE(F.tipcamb, 1)) END AS TOTAL
+        FROM PAR_FACTF03 P
+        LEFT JOIN FACTF03 F ON F.cve_doc = P.cve_doc
+        LEFT JOIN CLIE03 C ON C.clave = F.cve_clpv
+        WHERE F.status IN ('E','O')
+          AND F.FECHA_DOC >= ?
+          AND F.FECHA_DOC < ?
+        GROUP BY C.nombre, F.cve_doc, P.UNI_VENTA, F.can_tot, F.imp_tot4, F.tipcamb, F.FECHA_DOC
+        ORDER BY F.cve_doc
+    ";
+
+        $rows = DB::connection('firebird')->select($sql, [$fechaInicioISO, $fechaFinExclusiva]);
+
+        $detalle = array_map(function ($r) {
+            return [
+                'cliente' => $r->CLIENTE,
+                'factura' => $r->FACTURA,
+                'fecha' => $r->FECHA,
+                'cant' => (float) ($r->CANT ?? 0),
+                'um' => $r->UM,
+                'importe' => (float) ($r->IMPORTE ?? 0),
+                'impuestos' => (float) ($r->IMPUESTOS ?? 0),
+                'total' => (float) ($r->TOTAL ?? 0),
+            ];
+        }, $rows);
+
+        $facturas = [];
+        foreach ($rows as $r) {
+            $fac = $r->FACTURA;
+            if (!isset($facturas[$fac])) {
+                $facturas[$fac] = [
+                    'importe' => (float) ($r->IMPORTE ?? 0),
+                    'impuestos' => (float) ($r->IMPUESTOS ?? 0),
+                    'total' => (float) ($r->TOTAL ?? 0),
+                ];
+            }
+        }
+
+        $totalImporte = array_sum(array_column($facturas, 'importe'));
+        $totalImpuestos = array_sum(array_column($facturas, 'impuestos'));
+        $totalGeneral = array_sum(array_column($facturas, 'total'));
+        $totalCant = array_reduce($rows, fn($carry, $item) => $carry + (float) ($item->CANT ?? 0), 0);
+
+        return [
+            'totales' => [
+                'facturas' => count($facturas),
+                'cant' => (float) $totalCant,
+                'importe' => (float) $totalImporte,
+                'impuestos' => (float) $totalImpuestos,
+                'total' => (float) $totalGeneral,
+            ],
+            'detalle' => $detalle,
+        ];
+    }
+
+    private function getEmbarquesData($fechaInicio, $fechaFin)
+    {
+        $query = "
+        SELECT
+            CASE P.TIPO
+                WHEN 51 THEN 'PRIMERA'
+                WHEN 52 THEN 'PREFERIDA'
+                WHEN 73 THEN 'ORILLAS'
+                WHEN 74 THEN 'RETAZO'
+                WHEN 77 THEN 'SEGUNDA'
+                WHEN 81 THEN 'MUESTRAS'
+                ELSE 'SIN CLASIFICAR'
+            END AS TIPO,
+            VA.ARTICULO,
+            CAST(P.FECHAYHORA AS DATE) AS FECHA,
+            SUM(P.PNETO) AS CANTIDAD
+        FROM PSDTABPZAS P
+        INNER JOIN PSDENC PE ON PE.CLAVE = P.CVE_ENC
+        INNER JOIN V_ARTICULOS VA ON VA.ID = CAST(SUBSTRING(PE.CVE_ART FROM 4 FOR 7) AS NUMERIC)
+        WHERE P.FECHAYHORA >= '$fechaInicio'
+          AND P.FECHAYHORA <= '$fechaFin'
+          AND P.ESTATUS = 1
+        GROUP BY CAST(P.FECHAYHORA AS DATE), P.TIPO, VA.ARTICULO
+        ORDER BY CAST(P.FECHAYHORA AS DATE) ASC
+    ";
+        return DB::connection('firebird')->select($query);
+    }
+
+    private function getTejidoResumenData($fechaInicio, $fechaFin)
+    {
+        return DB::connection('firebird')
+            ->table('ORDENESPROC as op')
+            ->join('PROCESOS as p', 'p.CODIGO', '=', 'op.PROC')
+            ->join('DEPTOS as d', 'd.CLAVE', '=', 'op.DEPTO')
+            ->select(
+                'd.DEPTO as departamento',
+                'p.PROCESO as proceso',
+                DB::raw('CAST(CEILING(SUM("op"."CANTENT")) AS DECIMAL(18,3)) as CANTIDAD'),
+                DB::raw('SUM("op"."PZASENT") as PIEZAS')
+            )
+            ->where('d.DEPTO', 'TEJIDO')
+            ->where('p.PROCESO', 'TEJIDO')
+            ->whereNotIn('d.DEPTO', $this->departamentosExcluidos)
+            ->whereBetween('op.FECHAENT', [$fechaInicio, $fechaFin])
+            ->groupBy('d.DEPTO', 'p.PROCESO')
+            ->get();
+    }
+
+    private function getTintoreriaData($fechaInicio, $fechaFin)
+    {
+        return DB::connection('firebird')
+            ->table('ORDENESPROC as op')
+            ->join('PROCESOS as p', 'p.CODIGO', '=', 'op.PROC')
+            ->join('DEPTOS as d', 'd.CLAVE', '=', 'op.DEPTO')
+            ->select(
+                'd.DEPTO as departamento',
+                'p.PROCESO as proceso',
+                DB::raw('CAST(CEILING(SUM("op"."CANTENT")) AS DECIMAL(18,3)) as CANTIDAD'),
+                DB::raw('SUM("op"."PZASENT") as PIEZAS')
+            )
+            ->where('d.DEPTO', 'TINTORERIA')
+            ->where('p.PROCESO', 'TEÑIDO')
+            ->whereNotIn('d.DEPTO', $this->departamentosExcluidos)
+            ->whereBetween('op.FECHAENT', [$fechaInicio, $fechaFin])
+            ->groupBy('d.DEPTO', 'p.PROCESO')
+            ->get();
+    }
+
+    private function getEstampadosData($fechaInicio, $fechaFin)
+    {
+        return DB::connection('firebird')
+            ->table('ORDENESPROC as op')
+            ->join('PROCESOS as p', 'p.CODIGO', '=', 'op.PROC')
+            ->join('DEPTOS as d', 'd.CLAVE', '=', 'op.DEPTO')
+            ->select(
+                'd.DEPTO as departamento',
+                'p.PROCESO as proceso',
+                DB::raw('CAST(CEILING(SUM("op"."CANTENT")) AS DECIMAL(18,3)) as CANTIDAD'),
+                DB::raw('SUM("op"."PZASENT") as PIEZAS')
+            )
+            ->where('d.DEPTO', 'ESTAMPADO')
+            ->where('p.PROCESO', 'ESTAMPADO')
+            ->whereNotIn('d.DEPTO', $this->departamentosExcluidos)
+            ->whereBetween('op.FECHAENT', [$fechaInicio, $fechaFin])
+            ->groupBy('d.DEPTO', 'p.PROCESO')
+            ->get();
+    }
+
+    private function getAcabadoData($fechaInicio, $fechaFin)
+    {
+        $excluidos = array_values(array_diff($this->departamentosExcluidos, ['CONTROL DE CALIDAD']));
+
+        return DB::connection('firebird')
+            ->table('ORDENESPROC as op')
+            ->join('PROCESOS as p', 'p.CODIGO', '=', 'op.PROC')
+            ->join('DEPTOS as d', 'd.CLAVE', '=', 'op.DEPTO')
+            ->select(
+                'd.DEPTO as departamento',
+                'p.PROCESO as proceso',
+                DB::raw('CAST(CEILING(SUM("op"."CANTENT")) AS DECIMAL(18,3)) as CANTIDAD'),
+                DB::raw('SUM("op"."PZASENT") as PIEZAS')
+            )
+            ->where('d.DEPTO', 'CONTROL DE CALIDAD')
+            ->where('p.PROCESO', 'CONTROL DE CALIDAD')
+            ->whereNotIn('d.DEPTO', $excluidos)
+            ->whereBetween('op.FECHAENT', [$fechaInicio, $fechaFin])
+            ->groupBy('d.DEPTO', 'p.PROCESO')
+            ->get();
+    }
+
+    private function getProduccionTejidoData($fechaInicio, $fechaFin)
+    {
+        $query = "
+        SELECT
+            a.NOMBRE AS ARTICULO,
+            COUNT(*) AS PIEZAS,
+            SUM(
+                CASE WHEN p.PESOTJ SIMILAR TO '[0-9]+([.,][0-9]+)?'
+                THEN CAST(p.PESOTJ AS DECIMAL(18,2))
+                ELSE 0 END
+            ) AS TOTAL_TJ
+        FROM PSDTABPZASTJ p
+        INNER JOIN ARTICULOS a ON a.ID = p.CVE_ART
+        WHERE p.FECHAYHORAPSD BETWEEN '$fechaInicio' AND '$fechaFin'
+        GROUP BY a.NOMBRE
+        ORDER BY a.NOMBRE
+    ";
+        return DB::connection('firebird')->select($query);
+    }
+
+    private function getRevisadoTejidoData($fechaInicio, $fechaFin)
+    {
+        $fechaInicioTS = date('d.m.Y H:i:s', strtotime($fechaInicio));
+        $fechaFinTS = date('d.m.Y H:i:s', strtotime($fechaFin . ' +1 day'));
+
+        $query = "
+        SELECT
+            a.NOMBRE AS ARTICULO,
+            COUNT(CASE WHEN p.PESORV SIMILAR TO '[0-9]+([.,][0-9]+)?' THEN 1 ELSE NULL END) AS PIEZAS,
+            SUM(
+                CASE WHEN p.PESORV SIMILAR TO '[0-9]+([.,][0-9]+)?'
+                THEN CAST(p.PESORV AS DECIMAL(18,2))
+                ELSE 0 END
+            ) AS TOTAL_RV
+        FROM PSDTABPZASTJ p
+        INNER JOIN ARTICULOS a ON a.ID = p.CVE_ART
+        WHERE (p.FECHAYHORAREV >= CAST('$fechaInicioTS' AS TIMESTAMP)
+          AND p.FECHAYHORAREV < CAST('$fechaFinTS' AS TIMESTAMP)
+          AND COALESCE(ISSALDO,0)=0)
+        GROUP BY a.NOMBRE
+        ORDER BY a.NOMBRE
+    ";
+        return DB::connection('firebird')->select($query);
+    }
+
+    private function getPorRevisarTejidoData($fechaInicio, $fechaFin)
+    {
+        $fechaInicioTS = date('Y-m-d 00:00:00', strtotime($fechaInicio));
+        $fechaFinTS = date('Y-m-d 23:59:59', strtotime($fechaFin));
+
+        $query = "
+        SELECT
+            a.NOMBRE AS ARTICULO,
+            COUNT(*) AS PIEZAS,
+            SUM(
+                CASE WHEN p.PESOTJ IS NOT NULL
+                THEN CAST(REPLACE(p.PESOTJ, ',', '.') AS DECIMAL(18,2))
+                ELSE 0 END
+            ) AS TOTAL_POR_REVISAR
+        FROM PSDTABPZASTJ p
+        INNER JOIN ARTICULOS a ON a.ID = p.CVE_ART
+        WHERE COALESCE(p.ISREV,0) = 0
+          AND p.FECHAYHORAPSD >= CAST('$fechaInicioTS' AS TIMESTAMP)
+          AND p.FECHAYHORAPSD <= CAST('$fechaFinTS' AS TIMESTAMP)
+        GROUP BY a.NOMBRE
+        ORDER BY a.NOMBRE
+    ";
+        return DB::connection('firebird')->select($query);
+    }
+
+    private function getSaldosTejidoData($fechaInicio, $fechaFin)
+    {
+        $fechaInicioTS = date('Y-m-d 00:00:00', strtotime($fechaInicio));
+        $fechaFinTS = date('Y-m-d 23:59:59', strtotime($fechaFin));
+
+        $query = "
+        SELECT
+            a.NOMBRE AS ARTICULO,
+            COUNT(CASE WHEN p.PESOSL SIMILAR TO '[0-9]+([.,][0-9]+)?' THEN 1 ELSE NULL END) AS PIEZAS,
+            SUM(
+                CASE WHEN p.PESOSL SIMILAR TO '[0-9]+([.,][0-9]+)?'
+                THEN CAST(p.PESOSL AS DECIMAL(18,2))
+                ELSE 0 END
+            ) AS TOTAL_SALDO
+        FROM PSDTABPZASTJ p
+        INNER JOIN ARTICULOS a ON a.ID = p.CVE_ART
+        WHERE p.FECHAYHORAREV BETWEEN CAST('$fechaInicioTS' AS TIMESTAMP)
+                                  AND CAST('$fechaFinTS' AS TIMESTAMP)
+          AND COALESCE(p.ISSALDO,0) = 1
+        GROUP BY a.NOMBRE
+        ORDER BY a.NOMBRE
+    ";
+        return DB::connection('firebird')->select($query);
     }
 }

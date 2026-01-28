@@ -156,4 +156,24 @@ Route::prefix('reportes-produccion')->group(function () {
 
     // GET: Obtener reportes por departamento específico (opcional)
     Route::get('/departamento/{id}', [ReportesProduccionController::class, 'getByDepartment']);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // Ruta consolidada (agregar después de las otras rutas de reportes-produccion)
+Route::get('all', [ReportesProduccionController::class, 'getAllReports']);
 });
