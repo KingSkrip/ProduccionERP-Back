@@ -119,13 +119,16 @@ class AuthController extends Controller
                 'roles' => $roles->pluck('name')->values()->all(),
             ]);
 
-            // ✅ JWT sub = USUARIOS.ID
+            // ✅ JWT payload blindado con claims estándar
             $payload = [
                 'sub'     => $userId,
-                'correo'  => $usuario->CORREO,
-                'usuario' => $usuario->USUARIO,
+                // 'correo'  => $usuario->CORREO,
+                // 'usuario' => $usuario->USUARIO,
                 'iat'     => time(),
-                'exp'     => time() + 86400
+                'exp'     => time() + $this->jwtExpiration,
+                'iss'     => config('app.url'),        
+                'aud'     => 'fibrasan',          
+                'jti'     => Str::random(32),
             ];
 
             Log::info('✅ JWT_SUB_IS_ID', [
@@ -135,16 +138,16 @@ class AuthController extends Controller
 
             $key = config('jwt.secret');
 
-            if (!is_string($key) || $key === '') {
-                Log::error('JWT secret missing (config jwt.secret)', [
+            if (!is_string($key) || empty($key)) {
+                Log::error('JWT secret missing or empty', [
                     'jwt_secret_env' => env('JWT_SECRET'),
                     'jwt_secret_config' => $key,
                 ]);
-                return response()->json(['message' => 'JWT secret no configurado'], 500);
+                return response()->json(['message' => 'Error de configuración interna'], 500);
             }
-            
+
+            // Encode forzando HS256
             $token = JWT::encode($payload, $key, 'HS256');
-            
 
             // 🔥 Datos NOI usando TB.CLAVE (de identity)
             $departamentos = collect();
@@ -257,19 +260,14 @@ class AuthController extends Controller
         } catch (\Throwable $e) {
             Log::error('💥 Error en signIn()', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'email' => $request->email ?? null
+                // 'trace' => $e->getTraceAsString()  // descomenta solo en dev
             ]);
 
             return response()->json([
-                'message' => 'Error al iniciar sesión',
-                'debug' => config('app.debug') ? $e->getMessage() : null
-            ], 500);
+                'message' => 'Error al iniciar sesión'
+            ], 500);  // En prod, considera 401 o mensaje genérico si quieres más seguridad
         }
     }
-
-
-
 
     /**
      * Iniciar sesión usando token (refresh)

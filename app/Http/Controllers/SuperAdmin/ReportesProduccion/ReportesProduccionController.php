@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\SuperAdmin\ReportesProduccion;
 
+use App\Events\ReportesActualizados;
 use App\Http\Controllers\Controller;
 use Exception;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -1045,19 +1047,28 @@ class ReportesProduccionController extends Controller
                 ], 400);
             }
 
-            // 🔥 Ejecutar TODAS las consultas en paralelo
-            $data = [
-                'facturado' => $this->getFacturadoData($fechaInicio, $fechaFin),
-                'embarques' => $this->getEmbarquesData($fechaInicio, $fechaFin),
-                'tejido' => $this->getTejidoResumenData($fechaInicio, $fechaFin),
-                'tintoreria' => $this->getTintoreriaData($fechaInicio, $fechaFin),
-                'estampados' => $this->getEstampadosData($fechaInicio, $fechaFin),
-                'acabado' => $this->getAcabadoData($fechaInicio, $fechaFin),
-                'produccion' => $this->getProduccionTejidoData($fechaInicio, $fechaFin),
-                'revisado' => $this->getRevisadoTejidoData($fechaInicio, $fechaFin),
-                'porRevisar' => $this->getPorRevisarTejidoData($fechaInicio, $fechaFin),
-                'saldos' => $this->getSaldosTejidoData($fechaInicio, $fechaFin),
-            ];
+            $key = "reportes:all:" . md5($fechaInicio . '|' . $fechaFin);
+
+            $data = Cache::remember($key, now()->addSeconds(60), function () use ($fechaInicio, $fechaFin) {
+                return [
+                    'facturado'   => $this->getFacturadoData($fechaInicio, $fechaFin),
+                    'embarques'   => $this->getEmbarquesData($fechaInicio, $fechaFin),
+                    'tejido'      => $this->getTejidoResumenData($fechaInicio, $fechaFin),
+                    'tintoreria'  => $this->getTintoreriaData($fechaInicio, $fechaFin),
+                    'estampados'  => $this->getEstampadosData($fechaInicio, $fechaFin),
+                    'acabado'     => $this->getAcabadoData($fechaInicio, $fechaFin),
+                    'produccion'  => $this->getProduccionTejidoData($fechaInicio, $fechaFin),
+                    'revisado'    => $this->getRevisadoTejidoData($fechaInicio, $fechaFin),
+                    'porRevisar'  => $this->getPorRevisarTejidoData($fechaInicio, $fechaFin),
+                    'saldos'      => $this->getSaldosTejidoData($fechaInicio, $fechaFin),
+                ];
+            });
+
+            //disparamos evento
+            // broadcast(new ReportesActualizados(
+            //     'Reportes actualizados',
+            //     ['total_registros' => count($data)]
+            // ))->toOthers();
 
             return response()->json([
                 'success' => true,
