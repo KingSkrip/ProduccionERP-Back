@@ -136,82 +136,62 @@ class ReportesProduccionController extends Controller
             $fechaInicio = substr($request->input('fecha_inicio'), 0, 10);
             $fechaFin    = substr($request->input('fecha_fin'), 0, 10);
 
-            /**
-             * Para que el fin sea inclusivo SIN depender si FECHA_DOC es DATE o TIMESTAMP:
-             * usamos:
-             *   FECHA_DOC >= inicio
-             *   FECHA_DOC < (fin + 1 día)
-             */
+            // Fin exclusivo (fin + 1 día)
             $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFin . ' +1 day'));
 
             $sql = "
             SELECT
-                C.nombre            AS CLIENTE,
-                F.cve_doc           AS FACTURA,
-                SUM(P.CANT)         AS CANT,
-                P.UNI_VENTA         AS UM,
-                F.FECHA_DOC         AS FECHA,
-
-
-                CASE
-                    WHEN COALESCE(F.tipcamb, 1) = 1 THEN COALESCE(F.can_tot, 0)
-                    ELSE COALESCE(F.can_tot, 0) * COALESCE(F.tipcamb, 1)
-                END AS IMPORTE,
-
-                CASE
-                    WHEN COALESCE(F.tipcamb, 1) = 1 THEN COALESCE(F.imp_tot4, 0)
-                    ELSE COALESCE(F.imp_tot4, 0) * COALESCE(F.tipcamb, 1)
-                END AS IMPUESTOS,
-
-                CASE
-                    WHEN COALESCE(F.tipcamb, 1) = 1 THEN (COALESCE(F.can_tot, 0) + COALESCE(F.imp_tot4, 0))
-                    ELSE (COALESCE(F.can_tot, 0) * COALESCE(F.tipcamb, 1)) + (COALESCE(F.imp_tot4, 0) * COALESCE(F.tipcamb, 1))
-                END AS TOTAL
-
-            FROM PAR_FACTF03 P
-            LEFT JOIN FACTF03 F ON F.cve_doc = P.cve_doc
-            LEFT JOIN CLIE03 C  ON C.clave  = F.cve_clpv
-
-            WHERE F.status IN ('E','O')
-              AND F.FECHA_DOC >= ?
-              AND F.FECHA_DOC < ?
-
+                C.nombre                    AS CLIENTE,
+                F.cve_doc                   AS FACTURA,
+                F.status                    AS STATUS,
+                F.fecha_doc                 AS FECHA,
+                SUM(P.cant)                 AS CANT,
+                P.uni_venta                 AS UM,
+                MAX(F.can_tot)              AS IMPORTE,
+                MAX(F.imp_tot4)             AS IMPUESTOS,
+                MAX(F.can_tot + F.imp_tot4) AS TOTAL
+            FROM FACTF03 F
+            INNER JOIN PAR_FACTF03 P ON P.cve_doc = F.cve_doc
+            INNER JOIN CLIE03 C      ON C.clave   = F.cve_clpv
+            INNER JOIN INVE03 I      ON I.cve_art = P.cve_art
+            WHERE 
+                F.status IN ('E', 'O')
+                AND F.fecha_doc >= ?
+                AND F.fecha_doc < ?
+                AND I.lin_prod = 'PTPR'
+                AND C.nombre NOT IN (
+                    'COMERCIALIZADORA SION COMEX SAS',
+                    'TSHIRT GROUP'
+                )
             GROUP BY
                 C.nombre,
                 F.cve_doc,
-                P.UNI_VENTA,
-                F.can_tot,
-                F.imp_tot4,
-                F.tipcamb,
-                F.FECHA_DOC
-
-            ORDER BY F.cve_doc
+                F.status,
+                F.fecha_doc,
+                P.uni_venta
         ";
 
             $rows = DB::connection('firebird')->select($sql, [$fechaInicio, $fechaFinExclusiva]);
 
-            // Formateo detalle
             $detalle = array_map(function ($r) {
                 return [
-                    'cliente'   => $r->CLIENTE,
-                    'factura'   => $r->FACTURA,
-                    'fecha'     => $r->FECHA, // ✅ IMPORTANTE
+                    'cliente'   => $r->CLIENTE ?? null,
+                    'factura'   => $r->FACTURA ?? null,
+                    'fecha'     => $r->FECHA ?? null,
                     'cant'      => (float) ($r->CANT ?? 0),
-                    'um'        => $r->UM,
+                    'um'        => $r->UM ?? null,
                     'importe'   => (float) ($r->IMPORTE ?? 0),
                     'impuestos' => (float) ($r->IMPUESTOS ?? 0),
                     'total'     => (float) ($r->TOTAL ?? 0),
                 ];
             }, $rows);
 
-
-            /**
-             * Totales monetarios SIN duplicar por UM:
-             * sumamos 1 vez por FACTURA.
-             */
+            // Totales monetarios por FACTURA (sin duplicar por UM)
             $facturas = [];
             foreach ($rows as $r) {
-                $fac = $r->FACTURA;
+                $fac = $r->FACTURA ?? null;
+                if (!$fac) continue;
+
                 if (!isset($facturas[$fac])) {
                     $facturas[$fac] = [
                         'importe'   => (float) ($r->IMPORTE ?? 0),
@@ -225,7 +205,6 @@ class ReportesProduccionController extends Controller
             $totalImpuestos = array_sum(array_column($facturas, 'impuestos'));
             $totalGeneral   = array_sum(array_column($facturas, 'total'));
 
-            // Cantidad total (esta sí la sumo de todas las filas porque está por UM)
             $totalCant = array_reduce($rows, function ($carry, $item) {
                 return $carry + (float) ($item->CANT ?? 0);
             }, 0);
@@ -243,10 +222,10 @@ class ReportesProduccionController extends Controller
                     'detalle' => $detalle,
                 ],
                 'filtros' => [
-                    'fecha_inicio'       => $fechaInicio,
-                    'fecha_fin'          => $fechaFin,
+                    'fecha_inicio'        => $fechaInicio,
+                    'fecha_fin'           => $fechaFin,
                     'fecha_fin_exclusiva' => $fechaFinExclusiva,
-                    'total_registros'    => count($rows),
+                    'total_registros'     => count($rows),
                 ],
             ], 200);
         } catch (\Throwable $e) {
@@ -257,6 +236,7 @@ class ReportesProduccionController extends Controller
             ], 500);
         }
     }
+
 
     /**
      * 🔥 Obtener solo datos de ESTAMPADO con filtros de fecha.
@@ -1090,30 +1070,63 @@ class ReportesProduccionController extends Controller
     // 🔥 Métodos auxiliares para cada consulta
     private function getFacturadoData($fechaInicio, $fechaFin)
     {
-        $fechaInicioISO = substr($fechaInicio, 6, 4) . '-' . substr($fechaInicio, 3, 2) . '-' . substr($fechaInicio, 0, 2);
-        $fechaFinISO = substr($fechaFin, 6, 4) . '-' . substr($fechaFin, 3, 2) . '-' . substr($fechaFin, 0, 2);
+        // Si te llegan en formato YYYY-MM-DD o ISO con hora, recorta a 10
+        // (si te llegan dd-mm-yyyy, abajo te dejo cómo convertir bien)
+        $fechaInicioISO = substr($fechaInicio, 0, 10);
+        $fechaFinISO    = substr($fechaFin, 0, 10);
+
+        // Si tus fechas vienen dd-mm-yyyy, usa esto en vez de lo de arriba:
+        // $fechaInicioISO = substr($fechaInicio, 6, 4) . '-' . substr($fechaInicio, 3, 2) . '-' . substr($fechaInicio, 0, 2);
+        // $fechaFinISO    = substr($fechaFin, 6, 4) . '-' . substr($fechaFin, 3, 2) . '-' . substr($fechaFin, 0, 2);
+
         $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFinISO . ' +1 day'));
 
         $sql = "
         SELECT
-            C.nombre AS CLIENTE,
-            F.cve_doc AS FACTURA,
-            SUM(P.CANT) AS CANT,
-            P.UNI_VENTA AS UM,
-            F.FECHA_DOC AS FECHA,
-            CASE WHEN COALESCE(F.tipcamb, 1) = 1 THEN COALESCE(F.can_tot, 0)
-                 ELSE COALESCE(F.can_tot, 0) * COALESCE(F.tipcamb, 1) END AS IMPORTE,
-            CASE WHEN COALESCE(F.tipcamb, 1) = 1 THEN COALESCE(F.imp_tot4, 0)
-                 ELSE COALESCE(F.imp_tot4, 0) * COALESCE(F.tipcamb, 1) END AS IMPUESTOS,
-            CASE WHEN COALESCE(F.tipcamb, 1) = 1 THEN (COALESCE(F.can_tot, 0) + COALESCE(F.imp_tot4, 0))
-                 ELSE (COALESCE(F.can_tot, 0) * COALESCE(F.tipcamb, 1)) + (COALESCE(F.imp_tot4, 0) * COALESCE(F.tipcamb, 1)) END AS TOTAL
-        FROM PAR_FACTF03 P
-        LEFT JOIN FACTF03 F ON F.cve_doc = P.cve_doc
-        LEFT JOIN CLIE03 C ON C.clave = F.cve_clpv
-        WHERE F.status IN ('E','O')
-          AND F.FECHA_DOC >= ?
-          AND F.FECHA_DOC < ?
-        GROUP BY C.nombre, F.cve_doc, P.UNI_VENTA, F.can_tot, F.imp_tot4, F.tipcamb, F.FECHA_DOC
+            C.nombre                    AS CLIENTE,
+            F.cve_doc                   AS FACTURA,
+            F.status                    AS STATUS,
+            F.fecha_doc                 AS FECHA,
+            SUM(P.cant)                 AS CANT,
+            P.uni_venta                 AS UM,
+
+            /* Montos por factura (1 vez), con conversión por tipo de cambio si aplica */
+            MAX(
+                CASE 
+                    WHEN COALESCE(F.tipcamb, 1) = 1 THEN COALESCE(F.can_tot, 0)
+                    ELSE COALESCE(F.can_tot, 0) * COALESCE(F.tipcamb, 1)
+                END
+            ) AS IMPORTE,
+
+            MAX(
+                CASE 
+                    WHEN COALESCE(F.tipcamb, 1) = 1 THEN COALESCE(F.imp_tot4, 0)
+                    ELSE COALESCE(F.imp_tot4, 0) * COALESCE(F.tipcamb, 1)
+                END
+            ) AS IMPUESTOS,
+
+            MAX(
+                CASE 
+                    WHEN COALESCE(F.tipcamb, 1) = 1 THEN (COALESCE(F.can_tot, 0) + COALESCE(F.imp_tot4, 0))
+                    ELSE (COALESCE(F.can_tot, 0) * COALESCE(F.tipcamb, 1)) + (COALESCE(F.imp_tot4, 0) * COALESCE(F.tipcamb, 1))
+                END
+            ) AS TOTAL
+        FROM FACTF03 F
+        INNER JOIN PAR_FACTF03 P ON P.cve_doc = F.cve_doc
+        INNER JOIN CLIE03 C      ON C.clave   = F.cve_clpv
+        INNER JOIN INVE03 I      ON I.cve_art = P.cve_art
+        WHERE 
+            F.status IN ('E','O')
+            AND F.fecha_doc >= ?
+            AND F.fecha_doc < ?
+            AND I.lin_prod = 'PTPR'
+            AND C.nombre NOT IN ('COMERCIALIZADORA SION COMEX SAS', 'TSHIRT GROUP')
+        GROUP BY
+            C.nombre,
+            F.cve_doc,
+            F.status,
+            F.fecha_doc,
+            P.uni_venta
         ORDER BY F.cve_doc
     ";
 
@@ -1121,45 +1134,60 @@ class ReportesProduccionController extends Controller
 
         $detalle = array_map(function ($r) {
             return [
-                'cliente' => $r->CLIENTE,
-                'factura' => $r->FACTURA,
-                'fecha' => $r->FECHA,
-                'cant' => (float) ($r->CANT ?? 0),
-                'um' => $r->UM,
-                'importe' => (float) ($r->IMPORTE ?? 0),
+                'cliente'   => $r->CLIENTE ?? null,
+                'factura'   => $r->FACTURA ?? null,
+                'fecha'     => $r->FECHA ?? null,
+                'cant'      => (float) ($r->CANT ?? 0),
+                'um'        => $r->UM ?? null,
+                'importe'   => (float) ($r->IMPORTE ?? 0),
                 'impuestos' => (float) ($r->IMPUESTOS ?? 0),
-                'total' => (float) ($r->TOTAL ?? 0),
+                'total'     => (float) ($r->TOTAL ?? 0),
             ];
         }, $rows);
 
+        // Totales monetarios por FACTURA (sin duplicar por UM)
         $facturas = [];
         foreach ($rows as $r) {
-            $fac = $r->FACTURA;
+            $fac = $r->FACTURA ?? null;
+            if (!$fac) continue;
+
             if (!isset($facturas[$fac])) {
                 $facturas[$fac] = [
-                    'importe' => (float) ($r->IMPORTE ?? 0),
+                    'importe'   => (float) ($r->IMPORTE ?? 0),
                     'impuestos' => (float) ($r->IMPUESTOS ?? 0),
-                    'total' => (float) ($r->TOTAL ?? 0),
+                    'total'     => (float) ($r->TOTAL ?? 0),
                 ];
             }
         }
 
-        $totalImporte = array_sum(array_column($facturas, 'importe'));
+        $totalImporte   = array_sum(array_column($facturas, 'importe'));
         $totalImpuestos = array_sum(array_column($facturas, 'impuestos'));
-        $totalGeneral = array_sum(array_column($facturas, 'total'));
-        $totalCant = array_reduce($rows, fn($carry, $item) => $carry + (float) ($item->CANT ?? 0), 0);
+        $totalGeneral   = array_sum(array_column($facturas, 'total'));
+
+        // Cantidad: OJO aquí sigues sumando mezclado si hay LB y KG.
+        // Si tu UI dice KG, convierte LB->KG o filtra UM='KG'.
+        $totalCant = array_reduce($rows, function ($carry, $item) {
+            return $carry + (float) ($item->CANT ?? 0);
+        }, 0);
 
         return [
             'totales' => [
-                'facturas' => count($facturas),
-                'cant' => (float) $totalCant,
-                'importe' => (float) $totalImporte,
+                'facturas'  => count($facturas),
+                'cant'      => (float) $totalCant,
+                'importe'   => (float) $totalImporte,
                 'impuestos' => (float) $totalImpuestos,
-                'total' => (float) $totalGeneral,
+                'total'     => (float) $totalGeneral,
             ],
             'detalle' => $detalle,
+            'filtros' => [
+                'fecha_inicio'        => $fechaInicioISO,
+                'fecha_fin'           => $fechaFinISO,
+                'fecha_fin_exclusiva' => $fechaFinExclusiva,
+                'total_registros'     => count($rows),
+            ],
         ];
     }
+
 
     private function getEmbarquesData($fechaInicio, $fechaFin)
     {
@@ -1185,7 +1213,7 @@ class ReportesProduccionController extends Controller
           AND P.ESTATUS = 1
         GROUP BY CAST(P.FECHAYHORA AS DATE), P.TIPO, VA.ARTICULO
         ORDER BY CAST(P.FECHAYHORA AS DATE) ASC
-    ";
+        ";
         return DB::connection('firebird')->select($query);
     }
 

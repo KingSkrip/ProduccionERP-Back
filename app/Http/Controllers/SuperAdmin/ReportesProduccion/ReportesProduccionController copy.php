@@ -135,13 +135,27 @@ class ReportesProduccionController extends Controller
             // Log::info('Fecha inicio: ' . $fechaInicio);
             // Log::info('Fecha fin: ' . $fechaFin);
 
-            $sql = '
-            SELECT SUM(psd.PNETO) AS PNETO, psd.PARTIDA 
-            FROM PSDTABPZAS psd 
-            LEFT JOIN PTPLISTENC pl ON pl.id = psd.id_fol_pl 
-            WHERE pl.FECHAYHORA >= ? AND pl.FECHAYHORA < ? 
-            AND PSD.estatus = 1 AND PSD.tipo = 51
-            GROUP BY psd.PARTIDA';
+            $sql = "
+                SELECT
+                    SUM(psd.PNETO) AS PNETO,
+                    psd.PARTIDA
+                FROM PSDTABPZAS psd
+                LEFT JOIN PTPLISTENC pl ON pl.id = psd.id_fol_pl
+                LEFT JOIN CLIE03 c ON c.clave = pl.cliente
+                WHERE pl.FECHAYHORA >= ?
+                AND pl.FECHAYHORA < ?
+                AND psd.estatus = 1
+                AND psd.tipo = 51
+                -- Se excluyen clientes específicos por nombre
+                AND TRIM(c.nombre) NOT IN (
+                    'COMERCIALIZADORA SION COMEX SAS',
+                    'TSHIRT GROUP'
+                )
+                GROUP BY psd.PARTIDA
+                ";
+
+
+
 
             DB::connection('firebird')->enableQueryLog();
 

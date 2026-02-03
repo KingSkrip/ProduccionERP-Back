@@ -52,28 +52,27 @@ class EncryptJsonResponse
     ];
 
     public function handle(Request $request, Closure $next)
-    {
-        $response = $next($request);
+{
+    $response = $next($request);
+    $encryptEnabled = config('security.encrypt_json_response');
 
-        // Solo encriptar JSON responses
-        if (
-            str_contains($response->headers->get('Content-Type', ''), 'application/json') &&
-            $this->shouldEncrypt($request->path())
-        ) {
-            $originalContent = $response->getContent();
-            
-            // 🔥 CAMBIO: Encriptar y retornar el payload completo de Laravel
-            $encrypted = Crypt::encryptString($originalContent);
-            
-            // Retornar el formato que Angular espera
-            $response->setContent(json_encode([
-                'encrypted' => true,
-                'data' => $encrypted  // ← Ya viene en formato Laravel nativo
-            ]));
-        }
+    if (
+        $encryptEnabled &&
+        str_contains($response->headers->get('Content-Type', ''), 'application/json') &&
+        $this->shouldEncrypt($request->path())
+    ) {
+        $originalContent = $response->getContent();
 
-        return $response;
+        $encrypted = Crypt::encryptString($originalContent);
+
+        $response->setContent(json_encode([
+            'encrypted' => $encryptEnabled,
+            'data' => $encrypted
+        ]));
     }
+
+    return $response;
+}
 
     /**
      * Verificar si la ruta debe encriptarse
