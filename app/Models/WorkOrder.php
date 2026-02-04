@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class WorkOrder extends Model
 {
@@ -11,9 +12,10 @@ class WorkOrder extends Model
     protected $table = 'workorders';
 
     protected $fillable = [
-        'solicitante_id',
-        'aprobador_id',
+        'de_id',
+        'para_id',
         'status_id',
+        'type',
         'titulo',
         'descripcion',
         'fecha_solicitud',
@@ -23,24 +25,29 @@ class WorkOrder extends Model
         'comentarios_solicitante',
     ];
 
-    public function solicitante(): BelongsTo
+    public function de(): BelongsTo
     {
         return $this->belongsTo(
             UserFirebirdIdentity::class,
-            'solicitante_id'
+            'de_id'
         );
     }
 
-    public function aprobador(): BelongsTo
+    public function para(): BelongsTo
     {
         return $this->belongsTo(
             UserFirebirdIdentity::class,
-            'aprobador_id'
+            'para_id'
         );
     }
 
     public function status(): BelongsTo
     {
         return $this->belongsTo(Status::class, 'status_id');
+    }
+
+    public function taskParticipants(): HasMany
+    {
+        return $this->hasMany(TaskParticipant::class, 'workorder_id');
     }
 }

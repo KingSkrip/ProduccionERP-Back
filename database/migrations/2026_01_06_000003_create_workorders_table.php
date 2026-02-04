@@ -12,13 +12,13 @@ return new class extends Migration
             $table->id();
 
             // Usuario que solicita la tarea
-            $table->foreignId('solicitante_id')
+            $table->foreignId('de_id')
                 ->nullable()
                 ->constrained('users_firebird_identities')
                 ->onDelete('cascade');
 
             // Jefe que aprueba/rechaza
-            $table->foreignId('aprobador_id')
+            $table->foreignId('para_id')
                 ->nullable()
                 ->constrained('users_firebird_identities')
                 ->onDelete('set null');

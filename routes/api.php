@@ -7,11 +7,13 @@ use App\Http\Controllers\Personalizacion\Dashboard\DataDashboardController;
 use App\Http\Controllers\Personalizacion\Perfil\PerfilController;
 use App\Http\Controllers\RH\Nominas\EmpresaUno\EmpresaUnoController;
 use App\Http\Controllers\SuperAdmin\AutorizacionPedidos\AutorizacionPedidosController;
+use App\Http\Controllers\SuperAdmin\GestionarUsuarios\AllUsersController;
 use App\Http\Controllers\SuperAdmin\GestionarUsuarios\Colaborador\ColaboradorController;
 use App\Http\Controllers\SuperAdmin\GestionarUsuarios\RH\RHController;
 use App\Http\Controllers\SuperAdmin\GestionarUsuarios\SuAdmin\SuAdminController;
 use App\Http\Controllers\SuperAdmin\ReportesProduccion\ReportesProduccionController;
 use App\Http\Controllers\SuperAdmin\Roles\RolesController;
+use App\Http\Controllers\TaskController;
 use Illuminate\Support\Facades\Route;
 
 Route::options('/{any}', function () {
@@ -144,6 +146,21 @@ Route::prefix('reportes-produccion')->group(function () {
     Route::get('/acabado', [ReportesProduccionController::class, 'getAcabadoReal']);
     Route::get('/departamento/{id}', [ReportesProduccionController::class, 'getByDepartment']);
     Route::get('all', [ReportesProduccionController::class, 'getAllReports']);
+});
+
+
+Route::prefix('tasks')->middleware('jwt.auth')->group(function () {
+    Route::get('/', [TaskController::class, 'index']);              // listar
+    Route::post('/store', [TaskController::class, 'store']);        // crear
+    Route::get('/{id}/show', [TaskController::class, 'show']);      // ver 1
+    Route::put('/{id}/update', [TaskController::class, 'update']);  // actualizar
+    Route::delete('/{id}/delete', [TaskController::class, 'destroy']); // borrar
+});
+
+
+
+Route::middleware('jwt.auth')->group(function () {
+    Route::get('users/all', [AllUsersController::class, 'index']);
 });
 
 

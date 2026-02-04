@@ -1068,69 +1068,41 @@ class ReportesProduccionController extends Controller
     }
 
     // 🔥 Métodos auxiliares para cada consulta
-    private function getFacturadoData($fechaInicio, $fechaFin)
-    {
-        // Si te llegan en formato YYYY-MM-DD o ISO con hora, recorta a 10
-        // (si te llegan dd-mm-yyyy, abajo te dejo cómo convertir bien)
-        $fechaInicioISO = substr($fechaInicio, 0, 10);
-        $fechaFinISO    = substr($fechaFin, 0, 10);
+   private function getFacturadoData($fechaInicio, $fechaFin)
+{
+    $fechaInicioISO = substr($fechaInicio, 0, 10);
+    $fechaFinISO    = substr($fechaFin, 0, 10);
+    $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFinISO . ' +1 day'));
 
-        // Si tus fechas vienen dd-mm-yyyy, usa esto en vez de lo de arriba:
-        // $fechaInicioISO = substr($fechaInicio, 6, 4) . '-' . substr($fechaInicio, 3, 2) . '-' . substr($fechaInicio, 0, 2);
-        // $fechaFinISO    = substr($fechaFin, 6, 4) . '-' . substr($fechaFin, 3, 2) . '-' . substr($fechaFin, 0, 2);
+    $sql = "
+    SELECT
+        C.nombre      AS CLIENTE,
+        F.cve_doc     AS FACTURA,
+        F.status      AS STATUS,
+        F.fecha_doc   AS FECHA,
+        SUM(P.cant)   AS CANT,
+        P.uni_venta   AS UM,
 
-        $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFinISO . ' +1 day'));
-
-        $sql = "
-        SELECT
-            C.nombre                    AS CLIENTE,
-            F.cve_doc                   AS FACTURA,
-            F.status                    AS STATUS,
-            F.fecha_doc                 AS FECHA,
-            SUM(P.cant)                 AS CANT,
-            P.uni_venta                 AS UM,
-
-            /* Montos por factura (1 vez), con conversión por tipo de cambio si aplica */
-            MAX(
-                CASE 
-                    WHEN COALESCE(F.tipcamb, 1) = 1 THEN COALESCE(F.can_tot, 0)
-                    ELSE COALESCE(F.can_tot, 0) * COALESCE(F.tipcamb, 1)
-                END
-            ) AS IMPORTE,
-
-            MAX(
-                CASE 
-                    WHEN COALESCE(F.tipcamb, 1) = 1 THEN COALESCE(F.imp_tot4, 0)
-                    ELSE COALESCE(F.imp_tot4, 0) * COALESCE(F.tipcamb, 1)
-                END
-            ) AS IMPUESTOS,
-
-            MAX(
-                CASE 
-                    WHEN COALESCE(F.tipcamb, 1) = 1 THEN (COALESCE(F.can_tot, 0) + COALESCE(F.imp_tot4, 0))
-                    ELSE (COALESCE(F.can_tot, 0) * COALESCE(F.tipcamb, 1)) + (COALESCE(F.imp_tot4, 0) * COALESCE(F.tipcamb, 1))
-                END
-            ) AS TOTAL
-        FROM FACTF03 F
-        INNER JOIN PAR_FACTF03 P ON P.cve_doc = F.cve_doc
-        INNER JOIN CLIE03 C      ON C.clave   = F.cve_clpv
-        INNER JOIN INVE03 I      ON I.cve_art = P.cve_art
-        WHERE 
-            F.status IN ('E','O')
-            AND F.fecha_doc >= ?
-            AND F.fecha_doc < ?
-            AND I.lin_prod = 'PTPR'
-            AND C.nombre NOT IN ('COMERCIALIZADORA SION COMEX SAS', 'TSHIRT GROUP')
-        GROUP BY
-            C.nombre,
-            F.cve_doc,
-            F.status,
-            F.fecha_doc,
-            P.uni_venta
-        ORDER BY F.cve_doc
+        /* 🔥 SIN multiplicar tipcamb */
+        MAX(COALESCE(F.can_tot, 0))              AS IMPORTE,
+        MAX(COALESCE(F.imp_tot4, 0))             AS IMPUESTOS,
+        MAX(COALESCE(F.can_tot, 0) + COALESCE(F.imp_tot4, 0)) AS TOTAL
+    FROM FACTF03 F
+    INNER JOIN PAR_FACTF03 P ON P.cve_doc = F.cve_doc
+    INNER JOIN CLIE03 C      ON C.clave   = F.cve_clpv
+    INNER JOIN INVE03 I      ON I.cve_art = P.cve_art
+    WHERE 
+        F.status IN ('E','O')
+        AND F.fecha_doc >= ?
+        AND F.fecha_doc < ?
+        AND I.lin_prod = 'PTPR'
+        AND C.nombre NOT IN ('COMERCIALIZADORA SION COMEX SAS', 'TSHIRT GROUP')
+    GROUP BY
+        C.nombre, F.cve_doc, F.status, F.fecha_doc, P.uni_venta
+    ORDER BY F.cve_doc
     ";
 
-        $rows = DB::connection('firebird')->select($sql, [$fechaInicioISO, $fechaFinExclusiva]);
+    $rows = DB::connection('firebird')->select($sql, [$fechaInicioISO, $fechaFinExclusiva]);
 
         $detalle = array_map(function ($r) {
             return [
