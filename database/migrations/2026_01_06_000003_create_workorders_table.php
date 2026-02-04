@@ -29,6 +29,8 @@ return new class extends Migration
                 ->constrained('statuses')
                 ->onDelete('cascade');
 
+            $table->string('type', 50)->nullable()->index();
+
             // Datos de la tarea
             $table->string('titulo', 200)->nullable();
             $table->text('descripcion')->nullable();
