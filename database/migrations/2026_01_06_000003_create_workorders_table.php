@@ -13,6 +13,7 @@ return new class extends Migration
 
             // Usuario que solicita la tarea
             $table->foreignId('solicitante_id')
+                ->nullable()
                 ->constrained('users_firebird_identities')
                 ->onDelete('cascade');
 
@@ -24,23 +25,22 @@ return new class extends Migration
 
             // Estatus actual
             $table->foreignId('status_id')
+                ->nullable()
                 ->constrained('statuses')
                 ->onDelete('cascade');
 
             // Datos de la tarea
-            $table->string('titulo', 200);
+            $table->string('titulo', 200)->nullable();
             $table->text('descripcion')->nullable();
 
             // Fechas
-            $table->dateTime('fecha_solicitud')->useCurrent();
+            $table->dateTime('fecha_solicitud')->nullable()->useCurrent();
             $table->dateTime('fecha_aprobacion')->nullable();
             $table->dateTime('fecha_cierre')->nullable();
 
             // Comentarios
             $table->text('comentarios_aprobador')->nullable();
             $table->text('comentarios_solicitante')->nullable();
-
-
 
             $table->timestamps();
         });
