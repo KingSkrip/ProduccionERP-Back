@@ -41,7 +41,7 @@ return [
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
-            'url' => env('APP_URL').'/storage',
+            'url' => env('APP_URL') . '/storage',
             'visibility' => 'public',
             'throw' => false,
             'report' => false,
@@ -59,6 +59,15 @@ return [
             'throw' => false,
             'report' => false,
         ],
+
+       'workorders' => [
+    'driver' => 'local',
+    'root' => storage_path('app/public/workorders'),
+    'url' => env('APP_URL').'/storage/workorders',
+    'visibility' => 'public',
+    'throw' => false,
+],
+
 
     ],
 

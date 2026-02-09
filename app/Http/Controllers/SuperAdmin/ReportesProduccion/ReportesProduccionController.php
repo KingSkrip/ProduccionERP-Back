@@ -1068,13 +1068,13 @@ class ReportesProduccionController extends Controller
     }
 
     // 🔥 Métodos auxiliares para cada consulta
-   private function getFacturadoData($fechaInicio, $fechaFin)
-{
-    $fechaInicioISO = substr($fechaInicio, 0, 10);
-    $fechaFinISO    = substr($fechaFin, 0, 10);
-    $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFinISO . ' +1 day'));
+    private function getFacturadoData($fechaInicio, $fechaFin)
+    {
+        $fechaInicioISO = substr($fechaInicio, 0, 10);
+        $fechaFinISO    = substr($fechaFin, 0, 10);
+        $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFinISO . ' +1 day'));
 
-    $sql = "
+        $sql = "
     SELECT
         C.nombre      AS CLIENTE,
         F.cve_doc     AS FACTURA,
@@ -1102,7 +1102,7 @@ class ReportesProduccionController extends Controller
     ORDER BY F.cve_doc
     ";
 
-    $rows = DB::connection('firebird')->select($sql, [$fechaInicioISO, $fechaFinExclusiva]);
+        $rows = DB::connection('firebird')->select($sql, [$fechaInicioISO, $fechaFinExclusiva]);
 
         $detalle = array_map(function ($r) {
             return [
@@ -1365,4 +1365,4 @@ class ReportesProduccionController extends Controller
     ";
         return DB::connection('firebird')->select($query);
     }
-}
+}   

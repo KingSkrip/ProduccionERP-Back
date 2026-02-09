@@ -25,7 +25,7 @@ class UserFirebirdIdentity extends Model
     {
         return $this->hasMany(ModelHasRole::class, 'firebird_identity_id');
     }
-     /**
+    /**
      * Turnos asignados (histórico)
      */
     public function turnos(): HasMany
@@ -39,6 +39,12 @@ class UserFirebirdIdentity extends Model
     public function turnoActivo(): HasOne
     {
         return $this->hasOne(UserTurno::class, 'user_firebird_identity_id')
-            ->whereHas('status', fn ($q) => $q->where('nombre', 'Activo'));
+            ->whereHas('status', fn($q) => $q->where('nombre', 'Activo'));
+    }
+
+    public function firebirdUser()
+    {
+        return $this->setConnection('firebird')
+            ->hasOne(\App\Models\Firebird\Users::class, 'ID', 'firebird_user_clave');
     }
 }

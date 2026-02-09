@@ -3,9 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\TaskParticipant;
+use App\Models\UserFirebirdIdentity;
 use App\Models\WorkOrder;
+use App\Models\WorkorderAttachment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class TaskController extends Controller
 {
@@ -41,64 +44,192 @@ class TaskController extends Controller
     /**
      * Store a newly created resource in storage.
      */
+
+    //AL CREAR EL TASK_PARTICIPANTS EN ROLE EN LUGAR DE PONER PENDEJADAS HAY QUE PONER EL CC, BCC O EN CASO QUE SEA NORMAL ES RECEPTOR
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'de_id' => ['required', 'integer', 'exists:users_firebird_identities,id'],
-            'para_id' => ['nullable', 'integer', 'exists:users_firebird_identities,id'],
-            'status_id' => ['nullable', 'integer', 'exists:statuses,id'],
 
-            'titulo' => ['required', 'string', 'max:200'],
-            'descripcion' => ['nullable', 'string'],
+        // ✅ Si viene como JSON string (FormData), conviértelo en array
+        if (is_string($request->input('participants'))) {
+            $decoded = json_decode($request->input('participants'), true);
 
-            // participantes (pivote)
-            'participants' => ['nullable', 'array'],
-            'participants.*.user_id' => ['required', 'integer', 'exists:users_firebird_identities,id'],
-            'participants.*.role' => ['required', 'string', 'max:50'], // approver|assignee|watcher|reviewer
-            'participants.*.status_id' => ['nullable', 'integer', 'exists:statuses,id'],
-            'participants.*.comentarios' => ['nullable', 'string'],
-            'participants.*.fecha_accion' => ['nullable', 'date'],
-            'participants.*.orden' => ['nullable', 'integer'],
+            // si viene malformado, cae a []
+            $request->merge([
+                'participants' => is_array($decoded) ? $decoded : []
+            ]);
+        }
+
+
+        Log::info('STORE WORKORDER - REQUEST RAW', [
+            'all' => $request->all(),
+            'de_id' => $request->input('de_id'),
+            'para_id' => $request->input('para_id'),
         ]);
 
-        $workorder = DB::transaction(function () use ($validated) {
+        $userId = auth()->id();
+
+        $firebirdIdentity = UserFirebirdIdentity::where(
+            'firebird_user_clave',
+            $userId
+        )->first();
+
+        Log::info('STORE WORKORDER - DEBUG FIREBIRD IDENTITY', [
+            'auth_user_id' => $userId,
+            'firebird_identity_found' => !is_null($firebirdIdentity),
+            'firebird_user_clave' => $firebirdIdentity?->firebird_user_clave,
+            'firebird_identity_id' => $firebirdIdentity?->id,  // ✅ Agrega este log
+        ]);
+
+        // 🔴 Normalizamos para evitar "" o " "
+        $request->merge([
+            'de_id' => filled($request->input('de_id'))
+                ? (int) $request->input('de_id')
+                : null,
+            'para_id' => filled($request->input('para_id'))
+                ? (int) $request->input('para_id')
+                : null,
+        ]);
+
+        Log::info('STORE WORKORDER - REQUEST NORMALIZED', [
+            'de_id' => $request->input('de_id'),
+            'para_id' => $request->input('para_id'),
+        ]);
+
+        try {
+            $validated = $request->validate([
+                'de_id'   => ['required', 'integer', 'exists:users_firebird_identities,id'],
+                'para_id' => ['nullable', 'integer', 'exists:users_firebird_identities,id'],
+
+                'status_id' => ['nullable', 'integer', 'exists:statuses,id'],
+                'titulo'    => ['required', 'string', 'max:200'],
+                'descripcion' => ['nullable', 'string'],
+
+                'participants' => ['sometimes', 'array'],
+                'participants.*' => ['required', 'array'],
+
+                // ✅ Valida contra firebird_user_clave
+                'participants.*.user_id' => ['required', 'integer', 'exists:users_firebird_identities,firebird_user_clave'],
+                'participants.*.role' => ['required', 'string', 'max:50'],
+                'participants.*.status_id' => ['nullable', 'integer', 'exists:statuses,id'],
+                'participants.*.comentarios' => ['nullable', 'string'],
+                'participants.*.fecha_accion' => ['nullable', 'date'],
+                'participants.*.orden' => ['nullable', 'integer'],
+
+
+
+                'attachments' => ['sometimes', 'array'],
+                'attachments.*' => ['file', 'max:20480'],
+
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::error('STORE WORKORDER - VALIDATION FAILED', [
+                'errors' => $e->errors(),
+                'input' => $request->all(),
+            ]);
+
+            throw $e;
+        }
+
+        Log::info('STORE WORKORDER - VALIDATION PASSED', $validated);
+
+        $workorder = DB::transaction(function () use ($validated, $firebirdIdentity, $request) {
+
+            Log::info('STORE WORKORDER - TRANSACTION START', [
+                'firebird_user_clave' => $firebirdIdentity?->firebird_user_clave,
+                'firebird_identity_id' => $firebirdIdentity?->id,
+                'validated_de_id' => $validated['de_id'],
+            ]);
+
+            // 🔥 Limpia el HTML de la descripción
+            $descripcionLimpia = strip_tags($validated['descripcion'] ?? '');
+
+            // ✅ 1) Primero crea el WorkOrder
             $workorder = WorkOrder::create([
-                'de_id' => $validated['de_id'],
+                'de_id' => $firebirdIdentity?->id ?? $validated['de_id'],
                 'para_id' => $validated['para_id'] ?? null,
                 'status_id' => $validated['status_id'] ?? null,
-                'type' => 'task',
-
+                'type' => 'Task',
                 'titulo' => $validated['titulo'],
-                'descripcion' => $validated['descripcion'] ?? null,
-
+                'descripcion' => $descripcionLimpia,
                 'fecha_solicitud' => now(),
             ]);
 
+            Log::info('STORE WORKORDER - WORKORDER CREATED', [
+                'workorder_id' => $workorder->id,
+            ]);
+
+            // ✅ 2) Luego: 1 inserción por archivo
+            $files = $request->file('attachments', []);
+
+            foreach ($files as $file) {
+                $mime = $file->getMimeType() ?? '';
+                $isImage = str_starts_with($mime, 'image/');
+                $category = $isImage ? 'images' : 'documentos';
+
+                $dir = "task/{$category}";
+                $original = $file->getClientOriginalName();
+                $ext = $file->getClientOriginalExtension();
+                $fileName = uniqid('att_', true) . ($ext ? ".{$ext}" : '');
+
+                $path = $file->storeAs($dir, $fileName, 'workorders');
+
+                // ✅ 1 row por cada file (si son 13 files = 13 creates)
+                WorkorderAttachment::create([
+                    'workorder_id'   => $workorder->id,
+                    'disk'           => 'workorders',
+                    'category'       => $category,
+                    'original_name'  => $original,
+                    'file_name'      => $fileName,
+                    'path'           => $path,
+                    'mime_type'      => $mime,
+                    'size'           => $file->getSize(),
+                    'sha1'           => sha1_file($file->getRealPath()),
+                ]);
+            }
+
+            Log::info('STORE WORKORDER - ATTACHMENTS INSERTED', [
+                'files_count' => count($files),
+            ]);
+
+            // ✅ 3) Participants
             $participants = $validated['participants'] ?? [];
 
             if (!empty($participants)) {
-                $rows = [];
                 $now = now();
 
-                foreach ($participants as $p) {
-                    $rows[] = [
+                $rows = collect($participants)->map(function ($p, $i) use ($workorder, $now) {
+
+                    $userIdentity = UserFirebirdIdentity::where('firebird_user_clave', $p['user_id'])->first();
+
+                    if (!$userIdentity) {
+                        throw new \Exception("Usuario con firebird_user_clave {$p['user_id']} no encontrado");
+                    }
+
+                    return [
                         'workorder_id' => $workorder->id,
-                        'user_id' => $p['user_id'],
-                        'role' => $p['role'],
-                        'status_id' => $p['status_id'] ?? null,
-                        'comentarios' => $p['comentarios'] ?? null,
+                        'user_id'      => $userIdentity->id,
+                        'role'         => $p['role'], // receptor | cc | bcc
+                        'status_id'    => 4,
+                        'comentarios'  => $p['comentarios'] ?? null,
                         'fecha_accion' => $p['fecha_accion'] ?? null,
-                        'orden' => $p['orden'] ?? null,
-                        'created_at' => $now,
-                        'updated_at' => $now,
+                        'orden'        => $p['orden'] ?? null,
+                        'created_at'   => $now,
+                        'updated_at'   => $now,
                     ];
-                }
+                })->all();
 
                 TaskParticipant::insert($rows);
             }
 
+            Log::info('STORE WORKORDER - TRANSACTION END', [
+                'workorder_id' => $workorder->id,
+            ]);
+
             return $workorder;
         });
+
+
+        Log::info('STORE WORKORDER - RESPONSE LOAD');
 
         return response()->json(
             $workorder->load([
@@ -107,6 +238,7 @@ class TaskController extends Controller
                 'status',
                 'taskParticipants.user',
                 'taskParticipants.status',
+                'attachments',
             ]),
             201
         );
@@ -162,7 +294,7 @@ class TaskController extends Controller
             // si mandas participants, se reemplazan todos
             'participants' => ['sometimes', 'array'],
             'participants.*.user_id' => ['required', 'integer', 'exists:users_firebird_identities,id'],
-            'participants.*.role' => ['required', 'string', 'max:50'],
+            'participants.*.role' => ['required', 'in:receptor,cc,bcc'],
             'participants.*.status_id' => ['nullable', 'integer', 'exists:statuses,id'],
             'participants.*.comentarios' => ['nullable', 'string'],
             'participants.*.fecha_accion' => ['nullable', 'date'],

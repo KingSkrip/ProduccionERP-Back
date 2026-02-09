@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Catalogos\CatalogosController;
 use App\Http\Controllers\Colaboradores\SoliVacacionesController;
+use App\Http\Controllers\MailboxController;
 use App\Http\Controllers\Personalizacion\Dashboard\DataDashboardController;
 use App\Http\Controllers\Personalizacion\Perfil\PerfilController;
 use App\Http\Controllers\RH\Nominas\EmpresaUno\EmpresaUnoController;
@@ -163,6 +164,46 @@ Route::middleware('jwt.auth')->group(function () {
     Route::get('users/all', [AllUsersController::class, 'index']);
 });
 
+
+
+Route::middleware('jwt.auth')->group(function () {
+    
+    // ============================================
+    // LISTADOS (GET) - Estos estaban faltando
+    // ============================================
+    
+    Route::get('/mailbox/general',      [MailboxController::class, 'general']);
+    Route::get('/mailbox/enviados',     [MailboxController::class, 'sent']);
+    Route::get('/mailbox/borradores',   [MailboxController::class, 'drafts']);
+    Route::get('/mailbox/eliminados',   [MailboxController::class, 'trash']);
+    Route::get('/mailbox/spam',         [MailboxController::class, 'spam']);
+    
+    // 🔥 ESTAS SON LAS QUE FALTABAN - FILTROS PERSONALIZADOS
+    Route::get('/mailbox/important',    [MailboxController::class, 'important']);
+    Route::get('/mailbox/starred',      [MailboxController::class, 'starred']);
+    
+    // ============================================
+    // CREAR/GUARDAR
+    // ============================================
+    
+    Route::post('mailbox/drafts/store', [MailboxController::class, 'storeDraft']);
+    
+    // ============================================
+    // ACCIONES SOBRE MAILBOX_ITEMS (PATCH)
+    // ============================================
+    
+    // Por ID de MailboxItem
+    Route::patch('/mailbox/{id}/read',      [MailboxController::class, 'markRead']);
+    Route::patch('/mailbox/{id}/star',      [MailboxController::class, 'toggleStar']);
+    Route::patch('/mailbox/{id}/important', [MailboxController::class, 'toggleImportant']);
+    Route::patch('/mailbox/{id}/move',      [MailboxController::class, 'move']);
+    
+    // Por ID de Workorder (cuando no existe MailboxItem)
+    Route::patch('mailbox/workorder/{workorderId}/read',      [MailboxController::class, 'markReadByWorkorder']);
+    Route::patch('mailbox/workorder/{workorderId}/star',      [MailboxController::class, 'toggleStarByWorkorder']);
+    Route::patch('mailbox/workorder/{workorderId}/important', [MailboxController::class, 'toggleImportantByWorkorder']);
+    Route::patch('mailbox/workorder/{workorderId}/move',      [MailboxController::class, 'moveByWorkorder']);
+});
 
 /**
  * SIEMPRE QUE SE AGREGE UNA NUEVA RUTA HAY QUE AGREGARLA A  

@@ -199,245 +199,245 @@ class DataDashboardController extends Controller
     // }
 
     public function me(Request $request)
-{
-    try {
-        $token = $request->bearerToken();
-        if (!$token) {
-            return response()->json(['message' => 'Token requerido'], 401);
-        }
-
-        // Decodificar forzando HS256 vía la Key (correcto y seguro)
-        $decoded = JWT::decode(
-            $token,
-            new Key($this->jwtSecret, 'HS256')  // fuerza verificación con HS256
-        );
-
-        // Validaciones estrictas de claims
-        if (!isset($decoded->sub) || !ctype_digit((string)$decoded->sub)) {
-            return response()->json(['message' => 'Token inválido (sub inválido)'], 401);
-        }
-
-        if (!isset($decoded->exp) || $decoded->exp < time()) {
-            return response()->json(['message' => 'Token expirado'], 401);
-        }
-
-        if (!isset($decoded->iat) || $decoded->iat > time()) {
-            return response()->json(['message' => 'Token no válido aún'], 401);
-        }
-
-        $sub = (int) $decoded->sub;
-
-        Log::info('🧾 ME_JWT_SUB', [
-            'sub' => $sub,
-            'type' => gettype($sub),
-        ]);
-
-        if (!$sub) {
-            return response()->json(['message' => 'Token inválido (sin sub)'], 401);
-        }
-
-        // ✅ PASO 1: Buscar usuario por ID (sub = USUARIOS.ID)
-        $usuario = Users::find($sub);
-
-        Log::info('👤 ME_FIREBIRD_USER_BY_ID', [
-            'found' => (bool) $usuario,
-            'sub' => $sub,
-            'firebird_id' => $usuario->ID ?? null,
-            'firebird_clave' => $usuario->CLAVE ?? null,
-            'correo' => $usuario->CORREO ?? null,
-            'nombre' => $usuario->NOMBRE ?? null,
-        ]);
-
-        // 🧯 Fallback SOLO para debug/migración (NO recomendado dejarlo permanente en producción)
-        if (!$usuario) {
-            $usuarioPorClave = Users::where('CLAVE', $sub)->first();
-
-            Log::warning('🧯 ME_FALLBACK_BY_CLAVE', [
-                'sub' => $sub,
-                'found_by_clave' => (bool) $usuarioPorClave,
-                'usuario_id' => $usuarioPorClave->ID ?? null,
-                'usuario_clave' => $usuarioPorClave->CLAVE ?? null,
-            ]);
-
-            // Si lo encontró por CLAVE, úsalo (temporal)
-            $usuario = $usuarioPorClave;
-        }
-
-        if (!$usuario) {
-            return response()->json(['message' => 'Usuario no encontrado en Firebird'], 404);
-        }
-
-        // ✅ PASO 2: Buscar identidad en MySQL por ID (firebird_user_clave = USUARIOS.ID)
-        $identity = UserFirebirdIdentity::where('firebird_user_clave', (int)$usuario->ID)->first();
-
-        Log::info('📌 ME_MYSQL_IDENTITY_LOOKUP', [
-            'found' => (bool) $identity,
-            'lookup_by' => 'firebird_user_clave = USUARIOS.ID',
-            'firebird_user_id' => $usuario->ID,
-            'identity_id' => $identity->id ?? null,
-            'identity_firebird_user_clave' => $identity->firebird_user_clave ?? null,
-            'identity_firebird_tb_clave' => $identity->firebird_tb_clave ?? null,
-            'identity_tb_tabla' => $identity->firebird_tb_tabla ?? null,
-            'identity_empresa' => $identity->firebird_empresa ?? null,
-        ]);
-
-        // 🧯 Fallback legacy (si antes guardabas CLAVE del usuario)
-        if (!$identity) {
-            $identityLegacy = UserFirebirdIdentity::where('firebird_user_clave', (int)$usuario->CLAVE)->first();
-
-            Log::warning('🧯 ME_IDENTITY_LEGACY_FALLBACK', [
-                'found' => (bool) $identityLegacy,
-                'lookup_by' => 'firebird_user_clave = USUARIOS.CLAVE (legacy)',
-                'usuarios_clave' => $usuario->CLAVE,
-                'identity_id' => $identityLegacy->id ?? null,
-                'identity_tb_clave' => $identityLegacy->firebird_tb_clave ?? null,
-                'identity_empresa' => $identityLegacy->firebird_empresa ?? null,
-                'identity_tb_tabla' => $identityLegacy->firebird_tb_tabla ?? null,
-            ]);
-
-            $identity = $identityLegacy;
-        }
-
-        if (!$identity) {
-            return response()->json(['message' => 'Identidad de usuario no configurada'], 404);
-        }
-
-        // ✅ TB.CLAVE (esto es lo que usan SL/VC/MF/AC/TB en NOI)
-        $tbClave = $identity->firebird_tb_clave;
-        $tbClaveNorm = is_string($tbClave) ? trim($tbClave) : $tbClave;
-
-        // ✅ empresa NOI dinámica (si aplica)
-        $empresaNoi = $identity->firebird_empresa ?? '04';
-
-        Log::info('🧠 ME_KEYS_RESOLVED', [
-            'auth_uses' => 'USUARIOS.ID (JWT sub)',
-            'noi_uses' => 'TB.CLAVE (identity.firebird_tb_clave)',
-            'firebird_id' => $usuario->ID,
-            'usuarios_clave' => $usuario->CLAVE,
-            'tb_clave' => $tbClave,
-            'tb_clave_norm' => $tbClaveNorm,
-            'empresaNoi' => $empresaNoi,
-        ]);
-
-        // ✅ PASO 3: Roles / turno
-        $roles = $identity->roles()->get();
-        $turnoActivo = $identity->turnoActivo()
-            ->with(['turno.turnoDias', 'status'])
-            ->first();
-
-        Log::info('🎭 ME_ROLES_TURNO', [
-            'roles_count' => $roles->count(),
-            'turno_activo' => (bool) $turnoActivo,
-        ]);
-
-        // ✅ PASO 4: Consultar NOI con TB.CLAVE
-        $departamentos = collect();
-        $slRow = null;
-        $vcRow = null;
-        $hvcRow = null;
-        $mfRow = null;
-        $acRows = collect();
-        $tbRow = null;
-
+    {
         try {
-            $firebirdNoi = new FirebirdEmpresaManualService($empresaNoi, 'SRVNOI');
+            $token = $request->bearerToken();
+            if (!$token) {
+                return response()->json(['message' => 'Token requerido'], 401);
+            }
 
-            // DEPTOS
-            $departamentos = $firebirdNoi->getMasterTable('DEPTOS')->keyBy('CLAVE');
+            // Decodificar forzando HS256 vía la Key (correcto y seguro)
+            $decoded = JWT::decode(
+                $token,
+                new Key($this->jwtSecret, 'HS256')  // fuerza verificación con HS256
+            );
 
-            // SL
-            $sl = $firebirdNoi->getOperationalTable('SL')
-                ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
-            $slRow = $sl[$tbClaveNorm] ?? null;
+            // Validaciones estrictas de claims
+            if (!isset($decoded->sub) || !ctype_digit((string)$decoded->sub)) {
+                return response()->json(['message' => 'Token inválido (sub inválido)'], 401);
+            }
 
-            // VC
-            $vc = $firebirdNoi->getOperationalTable('VC')
-                ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
-            $vcRow = $vc[$tbClaveNorm] ?? null;
+            if (!isset($decoded->exp) || $decoded->exp < time()) {
+                return response()->json(['message' => 'Token expirado'], 401);
+            }
 
-            // HISTVAC
-            $hvc = $firebirdNoi->getMasterTable('HISTVAC')
-                ->keyBy(fn($row) => trim((string)$row->CVETRAB));
-            $hvcRow = $hvc[$tbClaveNorm] ?? null;
+            if (!isset($decoded->iat) || $decoded->iat > time()) {
+                return response()->json(['message' => 'Token no válido aún'], 401);
+            }
 
-            // MF
-            $mf = $firebirdNoi->getOperationalTable('MF')
-                ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
-            $mfRow = $mf[$tbClaveNorm] ?? null;
+            $sub = (int) $decoded->sub;
 
-            // AC (varios)
-            $acRows = $firebirdNoi->getOperationalTable('AC')
-                ->filter(fn($row) => trim((string)$row->CLAVE_TRAB) === (string)$tbClaveNorm)
-                ->values();
-
-            // TB
-            $tb = $firebirdNoi->getOperationalTable('TB')
-                ->keyBy(fn($row) => trim((string)$row->CLAVE));
-            $tbRow = $tb[$tbClaveNorm] ?? null;
-
-            Log::info('✅ ME_NOI_DATA', [
-                'tb_clave' => $tbClaveNorm,
-                'found' => [
-                    'tb' => (bool) $tbRow,
-                    'sl' => (bool) $slRow,
-                    'vc' => (bool) $vcRow,
-                    'hvc' => (bool) $hvcRow,
-                    'mf' => (bool) $mfRow,
-                    'ac_count' => $acRows->count(),
-                ],
-                'depto_count' => $departamentos->count(),
+            Log::info('🧾 ME_JWT_SUB', [
+                'sub' => $sub,
+                'type' => gettype($sub),
             ]);
+
+            if (!$sub) {
+                return response()->json(['message' => 'Token inválido (sin sub)'], 401);
+            }
+
+            // ✅ PASO 1: Buscar usuario por ID (sub = USUARIOS.ID)
+            $usuario = Users::find($sub);
+
+            Log::info('👤 ME_FIREBIRD_USER_BY_ID', [
+                'found' => (bool) $usuario,
+                'sub' => $sub,
+                'firebird_id' => $usuario->ID ?? null,
+                'firebird_clave' => $usuario->CLAVE ?? null,
+                'correo' => $usuario->CORREO ?? null,
+                'nombre' => $usuario->NOMBRE ?? null,
+            ]);
+
+            // 🧯 Fallback SOLO para debug/migración (NO recomendado dejarlo permanente en producción)
+            if (!$usuario) {
+                $usuarioPorClave = Users::where('CLAVE', $sub)->first();
+
+                Log::warning('🧯 ME_FALLBACK_BY_CLAVE', [
+                    'sub' => $sub,
+                    'found_by_clave' => (bool) $usuarioPorClave,
+                    'usuario_id' => $usuarioPorClave->ID ?? null,
+                    'usuario_clave' => $usuarioPorClave->CLAVE ?? null,
+                ]);
+
+                // Si lo encontró por CLAVE, úsalo (temporal)
+                $usuario = $usuarioPorClave;
+            }
+
+            if (!$usuario) {
+                return response()->json(['message' => 'Usuario no encontrado en Firebird'], 404);
+            }
+
+            // ✅ PASO 2: Buscar identidad en MySQL por ID (firebird_user_clave = USUARIOS.ID)
+            $identity = UserFirebirdIdentity::where('firebird_user_clave', (int)$usuario->ID)->first();
+
+            Log::info('📌 ME_MYSQL_IDENTITY_LOOKUP', [
+                'found' => (bool) $identity,
+                'lookup_by' => 'firebird_user_clave = USUARIOS.ID',
+                'firebird_user_id' => $usuario->ID,
+                'identity_id' => $identity->id ?? null,
+                'identity_firebird_user_clave' => $identity->firebird_user_clave ?? null,
+                'identity_firebird_tb_clave' => $identity->firebird_tb_clave ?? null,
+                'identity_tb_tabla' => $identity->firebird_tb_tabla ?? null,
+                'identity_empresa' => $identity->firebird_empresa ?? null,
+            ]);
+
+            // 🧯 Fallback legacy (si antes guardabas CLAVE del usuario)
+            if (!$identity) {
+                $identityLegacy = UserFirebirdIdentity::where('firebird_user_clave', (int)$usuario->CLAVE)->first();
+
+                Log::warning('🧯 ME_IDENTITY_LEGACY_FALLBACK', [
+                    'found' => (bool) $identityLegacy,
+                    'lookup_by' => 'firebird_user_clave = USUARIOS.CLAVE (legacy)',
+                    'usuarios_clave' => $usuario->CLAVE,
+                    'identity_id' => $identityLegacy->id ?? null,
+                    'identity_tb_clave' => $identityLegacy->firebird_tb_clave ?? null,
+                    'identity_empresa' => $identityLegacy->firebird_empresa ?? null,
+                    'identity_tb_tabla' => $identityLegacy->firebird_tb_tabla ?? null,
+                ]);
+
+                $identity = $identityLegacy;
+            }
+
+            if (!$identity) {
+                return response()->json(['message' => 'Identidad de usuario no configurada'], 404);
+            }
+
+            // ✅ TB.CLAVE (esto es lo que usan SL/VC/MF/AC/TB en NOI)
+            $tbClave = $identity->firebird_tb_clave;
+            $tbClaveNorm = is_string($tbClave) ? trim($tbClave) : $tbClave;
+
+            // ✅ empresa NOI dinámica (si aplica)
+            $empresaNoi = $identity->firebird_empresa ?? '04';
+
+            Log::info('🧠 ME_KEYS_RESOLVED', [
+                'auth_uses' => 'USUARIOS.ID (JWT sub)',
+                'noi_uses' => 'TB.CLAVE (identity.firebird_tb_clave)',
+                'firebird_id' => $usuario->ID,
+                'usuarios_clave' => $usuario->CLAVE,
+                'tb_clave' => $tbClave,
+                'tb_clave_norm' => $tbClaveNorm,
+                'empresaNoi' => $empresaNoi,
+            ]);
+
+            // ✅ PASO 3: Roles / turno
+            $roles = $identity->roles()->get();
+            $turnoActivo = $identity->turnoActivo()
+                ->with(['turno.turnoDias', 'status'])
+                ->first();
+
+            Log::info('🎭 ME_ROLES_TURNO', [
+                'roles_count' => $roles->count(),
+                'turno_activo' => (bool) $turnoActivo,
+            ]);
+
+            // ✅ PASO 4: Consultar NOI con TB.CLAVE
+            $departamentos = collect();
+            $slRow = null;
+            $vcRow = null;
+            $hvcRow = null;
+            $mfRow = null;
+            $acRows = collect();
+            $tbRow = null;
+
+            try {
+                $firebirdNoi = new FirebirdEmpresaManualService($empresaNoi, 'SRVNOI');
+
+                // DEPTOS
+                $departamentos = $firebirdNoi->getMasterTable('DEPTOS')->keyBy('CLAVE');
+
+                // SL
+                $sl = $firebirdNoi->getOperationalTable('SL')
+                    ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
+                $slRow = $sl[$tbClaveNorm] ?? null;
+
+                // VC
+                $vc = $firebirdNoi->getOperationalTable('VC')
+                    ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
+                $vcRow = $vc[$tbClaveNorm] ?? null;
+
+                // HISTVAC
+                $hvc = $firebirdNoi->getMasterTable('HISTVAC')
+                    ->keyBy(fn($row) => trim((string)$row->CVETRAB));
+                $hvcRow = $hvc[$tbClaveNorm] ?? null;
+
+                // MF
+                $mf = $firebirdNoi->getOperationalTable('MF')
+                    ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
+                $mfRow = $mf[$tbClaveNorm] ?? null;
+
+                // AC (varios)
+                $acRows = $firebirdNoi->getOperationalTable('AC')
+                    ->filter(fn($row) => trim((string)$row->CLAVE_TRAB) === (string)$tbClaveNorm)
+                    ->values();
+
+                // TB
+                $tb = $firebirdNoi->getOperationalTable('TB')
+                    ->keyBy(fn($row) => trim((string)$row->CLAVE));
+                $tbRow = $tb[$tbClaveNorm] ?? null;
+
+                Log::info('✅ ME_NOI_DATA', [
+                    'tb_clave' => $tbClaveNorm,
+                    'found' => [
+                        'tb' => (bool) $tbRow,
+                        'sl' => (bool) $slRow,
+                        'vc' => (bool) $vcRow,
+                        'hvc' => (bool) $hvcRow,
+                        'mf' => (bool) $mfRow,
+                        'ac_count' => $acRows->count(),
+                    ],
+                    'depto_count' => $departamentos->count(),
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('⚠️ ME_NOI_ERROR', [
+                    'empresaNoi' => $empresaNoi,
+                    'tbClave' => $tbClaveNorm,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            // ✅ PASO 5: Response
+            return response()->json([
+                'user' => new UsuarioResource($usuario, [
+                    'departamentos' => $departamentos,
+                    'sl' => $slRow,
+                    'vacaciones' => $vcRow,
+                    'historialvacaciones' => $hvcRow,
+                    'faltas' => $mfRow,
+                    'acumuladosperiodos' => $acRows,
+                    'roles' => $roles,
+                    'TB' => $tbRow,
+                    'firebird_tb_clave' => $tbClaveNorm,
+                    'turnoActivo' => $turnoActivo,
+
+                    // extras para debug front si quieres verlos
+                    'firebird_user_id' => (int)$usuario->ID,
+                    'usuarios_clave' => (string)$usuario->CLAVE,
+                    'identity_id' => $identity->id,
+                    'empresaNoi' => $empresaNoi,
+                ])
+            ], 200);
+        } catch (SignatureInvalidException $e) {
+            Log::warning('Firma inválida', ['token_prefix' => substr($token, 0, 20)]);
+            return response()->json(['message' => 'Token inválido'], 401);
+        } catch (ExpiredException $e) {
+            Log::warning('🔴 ME_TOKEN_EXPIRED', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'El token ha expirado'], 401);
+        } catch (BeforeValidException $e) {
+            return response()->json(['message' => 'Token no válido aún'], 401);
+        } catch (UnexpectedValueException $e) {
+            Log::warning('JWT malformado o inválido', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Token inválido'], 401);
         } catch (\Throwable $e) {
-            Log::error('⚠️ ME_NOI_ERROR', [
-                'empresaNoi' => $empresaNoi,
-                'tbClave' => $tbClaveNorm,
+            Log::error('🔴 ME_FATAL_ERROR', [
                 'error' => $e->getMessage(),
+                // 'trace' => $e->getTraceAsString()  // descomenta solo en desarrollo
             ]);
+
+            return response()->json([
+                'message' => 'Error de autenticación'
+            ], 401);  // Cambiado a 401 para no exponer errores internos
         }
-
-        // ✅ PASO 5: Response
-        return response()->json([
-            'user' => new UsuarioResource($usuario, [
-                'departamentos' => $departamentos,
-                'sl' => $slRow,
-                'vacaciones' => $vcRow,
-                'historialvacaciones' => $hvcRow,
-                'faltas' => $mfRow,
-                'acumuladosperiodos' => $acRows,
-                'roles' => $roles,
-                'TB' => $tbRow,
-                'firebird_tb_clave' => $tbClaveNorm,
-                'turnoActivo' => $turnoActivo,
-
-                // extras para debug front si quieres verlos
-                'firebird_user_id' => (int)$usuario->ID,
-                'usuarios_clave' => (string)$usuario->CLAVE,
-                'identity_id' => $identity->id,
-                'empresaNoi' => $empresaNoi,
-            ])
-        ], 200);
-    } catch (SignatureInvalidException $e) {
-        Log::warning('Firma inválida', ['token_prefix' => substr($token, 0, 20)]);
-        return response()->json(['message' => 'Token inválido'], 401);
-    } catch (ExpiredException $e) {
-        Log::warning('🔴 ME_TOKEN_EXPIRED', ['error' => $e->getMessage()]);
-        return response()->json(['message' => 'El token ha expirado'], 401);
-    } catch (BeforeValidException $e) {
-        return response()->json(['message' => 'Token no válido aún'], 401);
-    } catch (UnexpectedValueException $e) {
-        Log::warning('JWT malformado o inválido', ['error' => $e->getMessage()]);
-        return response()->json(['message' => 'Token inválido'], 401);
-    } catch (\Throwable $e) {
-        Log::error('🔴 ME_FATAL_ERROR', [
-            'error' => $e->getMessage(),
-            // 'trace' => $e->getTraceAsString()  // descomenta solo en desarrollo
-        ]);
-
-        return response()->json([
-            'message' => 'Error de autenticación'
-        ], 401);  // Cambiado a 401 para no exponer errores internos
     }
-}
 
 
 

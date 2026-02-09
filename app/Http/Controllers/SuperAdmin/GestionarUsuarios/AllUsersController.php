@@ -16,10 +16,10 @@ class AllUsersController extends Controller
     public function index(Request $request)
     {
         $q = trim($request->get('q', ''));
-         $limit = (int) $request->get('limit', 50); // ✅ FIX
+        $limit = (int) $request->get('limit', 50);
         $limit = $limit > 200 ? 200 : $limit;
 
-        // Conexión a Firebird PRODUCCIÓN (igual que tus comandos)
+        // Firebird connection
         config([
             'database.connections.firebird_produccion' => [
                 'driver'   => 'firebird',
@@ -37,38 +37,100 @@ class AllUsersController extends Controller
         DB::purge('firebird_produccion');
         $fb = DB::connection('firebird_produccion');
 
-        // Query base
-        $sql = "SELECT FIRST {$limit} ID, NOMBRE, CORREO, PHOTO
-        FROM USUARIOS
-        WHERE 1=1";
-
-
-        $bindings = [];
-
-        // Si quieres buscador (por nombre/correo)
+        // 1) Si hay búsqueda: buscar primero en Firebird
+        $fbIdsMatched = [];
+        
         if ($q !== '') {
-            $sql .= " AND (UPPER(NOMBRE) LIKE ? OR UPPER(CORREO) LIKE ?)";
-            $like = '%' . strtoupper($q) . '%';
-            $bindings[] = $like;
-            $bindings[] = $like;
+                $like = '%' . strtoupper(trim($q)) . '%';
+    $limit = max(1, min($limit, 200));
+
+    $sql = "
+        SELECT FIRST $limit
+            ID,
+            NOMBRE,
+            TRIM(CORREO) AS CORREO,
+            PHOTO
+        FROM USUARIOS
+        WHERE (
+            UPPER(NOMBRE) LIKE ?
+            OR UPPER(TRIM(CORREO)) LIKE ?
+        )
+    ";
+
+    $rows = $fb->select($sql, [$like, $like]);
+
+    if (empty($rows)) {
+        return response()->json([]);
+    }
+
+
+            $fbUsers = collect($rows)->keyBy(fn($u) => (int) $u->ID);
+            $fbIdsMatched = $fbUsers->keys()->map(fn($x) => (int)$x)->values()->all();
+
+            // traer identidades que existan para esos IDs
+            $identities = DB::connection('mysql')
+                ->table('users_firebird_identities')
+                ->select('id as mysql_id', 'firebird_user_clave', 'firebird_empresa', 'firebird_tb_tabla')
+                ->whereIn('firebird_user_clave', $fbIdsMatched)
+                ->get()
+                ->keyBy(fn($r) => (int)$r->firebird_user_clave);
+
+            // merge con fallback (si no hay identity, igual lo devuelves)
+            $result = collect($fbIdsMatched)->map(function ($fbId) use ($fbUsers, $identities) {
+                $fbUser = $fbUsers->get((int)$fbId);
+                $identity = $identities->get((int)$fbId);
+
+                return [
+                    'id' => (int) $fbId, // USUARIOS.ID
+                    'mysql_id' => $identity ? (int)$identity->mysql_id : null,
+                    'firebird_user_clave' => (int) $fbId,
+                    'nombre' => $fbUser ? trim((string)($fbUser->NOMBRE ?? '')) : '',
+                    'correo' => $fbUser && isset($fbUser->CORREO) ? trim((string)$fbUser->CORREO) : null,
+                    'photo'  => $fbUser && isset($fbUser->PHOTO) ? trim((string)$fbUser->PHOTO) : null,
+                    'has_identity' => (bool) $identity,
+                ];
+            })->values();
+
+            return response()->json($result);
         }
 
-        $sql .= " ORDER BY NOMBRE";
+        // 2) Si NO hay búsqueda: comportamiento viejo (listar por pivote)
+        $identities = DB::connection('mysql')
+            ->table('users_firebird_identities')
+            ->select('id as mysql_id', 'firebird_user_clave', 'firebird_empresa', 'firebird_tb_tabla')
+            ->limit($limit)
+            ->get();
 
-        $rows = $fb->select($sql, $bindings);
+        if ($identities->isEmpty()) {
+            return response()->json([]);
+        }
 
-        // Normalizar salida para el front
-        $users = collect($rows)->map(function ($u) {
+        $fbUserIds = $identities->pluck('firebird_user_clave')->map(fn($x) => (int)$x)->unique()->values()->all();
+        $in = implode(',', array_map('intval', $fbUserIds));
+
+        $fbUsers = collect($fb->select("
+        SELECT ID, NOMBRE, CORREO, PHOTO
+        FROM USUARIOS
+        WHERE ID IN ($in)
+    "))->keyBy(fn($u) => (int) $u->ID);
+
+        $result = $identities->map(function ($row) use ($fbUsers) {
+            $fbUser = $fbUsers->get((int) $row->firebird_user_clave);
+
             return [
-                'id' => (int) $u->ID,
-                'nombre' => trim($u->NOMBRE ?? ''),
-                'correo' => isset($u->CORREO) ? trim($u->CORREO) : null,
-                'photo' => isset($u->PHOTO) ? trim($u->PHOTO) : null, // ✅
+                'id' => (int) $row->firebird_user_clave, // USUARIOS.ID
+                'mysql_id' => (int) $row->mysql_id,
+                'firebird_user_clave' => (int) $row->firebird_user_clave,
+                'nombre' => $fbUser ? trim((string)($fbUser->NOMBRE ?? '')) : '',
+                'correo' => $fbUser && isset($fbUser->CORREO) ? trim((string)$fbUser->CORREO) : null,
+                'photo'  => $fbUser && isset($fbUser->PHOTO) ? trim((string)$fbUser->PHOTO) : null,
+                'has_identity' => true,
             ];
         })->values();
 
-        return response()->json($users);
+        return response()->json($result);
     }
+
 
     /**
      * Show the form for creating a new resource.

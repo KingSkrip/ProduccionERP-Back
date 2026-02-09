@@ -58,6 +58,10 @@ class EncryptJsonResponse
         'api/users/all',
         'api/users/all/*',
 
+        // Mailbox
+        'api/mailbox/*',
+
+
 
     ];
 

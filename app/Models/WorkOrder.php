@@ -50,4 +50,24 @@ class WorkOrder extends Model
     {
         return $this->hasMany(TaskParticipant::class, 'workorder_id');
     }
+
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(WorkorderAttachment::class, 'workorder_id');
+    }
+
+    public function mailboxItems(): HasMany
+    {
+        return $this->hasMany(\App\Models\MailboxItem::class, 'workorder_id');
+    }
+
+
+
+
+
+
+
+
+
+    
 }
