@@ -66,24 +66,41 @@ class MailboxController extends Controller
 
             Log::info('🔥 DECISIÓN: ¿Quieres ver Tasks como mensajes? Si SÍ, comenta whereNotIn');
 
+            // if ($folder === 'enviados') {
+            //     Log::info('Filtro ENVIADOS - de_id: ' . $identityId);
+            //     $q->where('de_id', $identityId);
+            // } else {
+            //     Log::info('Filtro MENSAJES - identityId: ' . $identityId . ', localUserId: ' . $localUserId);
+            //     $q->where(function ($w) use ($identityId, $localUserId) {
+            //         $w->where('para_id', $identityId)
+            //             ->orWhere('de_id', $identityId)
+            //             ->orWhereHas('taskParticipants', function ($p) use ($localUserId, $identityId) {
+            //                 $p->whereIn('user_id', array_filter([$localUserId, $identityId]));
+            //             });
+            //     });
+            // }
+
+
             if ($folder === 'enviados') {
                 Log::info('Filtro ENVIADOS - de_id: ' . $identityId);
                 $q->where('de_id', $identityId);
             } else {
-                Log::info('Filtro MENSAJES - identityId: ' . $identityId . ', localUserId: ' . $localUserId);
+                Log::info('Filtro MENSAJES - solo recibidos para identityId: ' . $identityId);
 
-                // 🔥 FIX: Agregamos paréntesis correctamente
+                // 🔥 SOLO MENSAJES RECIBIDOS (donde YO soy el destinatario)
                 $q->where(function ($w) use ($identityId, $localUserId) {
                     $w->where('para_id', $identityId)
-                        ->orWhere('de_id', $identityId)
                         ->orWhereHas('taskParticipants', function ($p) use ($localUserId, $identityId) {
-                            // Buscar por localUserId (989) que es el real
-                            $p->whereIn('user_id', array_filter([$localUserId, $identityId]));
-                            // O si los task_participants usan identityId:
-                            // $p->where('user_id', $identityId);
+                            // Solo si soy receptor (no CC ni BCC)
+                            $p->whereIn('user_id', array_filter([$localUserId, $identityId]))
+                                ->where('role', 'receptor');
                         });
-                });
+                })
+                    // 👇 EXCLUIR los que YO envié
+                    ->where('de_id', '!=', $identityId);
             }
+
+
 
             if (count($excludedWorkorderIds) > 0) {
                 $q->whereNotIn('id', $excludedWorkorderIds);
