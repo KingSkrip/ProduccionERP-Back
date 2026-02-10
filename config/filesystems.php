@@ -60,13 +60,13 @@ return [
             'report' => false,
         ],
 
-       'workorders' => [
-    'driver' => 'local',
-    'root' => storage_path('app/public/workorders'),
-    'url' => env('APP_URL').'/storage/workorders',
-    'visibility' => 'public',
-    'throw' => false,
-],
+        'workorders' => [
+            'driver' => 'local',
+            'root' => storage_path('app/public/workorders'),
+            'url' => env('APP_URL') . '/storage/workorders',
+            'visibility' => 'public',
+            'throw' => false,
+        ],
 
 
     ],

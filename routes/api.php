@@ -203,6 +203,10 @@ Route::middleware('jwt.auth')->group(function () {
     Route::patch('mailbox/workorder/{workorderId}/star',      [MailboxController::class, 'toggleStarByWorkorder']);
     Route::patch('mailbox/workorder/{workorderId}/important', [MailboxController::class, 'toggleImportantByWorkorder']);
     Route::patch('mailbox/workorder/{workorderId}/move',      [MailboxController::class, 'moveByWorkorder']);
+
+
+    Route::post('/mailbox/reply', [MailboxController::class, 'replyes']);
+
 });
 
 /**

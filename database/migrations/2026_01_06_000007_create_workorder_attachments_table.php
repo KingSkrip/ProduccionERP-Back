@@ -19,16 +19,21 @@ return new class extends Migration
                 ->nullable()
                 ->onDelete('cascade');
 
+            $table->unsignedBigInteger('reply_id')->nullable();
+            $table->foreign('reply_id')
+                ->references('id')
+                ->on('mails_replies')
+                ->onDelete('cascade');
+
             // metadata
             $table->string('disk')->default('workorders')->nullable();
-            $table->string('category', 30)->nullable(); // images | documentos (o null)
+            $table->string('category', 30)->nullable();
             $table->string('original_name')->nullable();
-            $table->string('file_name')->nullable(); // nombre guardado
-            $table->string('path')->nullable(); // workorders/task/images/xxx.png
+            $table->string('file_name')->nullable();
+            $table->string('path')->nullable();
             $table->string('mime_type', 150)->nullable();
             $table->unsignedBigInteger('size')->nullable();
 
-            // opcional: checksum pa dedup
             $table->string('sha1', 40)->nullable()->index();
 
             $table->timestamps();

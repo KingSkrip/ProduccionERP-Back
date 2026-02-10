@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\MailboxItem;
+use App\Models\MailsReply;
 use App\Models\UserFirebirdIdentity;
 use App\Models\WorkOrder;
 use App\Models\WorkorderAttachment;
@@ -112,6 +113,8 @@ class MailboxController extends Controller
                 'taskParticipants.user.firebirdUser',
                 'attachments',
                 'mailboxItems' => fn($m) => $m->where('user_id', $identityId),
+                'replies.user.firebirdUser',
+                'replies.attachments',
             ])
                 ->orderByDesc('id');
 
@@ -626,5 +629,104 @@ class MailboxController extends Controller
         $item->save();
 
         return response()->json($item);
+    }
+
+
+    /**
+     * RESPUESTAS
+     */
+
+    public function replyes(Request $request)
+    {
+        Log::info('============================================');
+        Log::info('INICIO replyes()');
+        Log::info('============================================');
+
+        $localUserId = auth()->id();
+        $firebirdIdentity = UserFirebirdIdentity::where('firebird_user_clave', $localUserId)->first();
+        $identityId = $firebirdIdentity?->id;
+
+        if (!$identityId) {
+            return response()->json(['message' => 'Sin identidad'], 422);
+        }
+
+        $request->validate([
+            'workorder_id' => 'required|exists:workorders,id',
+            'reply_type'   => 'nullable|in:reply,reply_all',
+            'reply_to_id'  => 'nullable|exists:mails_replies,id',
+            'body'         => 'required|string',
+        ]);
+
+        // 1) REGISTRAR RESPUESTA
+        $reply = MailsReply::create([
+            'workorder_id' => $request->workorder_id,
+            'user_id'      => $identityId,
+            'reply_to_id'  => $request->reply_to_id,
+            'reply_type'   => $request->input('reply_type', 'reply'),
+            'body'         => $request->body,
+            'sent_at'      => now(),
+        ]);
+
+        Log::info('Reply registrada', [
+            'reply_id' => $reply->id,
+            'workorder_id' => $reply->workorder_id,
+            'user_id' => $identityId,
+            'reply_type' => $reply->reply_type,
+        ]);
+
+        // 2) GUARDAR ATTACHMENTS DEL REPLY
+        if ($request->hasFile('attachments')) {
+            $files = $request->file('attachments');
+
+            foreach ((array) $files as $file) {
+                if (!$file || !$file->isValid()) {
+                    continue;
+                }
+
+                $originalName = $file->getClientOriginalName();
+                $fileName = time() . '_' . uniqid() . '_' . $originalName;
+                $path = $file->storeAs(
+                    "workorders/{$request->workorder_id}/replies/{$reply->id}",
+                    $fileName,
+                    'public'
+                );
+
+                WorkorderAttachment::create([
+                    'workorder_id'  => $request->workorder_id,
+                    'reply_id'      => $reply->id, // 👈 IMPORTANTE
+                    'disk'          => 'public',
+                    'category'      => 'reply',
+                    'original_name' => $originalName,
+                    'file_name'     => $fileName,
+                    'path'          => $path,
+                    'mime_type'     => $file->getClientMimeType(),
+                    'size'          => $file->getSize(),
+                    'sha1'          => sha1_file($file->getRealPath()),
+                ]);
+            }
+        }
+
+        // 3) MARCAR COMO NO LEÍDO PARA LOS DEMÁS
+        MailboxItem::where('workorder_id', $request->workorder_id)
+            ->where('user_id', '!=', $identityId)
+            ->update(['read_at' => null]);
+
+        // 4) RETORNAR WORKORDER ACTUALIZADO
+        $workorder = WorkOrder::with([
+            'de.firebirdUser',
+            'para.firebirdUser',
+            'status',
+            'taskParticipants.user.firebirdUser',
+            'attachments' => fn($q) => $q->whereNull('reply_id'), // 👈 SOLO ATTACHMENTS DEL MAIL
+            'mailboxItems' => fn($m) => $m->where('user_id', $identityId),
+            'replies.user.firebirdUser',
+            'replies.attachments', // 👈 ATTACHMENTS DE CADA REPLY
+        ])->find($request->workorder_id);
+
+        Log::info('============================================');
+        Log::info('FIN replyes() - Success');
+        Log::info('============================================');
+
+        return response()->json($workorder);
     }
 }

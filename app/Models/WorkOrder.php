@@ -62,12 +62,10 @@ class WorkOrder extends Model
     }
 
 
-
-
-
-
-
-
-
-    
+    public function replies(): HasMany
+    {
+        return $this->hasMany(MailsReply::class, 'workorder_id')
+            ->with(['user.firebirdUser', 'attachments'])
+            ->orderBy('sent_at', 'asc');
+    }
 }
