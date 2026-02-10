@@ -557,14 +557,6 @@ class MailboxController extends Controller
     }
 
 
-
-
-
-
-
-
-
-
     public function markReadByWorkorder(Request $request, $workorderId)
     {
         $workorderId = (int) $workorderId;
@@ -574,7 +566,7 @@ class MailboxController extends Controller
                 'message' => 'ID de workorder inválido'
             ], 422);
         }
-        
+
         $localUserId = auth()->id();
         $identityId = UserFirebirdIdentity::where('firebird_user_clave', $localUserId)->value('id');
 
