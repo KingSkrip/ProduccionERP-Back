@@ -807,24 +807,112 @@ class MailboxController extends Controller
         return $this->list($request, 'drafts');
     }
 
-
     public function important(Request $request)
     {
-        return $this->list($request, 'mensajes', ['is_important' => 1]);
+        // return $this->list($request, 'mensajes', ['is_important' => 1]);
+        return $this->listImportantOrStarred($request, 'is_important');
     }
 
     public function starred(Request $request)
     {
-        return $this->list($request, 'mensajes', ['is_starred' => 1]);
+        // return $this->list($request, 'mensajes', ['is_starred' => 1]);
+        return $this->listImportantOrStarred($request, 'is_starred');
     }
-
-
 
     public function sent(Request $request)
     {
         return $this->list($request, 'enviados');
     }
 
+
+    private function listImportantOrStarred(Request $request, string $flag)
+    {
+        Log::info('============================================');
+        Log::info("INICIO listImportantOrStarred() - {$flag}");
+        Log::info('============================================');
+
+        $localUserId = auth()->id();
+        $firebirdIdentity = UserFirebirdIdentity::where('firebird_user_clave', $localUserId)->first();
+        $identityId = $firebirdIdentity?->id;
+
+        $perPage = (int) $request->query('per_page', 15);
+        $page = (int) $request->query('page', 1);
+
+        if (!$identityId) {
+            return response()->json([
+                'mails' => [],
+                'pagination' => [
+                    'length' => 0,
+                    'size' => $perPage,
+                    'page' => $page,
+                    'lastPage' => 1,
+                    'startIndex' => 0,
+                    'endIndex' => -1,
+                ],
+            ]);
+        }
+
+        // 👇 Excluir spam, trash, drafts
+        $excludedWorkorderIds = MailboxItem::where('user_id', $identityId)
+            ->whereIn('folder', ['spam', 'trash', 'drafts'])
+            ->pluck('workorder_id')
+            ->toArray();
+
+        // 👇 Query principal: TODOS los workorders donde soy emisor o receptor
+        $q = WorkOrder::query();
+
+        // Buscar donde soy emisor O receptor
+        $q->where(function ($w) use ($identityId, $localUserId) {
+            // Mensajes ENVIADOS por mí
+            $w->where('de_id', $identityId)
+                // O mensajes RECIBIDOS por mí
+                ->orWhere('para_id', $identityId)
+                ->orWhereHas('taskParticipants', function ($p) use ($localUserId, $identityId) {
+                    $p->whereIn('user_id', array_filter([$localUserId, $identityId]))
+                        ->where('role', 'receptor');
+                });
+        });
+
+        // Excluir spam/trash/drafts
+        if (count($excludedWorkorderIds) > 0) {
+            $q->whereNotIn('id', $excludedWorkorderIds);
+        }
+
+        // 👇 FILTRAR POR FLAG (important o starred)
+        $q->whereHas('mailboxItems', function ($m) use ($identityId, $flag) {
+            $m->where('user_id', $identityId)->where($flag, 1);
+        });
+
+        $q->with([
+            'de.firebirdUser',
+            'para.firebirdUser',
+            'status',
+            'taskParticipants.user.firebirdUser',
+            'attachments' => fn($a) => $a->whereNull('reply_id'),
+            'mailboxItems' => fn($m) => $m->where('user_id', $identityId),
+            'replies.user.firebirdUser',
+            'replies.attachments',
+        ])->orderByDesc('id');
+
+        $p = $q->paginate($perPage, ['*'], 'page', $page);
+
+        Log::info("Total {$flag}: " . $p->total());
+        Log::info('============================================');
+        Log::info("FIN listImportantOrStarred() - {$flag}");
+        Log::info('============================================');
+
+        return response()->json([
+            'mails' => $p->items(),
+            'pagination' => [
+                'length' => $p->total(),
+                'size' => $p->perPage(),
+                'page' => $p->currentPage(),
+                'lastPage' => $p->lastPage(),
+                'startIndex' => ($p->currentPage() - 1) * $p->perPage(),
+                'endIndex' => (($p->currentPage() - 1) * $p->perPage()) + count($p->items()) - 1,
+            ],
+        ]);
+    }
 
 
 
@@ -1140,6 +1228,32 @@ class MailboxController extends Controller
         Log::info('============================================');
         Log::info('FIN replyes() - Success');
         Log::info('============================================');
+
+        return response()->json($workorder);
+    }
+
+
+    public function showWorkorder($id)
+    {
+        $localUserId = auth()->id();
+
+        $firebirdIdentity = UserFirebirdIdentity::where('firebird_user_clave', $localUserId)->first();
+        $identityId = $firebirdIdentity?->id;
+
+        if (!$identityId) {
+            return response()->json(['message' => 'Sin identidad'], 403);
+        }
+
+        $workorder = WorkOrder::with([
+            'de.firebirdUser',
+            'para.firebirdUser',
+            'status',
+            'taskParticipants.user.firebirdUser',
+            'attachments' => fn($q) => $q->whereNull('reply_id'),
+            'mailboxItems' => fn($m) => $m->where('user_id', $identityId),
+            'replies.user.firebirdUser',
+            'replies.attachments',
+        ])->findOrFail($id);
 
         return response()->json($workorder);
     }

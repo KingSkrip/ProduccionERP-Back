@@ -215,6 +215,8 @@ class TaskController extends Controller
         Log::info('STORE WORKORDER - RESPONSE LOAD');
 
         $workorder = $workorder->load([
+            'de.firebirdUser',
+            'para.firebirdUser',
             'de',
             'para',
             'status',
@@ -225,19 +227,19 @@ class TaskController extends Controller
 
         // 🔥 BROADCAST A TODOS LOS INVOLUCRADOS
         $recipientIds = collect();
-        
+
         // Destinatario principal
         if ($workorder->para_id && $workorder->para_id !== $firebirdIdentity?->id) {
             $recipientIds->push($workorder->para_id);
         }
-        
+
         // Participants
         foreach ($workorder->taskParticipants as $participant) {
             if ($participant->user_id !== $firebirdIdentity?->id) {
                 $recipientIds->push($participant->user_id);
             }
         }
-        
+
         broadcast(new WorkorderCreated($workorder, $recipientIds->unique()->values()->toArray()));
 
         return response()->json($workorder, 201);
