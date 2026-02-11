@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\WorkorderCreated;
 use App\Models\TaskParticipant;
 use App\Models\UserFirebirdIdentity;
 use App\Models\WorkOrder;
@@ -34,7 +35,6 @@ class TaskController extends Controller
 
     /**
      * Show the form for creating a new resource.
-     * (En API normalmente no se usa)
      */
     public function create()
     {
@@ -44,21 +44,14 @@ class TaskController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-
-    //AL CREAR EL TASK_PARTICIPANTS EN ROLE EN LUGAR DE PONER PENDEJADAS HAY QUE PONER EL CC, BCC O EN CASO QUE SEA NORMAL ES RECEPTOR
     public function store(Request $request)
     {
-
-        // ✅ Si viene como JSON string (FormData), conviértelo en array
         if (is_string($request->input('participants'))) {
             $decoded = json_decode($request->input('participants'), true);
-
-            // si viene malformado, cae a []
             $request->merge([
                 'participants' => is_array($decoded) ? $decoded : []
             ]);
         }
-
 
         Log::info('STORE WORKORDER - REQUEST RAW', [
             'all' => $request->all(),
@@ -77,10 +70,9 @@ class TaskController extends Controller
             'auth_user_id' => $userId,
             'firebird_identity_found' => !is_null($firebirdIdentity),
             'firebird_user_clave' => $firebirdIdentity?->firebird_user_clave,
-            'firebird_identity_id' => $firebirdIdentity?->id,  // ✅ Agrega este log
+            'firebird_identity_id' => $firebirdIdentity?->id,
         ]);
 
-        // 🔴 Normalizamos para evitar "" o " "
         $request->merge([
             'de_id' => filled($request->input('de_id'))
                 ? (int) $request->input('de_id')
@@ -107,15 +99,12 @@ class TaskController extends Controller
                 'participants' => ['sometimes', 'array'],
                 'participants.*' => ['required', 'array'],
 
-                // ✅ Valida contra firebird_user_clave
                 'participants.*.user_id' => ['required', 'integer', 'exists:users_firebird_identities,firebird_user_clave'],
                 'participants.*.role' => ['required', 'string', 'max:50'],
                 'participants.*.status_id' => ['nullable', 'integer', 'exists:statuses,id'],
                 'participants.*.comentarios' => ['nullable', 'string'],
                 'participants.*.fecha_accion' => ['nullable', 'date'],
                 'participants.*.orden' => ['nullable', 'integer'],
-
-
 
                 'attachments' => ['sometimes', 'array'],
                 'attachments.*' => ['file', 'max:20480'],
@@ -140,10 +129,8 @@ class TaskController extends Controller
                 'validated_de_id' => $validated['de_id'],
             ]);
 
-            // 🔥 Limpia el HTML de la descripción
             $descripcionLimpia = strip_tags($validated['descripcion'] ?? '');
 
-            // ✅ 1) Primero crea el WorkOrder
             $workorder = WorkOrder::create([
                 'de_id' => $firebirdIdentity?->id ?? $validated['de_id'],
                 'para_id' => $validated['para_id'] ?? null,
@@ -158,7 +145,6 @@ class TaskController extends Controller
                 'workorder_id' => $workorder->id,
             ]);
 
-            // ✅ 2) Luego: 1 inserción por archivo
             $files = $request->file('attachments', []);
 
             foreach ($files as $file) {
@@ -173,7 +159,6 @@ class TaskController extends Controller
 
                 $path = $file->storeAs($dir, $fileName, 'workorders');
 
-                // ✅ 1 row por cada file (si son 13 files = 13 creates)
                 WorkorderAttachment::create([
                     'workorder_id'   => $workorder->id,
                     'disk'           => 'workorders',
@@ -191,7 +176,6 @@ class TaskController extends Controller
                 'files_count' => count($files),
             ]);
 
-            // ✅ 3) Participants
             $participants = $validated['participants'] ?? [];
 
             if (!empty($participants)) {
@@ -208,7 +192,7 @@ class TaskController extends Controller
                     return [
                         'workorder_id' => $workorder->id,
                         'user_id'      => $userIdentity->id,
-                        'role'         => $p['role'], // receptor | cc | bcc
+                        'role'         => $p['role'],
                         'status_id'    => 4,
                         'comentarios'  => $p['comentarios'] ?? null,
                         'fecha_accion' => $p['fecha_accion'] ?? null,
@@ -228,20 +212,35 @@ class TaskController extends Controller
             return $workorder;
         });
 
-
         Log::info('STORE WORKORDER - RESPONSE LOAD');
 
-        return response()->json(
-            $workorder->load([
-                'de',
-                'para',
-                'status',
-                'taskParticipants.user',
-                'taskParticipants.status',
-                'attachments',
-            ]),
-            201
-        );
+        $workorder = $workorder->load([
+            'de',
+            'para',
+            'status',
+            'taskParticipants.user',
+            'taskParticipants.status',
+            'attachments',
+        ]);
+
+        // 🔥 BROADCAST A TODOS LOS INVOLUCRADOS
+        $recipientIds = collect();
+        
+        // Destinatario principal
+        if ($workorder->para_id && $workorder->para_id !== $firebirdIdentity?->id) {
+            $recipientIds->push($workorder->para_id);
+        }
+        
+        // Participants
+        foreach ($workorder->taskParticipants as $participant) {
+            if ($participant->user_id !== $firebirdIdentity?->id) {
+                $recipientIds->push($participant->user_id);
+            }
+        }
+        
+        broadcast(new WorkorderCreated($workorder, $recipientIds->unique()->values()->toArray()));
+
+        return response()->json($workorder, 201);
     }
 
     /**
@@ -265,7 +264,6 @@ class TaskController extends Controller
 
     /**
      * Show the form for editing the specified resource.
-     * (En API normalmente no se usa)
      */
     public function edit(string $id)
     {
@@ -291,7 +289,6 @@ class TaskController extends Controller
             'comentarios_aprobador' => ['sometimes', 'nullable', 'string'],
             'comentarios_solicitante' => ['sometimes', 'nullable', 'string'],
 
-            // si mandas participants, se reemplazan todos
             'participants' => ['sometimes', 'array'],
             'participants.*.user_id' => ['required', 'integer', 'exists:users_firebird_identities,id'],
             'participants.*.role' => ['required', 'in:receptor,cc,bcc'],
@@ -306,11 +303,9 @@ class TaskController extends Controller
             ->findOrFail($id);
 
         DB::transaction(function () use ($task, $validated) {
-            // update workorder (solo los campos presentes)
             $task->fill(collect($validated)->except('participants')->toArray());
             $task->save();
 
-            // si vienen participants, los reemplazamos
             if (array_key_exists('participants', $validated)) {
                 TaskParticipant::where('workorder_id', $task->id)->delete();
 
@@ -358,7 +353,6 @@ class TaskController extends Controller
             ->where('type', 'task')
             ->findOrFail($id);
 
-        // cascade borrará task_participants por FK onDelete('cascade')
         $task->delete();
 
         return response()->json(['message' => 'Task deleted']);

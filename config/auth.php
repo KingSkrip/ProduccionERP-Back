@@ -42,6 +42,12 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // 🔥 NUEVO GUARD PARA JWT
+        'jwt' => [
+            'driver' => 'jwt_driver', // Usaremos un driver custom
+            'provider' => 'firebird_users',
+        ],
     ],
 
     /*
@@ -64,7 +70,13 @@ return [
     'providers' => [
         'users' => [
             'driver' => 'eloquent',
-               'model' => Users::class,
+            'model' => Users::class,
+        ],
+
+
+        'firebird_users' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\Firebird\Users::class,
         ],
 
         // 'users' => [

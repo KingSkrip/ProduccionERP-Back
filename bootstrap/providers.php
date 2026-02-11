@@ -2,5 +2,6 @@
 
 return [
     App\Providers\AppServiceProvider::class,
-      Harrygulliford\LaravelFirebird\FirebirdServiceProvider::class,
+    App\Providers\BroadcastServiceProvider::class,
+    Harrygulliford\LaravelFirebird\FirebirdServiceProvider::class,
 ];
