@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+     'ultramsg' => [
+        'token' => env('ULTRAMSG_TOKEN'),
+        'instance_id' => env('ULTRAMSG_INSTANCE_ID'),
+    ],
+
 ];

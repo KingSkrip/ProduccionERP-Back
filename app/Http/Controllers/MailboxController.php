@@ -313,7 +313,7 @@ class MailboxController extends Controller
             }
 
             $q->with([
-                'de.firebirdUser',
+                'de.firebirdUser',  // 🔥 IMPORTANTE: Esto debe estar
                 'para.firebirdUser',
                 'status',
                 'taskParticipants.user.firebirdUser',

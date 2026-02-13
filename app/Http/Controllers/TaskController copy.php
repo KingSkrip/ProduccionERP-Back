@@ -22,7 +22,6 @@ class TaskController extends Controller
         $this->notificationService = $notificationService;
     }
 
-
     /**
      * Display a listing of the resource.
      */
@@ -31,12 +30,9 @@ class TaskController extends Controller
         $tasks = WorkOrder::query()
             ->where('type', 'task')
             ->with([
-                'de',
-                'para',
                 'de.firebirdUser',
                 'para.firebirdUser',
                 'status',
-                'taskParticipants.user',
                 'taskParticipants.user.firebirdUser',
                 'taskParticipants.status',
             ])
@@ -225,7 +221,7 @@ class TaskController extends Controller
             return $workorder;
         });
 
-        Log::info('STORE WORKORDER - RESPONSE LOAD');
+        Log::info('STORE WORKORDER - LOADING RELATIONSHIPS');
 
         $workorder = $workorder->load([
             'de.firebirdUser',
@@ -238,6 +234,15 @@ class TaskController extends Controller
             'attachments',
         ]);
 
+
+        // 🔥 VERIFICAR QUE LOS DATOS EXISTEN
+        Log::info('STORE WORKORDER - VERIFICATION', [
+            'de_exists' => !is_null($workorder->de),
+            'de.firebirdUser_exists' => !is_null($workorder->de?->firebirdUser),
+            'de.firebirdUser.NOMBRE' => $workorder->de?->firebirdUser?->NOMBRE ?? 'NULL',
+        ]);
+
+        // 🔥 ENVIAR NOTIFICACIONES DE WHATSAPP
         try {
             Log::info('STORE WORKORDER - SENDING WHATSAPP NOTIFICATIONS');
 
@@ -270,7 +275,13 @@ class TaskController extends Controller
 
         broadcast(new WorkorderCreated($workorder, $recipientIds->unique()->values()->toArray()));
 
-        return response()->json($workorder, 201);
+        Log::info('STORE WORKORDER - RESPONSE READY');
+
+        return response()->json([
+            'success' => true,
+            'workorder' => $workorder,
+            'notifications' => $notificationResults ?? null
+        ], 201);
     }
 
     /**
@@ -281,10 +292,10 @@ class TaskController extends Controller
         $task = WorkOrder::query()
             ->where('type', 'task')
             ->with([
-                'de',
-                'para',
+                'de.firebirdUser',
+                'para.firebirdUser',
                 'status',
-                'taskParticipants.user',
+                'taskParticipants.user.firebirdUser',
                 'taskParticipants.status',
             ])
             ->findOrFail($id);
@@ -365,10 +376,10 @@ class TaskController extends Controller
 
         return response()->json(
             $task->fresh()->load([
-                'de',
-                'para',
+                'de.firebirdUser',
+                'para.firebirdUser',
                 'status',
-                'taskParticipants.user',
+                'taskParticipants.user.firebirdUser',
                 'taskParticipants.status',
             ])
         );
