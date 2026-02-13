@@ -51,7 +51,7 @@ class WhatsAppNotificationService
                 'de_firebird_tb_clave' => $workorder->de->firebird_tb_clave ?? 'N/A',
                 'PARTICIPANTS_DETAIL' => $participantsDetail,
             ]);
-            
+
             // 🔥 Contar por role
             $roleCount = $participants->groupBy('role')->map(fn($g) => $g->count())->toArray();
             Log::info('WorkorderNotification - Conteo por rol', [
@@ -339,10 +339,10 @@ class WhatsAppNotificationService
                 if (empty($senderName) || $senderName === 'Un usuario') {
                     if ($workorder->de->firebirdUser) {
                         $nombreUsuarios = trim($workorder->de->firebirdUser->NOMBRE ?? '');
-                        
+
                         if (!empty($nombreUsuarios)) {
                             $senderName = $nombreUsuarios;
-                            
+
                             Log::info('buildNotificationMessage - Nombre obtenido desde USUARIOS', [
                                 'sender_name' => $senderName,
                                 'source' => 'USUARIOS.NOMBRE'
@@ -408,7 +408,7 @@ class WhatsAppNotificationService
 
         $pageNumber = (int) ceil(($position + 1) / $perPage);
 
-        $link = config('app.frontend_url') . "/pages/mailbox/mensajes/{$pageNumber}";
+        $link = config('app.frontend_url') . "/pages/mailbox/mensajes/{$pageNumber}/{$workorder->id}";
 
         $message = "📧 *Nueva tarea asignada*\n\n";
         $message .= "👤 *De:* {$senderName}\n";
