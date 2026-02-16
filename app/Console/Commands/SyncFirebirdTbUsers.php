@@ -395,10 +395,12 @@ class SyncFirebirdTbUsers extends Command
             $id = DB::connection('mysql')
                 ->table('users_firebird_identities')
                 ->insertGetId([
-                    'firebird_user_clave' => $firebirdUserId, 
+                    'firebird_user_clave' => $firebirdUserId,
                     'firebird_tb_clave' => $firebirdTbClave,
                     'firebird_tb_tabla' => $tbTabla,
                     'firebird_empresa' => $empresa,
+                    'firebird_clie_clave' => null,
+                    'firebird_clie_tabla' => null,
                     'created_at' => Carbon::now()
                 ]);
 

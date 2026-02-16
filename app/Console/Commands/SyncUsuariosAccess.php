@@ -125,7 +125,9 @@ class SyncUsuariosAccess extends Command
                     'firebird_user_clave' => $firebirdUserId,  // ✅ Ahora es el ID
                     'firebird_tb_clave' => null,             // Sin TB
                     'firebird_tb_tabla' => 'USUARIOS', // Sin tabla
-                    'firebird_empresa' => null,           // Sin empresa
+                    'firebird_empresa' => null,
+                    'firebird_clie_clave' => null,
+                    'firebird_clie_tabla' => null,
                     'created_at' => Carbon::now()
                 ]);
 

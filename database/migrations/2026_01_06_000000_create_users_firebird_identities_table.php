@@ -21,6 +21,10 @@ return new class extends Migration
             // 🏢 Empresa / base
             $table->char('firebird_empresa', 2)->nullable();
 
+            // 👤 Cliente Firebird (dinámico)
+            $table->string('firebird_clie_clave')->nullable();
+            $table->string('firebird_clie_tabla')->nullable();
+
             // ⏱️ Auditoría mínima
             $table->timestamp('created_at')->nullable();
 
