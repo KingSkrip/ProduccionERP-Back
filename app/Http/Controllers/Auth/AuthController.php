@@ -38,7 +38,7 @@ class AuthController extends Controller
      * - AUTH/JWT: USUARIOS.ID
      * - Relación NOI (TB/SL/VC/etc): USUARIOS.CLAVE
      */
-    public function signIn(Request $request)
+ public function signIn(Request $request)
     {
         try {
             $request->validate([
@@ -104,8 +104,10 @@ class AuthController extends Controller
                 'identity_id' => $identity->id ?? null,
                 'identity_firebird_user_clave' => $identity->firebird_user_clave ?? null,
                 'identity_firebird_tb_clave' => $identity->firebird_tb_clave ?? null,
+                'identity_firebird_clie_clave' => $identity->firebird_clie_clave ?? null,
                 'identity_empresa' => $identity->firebird_empresa ?? null,
                 'identity_tb_tabla' => $identity->firebird_tb_tabla ?? null,
+                'identity_clie_tabla' => $identity->firebird_clie_tabla ?? null,
             ]);
 
             $roles = collect();
@@ -117,6 +119,15 @@ class AuthController extends Controller
                 'identity_id' => $identity->id ?? null,
                 'roles_count' => $roles->count(),
                 'roles' => $roles->pluck('name')->values()->all(),
+            ]);
+
+            // 🎯 Determinar tipo de usuario
+            $esEmpleado = $identity && $identity->firebird_tb_clave !== null;
+            $esCliente = $identity && $identity->firebird_clie_clave !== null;
+
+            Log::info('🔍 USER_TYPE_DETECTION', [
+                'es_empleado' => $esEmpleado,
+                'es_cliente' => $esCliente,
             ]);
 
             // ✅ JWT payload blindado con claims estándar
@@ -149,7 +160,7 @@ class AuthController extends Controller
             // Encode forzando HS256
             $token = JWT::encode($payload, $key, 'HS256');
 
-            // 🔥 Datos NOI usando TB.CLAVE (de identity)
+            // 🔥 Inicializar variables de respuesta
             $departamentos = collect();
             $slRow = null;
             $vcRow = null;
@@ -158,84 +169,142 @@ class AuthController extends Controller
             $acRows = collect();
             $tbRow = null;
             $turnoActivo = null;
+            $clieRow = null;
 
-            // ✅ Obtener TB.CLAVE desde identity (NO USUARIOS.CLAVE)
-            $tbClave = $identity->firebird_tb_clave ?? null;
-            $tbClaveNorm = is_string($tbClave) ? trim($tbClave) : $tbClave;
-            $empresaNoi = $identity->firebird_empresa ?? '04';
+            // =====================================================
+            // 🏢 EMPLEADOS: Datos NOI usando TB.CLAVE
+            // =====================================================
+            if ($esEmpleado) {
+                $tbClave = $identity->firebird_tb_clave ?? null;
+                $tbClaveNorm = is_string($tbClave) ? trim($tbClave) : $tbClave;
+                $empresaNoi = $identity->firebird_empresa ?? '04';
 
-            Log::info('🏢 NOI_CONTEXT', [
-                'empresaNoi' => $empresaNoi,
-                'tb_clave_for_NOI' => $tbClaveNorm,
-                'usuarios_clave' => $usuario->CLAVE, // solo para comparar en log
-                'will_query_noi' => (bool) $tbClaveNorm,
-            ]);
+                Log::info('🏢 EMPLEADO_NOI_CONTEXT', [
+                    'empresaNoi' => $empresaNoi,
+                    'tb_clave_for_NOI' => $tbClaveNorm,
+                    'usuarios_clave' => $usuario->CLAVE,
+                    'will_query_noi' => (bool) $tbClaveNorm,
+                ]);
 
-            if ($tbClaveNorm) {
-                try {
-                    $firebirdNoi = new FirebirdEmpresaManualService($empresaNoi, 'SRVNOI');
+                if ($tbClaveNorm) {
+                    try {
+                        $firebirdNoi = new FirebirdEmpresaManualService($empresaNoi, 'SRVNOI');
 
-                    // TB (base) - usando TB.CLAVE
-                    $tb = $firebirdNoi->getOperationalTable('TB')
-                        ->keyBy(fn($row) => trim((string)$row->CLAVE));
-                    $tbRow = $tb[$tbClaveNorm] ?? null;
+                        // TB (base) - usando TB.CLAVE
+                        $tb = $firebirdNoi->getOperationalTable('TB')
+                            ->keyBy(fn($row) => trim((string)$row->CLAVE));
+                        $tbRow = $tb[$tbClaveNorm] ?? null;
 
-                    Log::info('📘 NOI_TB_LOOKUP', [
-                        'tb_clave' => $tbClaveNorm,
-                        'tb_found' => $tbRow ? true : false,
-                    ]);
+                        Log::info('📘 NOI_TB_LOOKUP', [
+                            'tb_clave' => $tbClaveNorm,
+                            'tb_found' => $tbRow ? true : false,
+                        ]);
 
-                    // SL - usando TB.CLAVE
-                    $sl = $firebirdNoi->getOperationalTable('SL')
-                        ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
-                    $slRow = $sl[$tbClaveNorm] ?? null;
+                        // SL - usando TB.CLAVE
+                        $sl = $firebirdNoi->getOperationalTable('SL')
+                            ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
+                        $slRow = $sl[$tbClaveNorm] ?? null;
 
-                    Log::info('💰 NOI_SL_LOOKUP', [
-                        'tb_clave' => $tbClaveNorm,
-                        'sl_found' => $slRow ? true : false,
-                    ]);
+                        Log::info('💰 NOI_SL_LOOKUP', [
+                            'tb_clave' => $tbClaveNorm,
+                            'sl_found' => $slRow ? true : false,
+                        ]);
 
-                    // VC - usando TB.CLAVE
-                    $vc = $firebirdNoi->getOperationalTable('VC')
-                        ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
-                    $vcRow = $vc[$tbClaveNorm] ?? null;
+                        // VC - usando TB.CLAVE
+                        $vc = $firebirdNoi->getOperationalTable('VC')
+                            ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
+                        $vcRow = $vc[$tbClaveNorm] ?? null;
 
-                    Log::info('🏖️ NOI_VC_LOOKUP', [
-                        'tb_clave' => $tbClaveNorm,
-                        'vc_found' => $vcRow ? true : false,
-                    ]);
+                        Log::info('🏖️ NOI_VC_LOOKUP', [
+                            'tb_clave' => $tbClaveNorm,
+                            'vc_found' => $vcRow ? true : false,
+                        ]);
 
-                    // Turno
-                    if ($identity) {
+                        // Turno
                         $turnoActivo = $identity->turnoActivo()
                             ->with(['turno.turnoDias', 'status'])
                             ->first();
-                    }
 
-                    Log::info('✅ NOI_DATA_OK', [
-                        'tb_clave' => $tbClaveNorm,
-                        'has_tb' => (bool) $tbRow,
-                        'has_sl' => (bool) $slRow,
-                        'has_vc' => (bool) $vcRow,
-                    ]);
-                } catch (\Throwable $e) {
-                    Log::error('⚠️ NOI_DATA_ERROR', [
-                        'empresa' => $empresaNoi,
-                        'tb_clave' => $tbClaveNorm,
-                        'error' => $e->getMessage(),
+                        Log::info('✅ EMPLEADO_NOI_DATA_OK', [
+                            'tb_clave' => $tbClaveNorm,
+                            'has_tb' => (bool) $tbRow,
+                            'has_sl' => (bool) $slRow,
+                            'has_vc' => (bool) $vcRow,
+                        ]);
+                    } catch (\Throwable $e) {
+                        Log::error('⚠️ EMPLEADO_NOI_DATA_ERROR', [
+                            'empresa' => $empresaNoi,
+                            'tb_clave' => $tbClaveNorm,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                } else {
+                    Log::warning('⚠️ EMPLEADO_NOI_SKIPPED_NO_TB_CLAVE', [
+                        'firebird_id' => $userId,
+                        'identity_id' => $identity->id ?? null,
                     ]);
                 }
-            } else {
-                Log::warning('⚠️ NOI_SKIPPED_NO_TB_CLAVE', [
-                    'firebird_id' => $userId,
-                    'identity_id' => $identity->id ?? null,
-                    'identity_tb_clave' => $identity->firebird_tb_clave ?? null,
+            }
+
+            // =====================================================
+            // 🛒 CLIENTES: Datos de CLIE03
+            // =====================================================
+            if ($esCliente) {
+                $clieClave = $identity->firebird_clie_clave ?? null;
+
+                Log::info('🛒 CLIENTE_CONTEXT', [
+                    'clie_clave' => $clieClave,
+                    'clie_tabla' => $identity->firebird_clie_tabla ?? null,
                 ]);
+
+                if ($clieClave) {
+                    try {
+                        // 🔌 Conectar a srvasp01old para obtener datos de CLIE03
+                        config([
+                            'database.connections.firebird_produccion' => [
+                                'driver'   => 'firebird',
+                                'host'     => env('FB_HOST'),
+                                'port'     => env('FB_PORT'),
+                                'database' => env('FB_DATABASE'), // srvasp01old
+                                'username' => env('FB_USERNAME'),
+                                'password' => env('FB_PASSWORD'),
+                                'charset'  => env('FB_CHARSET', 'UTF8'),
+                                'dialect'  => 3,
+                                'quote_identifiers' => false,
+                            ]
+                        ]);
+
+                        DB::purge('firebird_produccion');
+                        $connection = DB::connection('firebird_produccion');
+
+                        // 📋 Obtener datos del cliente de CLIE03
+                        $clieRow = $connection->selectOne(
+                            "SELECT * FROM CLIE03 WHERE CLAVE = ?",
+                            [$clieClave]
+                        );
+
+                        Log::info('🛒 CLIE03_LOOKUP', [
+                            'clie_clave' => $clieClave,
+                            'clie_found' => $clieRow ? true : false,
+                            'clie_nombre' => $clieRow->NOMBRE ?? null,
+                        ]);
+                    } catch (\Throwable $e) {
+                        Log::error('⚠️ CLIENTE_DATA_ERROR', [
+                            'clie_clave' => $clieClave,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                } else {
+                    Log::warning('⚠️ CLIENTE_SKIPPED_NO_CLIE_CLAVE', [
+                        'firebird_id' => $userId,
+                        'identity_id' => $identity->id ?? null,
+                    ]);
+                }
             }
 
             Log::info('✅ LOGIN_SUCCESS', [
                 'firebird_id' => $userId,
-                'tb_clave' => $tbClaveNorm,
+                'tipo_usuario' => $esEmpleado ? 'EMPLEADO' : ($esCliente ? 'CLIENTE' : 'INDEFINIDO'),
                 'identity_id' => $identity->id ?? null,
             ]);
 
@@ -250,10 +319,13 @@ class AuthController extends Controller
                     'acumuladosperiodos' => $acRows,
                     'roles' => $roles,
                     'TB' => $tbRow,
+                    'CLIE' => $clieRow,  // 🆕 Datos del cliente
 
                     // 🧾 para debug/response
-                    'firebird_user_id' => $userId,           // ✅ AUTH (JWT sub)
-                    'firebird_user_clave' => $tbClaveNorm,   // ✅ NOI (TB.CLAVE)
+                    'firebird_user_id' => $userId,                    // ✅ AUTH (JWT sub)
+                    'firebird_user_clave' => $identity->firebird_tb_clave ?? null,  // ✅ NOI (TB.CLAVE) para empleados
+                    'firebird_clie_clave' => $identity->firebird_clie_clave ?? null, // 🆕 CLIE (CLIE03.CLAVE) para clientes
+                    'tipo_usuario' => $esEmpleado ? 'empleado' : ($esCliente ? 'cliente' : null),  // 🆕 Tipo de usuario
                     'turnoActivo' => $turnoActivo,
                 ])
             ], 200);
@@ -265,7 +337,7 @@ class AuthController extends Controller
 
             return response()->json([
                 'message' => 'Error al iniciar sesión'
-            ], 500);  // En prod, considera 401 o mensaje genérico si quieres más seguridad
+            ], 500);
         }
     }
 

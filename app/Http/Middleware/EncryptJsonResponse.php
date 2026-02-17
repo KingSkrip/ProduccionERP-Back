@@ -61,6 +61,9 @@ class EncryptJsonResponse
         // Mailbox
         'api/mailbox/*',
 
+        //Estados de cuenta
+        'api/estados-cuenta/*',
+
 
 
     ];

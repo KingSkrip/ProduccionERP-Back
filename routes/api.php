@@ -14,6 +14,7 @@ use App\Http\Controllers\SuperAdmin\GestionarUsuarios\RH\RHController;
 use App\Http\Controllers\SuperAdmin\GestionarUsuarios\SuAdmin\SuAdminController;
 use App\Http\Controllers\SuperAdmin\ReportesProduccion\ReportesProduccionController;
 use App\Http\Controllers\SuperAdmin\Roles\RolesController;
+use App\Http\Controllers\Clientes\EstadosCuentaController;
 use App\Http\Controllers\TaskController;
 use Illuminate\Support\Facades\Route;
 
@@ -162,11 +163,6 @@ Route::prefix('tasks')->middleware('jwt.auth')->group(function () {
 
 Route::middleware('jwt.auth')->group(function () {
     Route::get('users/all', [AllUsersController::class, 'index']);
-});
-
-
-
-Route::middleware('jwt.auth')->group(function () {
 
     // ============================================
     // LISTADOS (GET) - Estos estaban faltando
@@ -208,6 +204,26 @@ Route::middleware('jwt.auth')->group(function () {
 
 
     Route::post('/mailbox/reply', [MailboxController::class, 'replyes']);
+});
+
+
+
+
+
+
+
+
+Route::prefix('estados-cuenta')->middleware('jwt.auth')->group(function () {
+    Route::get('/', [EstadosCuentaController::class, 'index']);
+    Route::get('/resumen', [EstadosCuentaController::class, 'resumen']);
+    Route::get('/anio/{anio}', [EstadosCuentaController::class, 'porAnio']);
+    Route::get('/{id}', [EstadosCuentaController::class, 'show']);
+    Route::get('/{id}/pdf', [EstadosCuentaController::class, 'descargarPDF']);
+    Route::post('/descargar-multiples', [EstadosCuentaController::class, 'descargarMultiples']);
+    Route::post('/{id}/enviar-email', [EstadosCuentaController::class, 'enviarEmail']);
+    Route::post('/generar', [EstadosCuentaController::class, 'generar']);
+    Route::patch('/{id}/estado', [EstadosCuentaController::class, 'actualizarEstado']);
+    Route::delete('/{id}', [EstadosCuentaController::class, 'destroy']);
 });
 
 /**
