@@ -15,6 +15,7 @@ use App\Http\Controllers\SuperAdmin\GestionarUsuarios\SuAdmin\SuAdminController;
 use App\Http\Controllers\SuperAdmin\ReportesProduccion\ReportesProduccionController;
 use App\Http\Controllers\SuperAdmin\Roles\RolesController;
 use App\Http\Controllers\Clientes\EstadosCuentaController;
+use App\Http\Controllers\Clientes\PedidosController;
 use App\Http\Controllers\TaskController;
 use Illuminate\Support\Facades\Route;
 
@@ -225,6 +226,21 @@ Route::prefix('estados-cuenta')->middleware('jwt.auth')->group(function () {
     Route::patch('/{id}/estado', [EstadosCuentaController::class, 'actualizarEstado']);
     Route::delete('/{id}', [EstadosCuentaController::class, 'destroy']);
 });
+
+
+
+
+Route::prefix('clientes/pedidos')->middleware('jwt.auth')->group(function () {
+    Route::get('/', [PedidosController::class, 'index']);
+    Route::get('/resumen', [PedidosController::class, 'resumen']);
+    Route::get('/anio/{anio}', [PedidosController::class, 'porAnio'])->whereNumber('anio');
+    Route::post('/descargar-multiples', [PedidosController::class, 'descargarMultiples']);
+    Route::get('/{cvePed}', [PedidosController::class, 'show']);
+    Route::get('/{cvePed}/pdf', [PedidosController::class, 'descargarPDF']);
+    Route::post('/{cvePed}/email', [PedidosController::class, 'enviarEmail']);
+    Route::delete('/{cvePed}', [PedidosController::class, 'destroy']);
+});
+
 
 /**
  * SIEMPRE QUE SE AGREGE UNA NUEVA RUTA HAY QUE AGREGARLA A  

@@ -64,6 +64,9 @@ class EncryptJsonResponse
         //Estados de cuenta
         'api/estados-cuenta/*',
 
+        //CLIENTES PEDIDOS
+        'api/clientes/pedidos/*',
+
 
 
     ];

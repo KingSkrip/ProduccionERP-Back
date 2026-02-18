@@ -109,11 +109,13 @@ class EstadosCuentaController extends Controller
             })->values();
 
             return response()->json([
-                'success' => true,
-                'data'    => $estadosCuenta,
-                'total'   => $estadosCuenta->count()
+                'success'      => true,
+                'data'         => $estadosCuenta,
+                'total'        => $estadosCuenta->count(),
+                'total_cargos' => round($estadosCuenta->sum('cargos'), 2),
+                'total_abonos' => round($estadosCuenta->sum('abonos'), 2),
+                'total_saldos' => round($estadosCuenta->sum('saldo'), 2),
             ]);
-
         } catch (\Exception $e) {
             Log::error('ERROR_INDEX_ESTADOS_CUENTA', [
                 'message' => $e->getMessage(),
@@ -197,7 +199,6 @@ class EstadosCuentaController extends Controller
                     ]
                 ]
             ]);
-
         } catch (\Exception $e) {
             Log::error('ERROR_RESUMEN_ESTADOS_CUENTA', [
                 'message' => $e->getMessage(),
@@ -249,7 +250,6 @@ class EstadosCuentaController extends Controller
                 'data'    => $estadosCuenta,
                 'total'   => $estadosCuenta->count()
             ]);
-
         } catch (\Exception $e) {
             Log::error('ERROR_POR_ANIO_ESTADOS_CUENTA', [
                 'message' => $e->getMessage(),
@@ -302,7 +302,6 @@ class EstadosCuentaController extends Controller
                     'total_saldo' => (float) $resultado->TOTAL_SALDO,
                 ]
             ]);
-
         } catch (\Exception $e) {
             Log::error('ERROR_SHOW_ESTADO_CUENTA', [
                 'message'   => $e->getMessage(),
@@ -345,7 +344,6 @@ class EstadosCuentaController extends Controller
             $pdf = PDF::loadView('pdfs.estado-cuenta', $data);
 
             return $pdf->download("estado-cuenta-{$noFactura}.pdf");
-
         } catch (\Exception $e) {
             Log::error('ERROR_DESCARGAR_PDF', [
                 'message'   => $e->getMessage(),
@@ -399,7 +397,6 @@ class EstadosCuentaController extends Controller
             $pdf = PDF::loadView('pdfs.estados-cuenta-multiples', $data);
 
             return $pdf->download("estados-cuenta-" . date('YmdHis') . ".pdf");
-
         } catch (\Exception $e) {
             Log::error('ERROR_DESCARGAR_MULTIPLES', [
                 'message'    => $e->getMessage(),
@@ -455,7 +452,6 @@ class EstadosCuentaController extends Controller
                 'success' => true,
                 'message' => 'Email enviado correctamente'
             ]);
-
         } catch (\Exception $e) {
             Log::error('ERROR_ENVIAR_EMAIL', [
                 'message'   => $e->getMessage(),
@@ -515,7 +511,6 @@ class EstadosCuentaController extends Controller
                 'success' => true,
                 'message' => 'Estado actualizado correctamente'
             ]);
-
         } catch (\Exception $e) {
             Log::error('ERROR_ACTUALIZAR_ESTADO', [
                 'message'   => $e->getMessage(),
