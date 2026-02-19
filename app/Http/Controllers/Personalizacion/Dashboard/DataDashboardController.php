@@ -314,10 +314,12 @@ class DataDashboardController extends Controller
             // 🎯 Determinar tipo de usuario
             $esEmpleado = $identity->firebird_tb_clave !== null;
             $esCliente = $identity->firebird_clie_clave !== null;
+            $esVendedor = $identity->firebird_vend_clave !== null;
 
             Log::info('🔍 ME_USER_TYPE_DETECTION', [
                 'es_empleado' => $esEmpleado,
-                'es_cliente' => $esCliente,
+                'es_cliente'  => $esCliente,
+                'es_vendedor' => $esVendedor,
             ]);
 
             // ✅ PASO 3: Roles / turno
@@ -480,28 +482,86 @@ class DataDashboardController extends Controller
                 }
             }
 
+            // =====================================================
+            // 🧑‍💼 VENDEDORES: Datos de VEND03
+            // =====================================================
+            $vendRow = null;
+
+            if ($esVendedor) {
+                $vendClave = $identity->firebird_vend_clave;
+
+                Log::info('🧠 ME_VENDEDOR_KEYS_RESOLVED', [
+                    'auth_uses'  => 'USUARIOS.ID (JWT sub)',
+                    'vend_uses'  => 'VEND03.CVE_VEND (identity.firebird_vend_clave)',
+                    'firebird_id' => $usuario->ID,
+                    'vend_clave'  => $vendClave,
+                    'vend_tabla'  => $identity->firebird_vend_tabla ?? null,
+                ]);
+
+                if ($vendClave) {
+                    try {
+                        config([
+                            'database.connections.firebird_produccion' => [
+                                'driver'            => 'firebird',
+                                'host'              => env('FB_HOST'),
+                                'port'              => env('FB_PORT'),
+                                'database'          => env('FB_DATABASE'),
+                                'username'          => env('FB_USERNAME'),
+                                'password'          => env('FB_PASSWORD'),
+                                'charset'           => env('FB_CHARSET', 'UTF8'),
+                                'dialect'           => 3,
+                                'quote_identifiers' => false,
+                            ]
+                        ]);
+
+                        DB::purge('firebird_produccion');
+                        $connection = DB::connection('firebird_produccion');
+
+                        $vendRow = $connection->selectOne(
+                            "SELECT * FROM VEND03 WHERE CVE_VEND = ?",
+                            [$vendClave]
+                        );
+
+                        Log::info('✅ ME_VENDEDOR_VEND03_DATA', [
+                            'vend_clave'  => $vendClave,
+                            'vend_found'  => (bool) $vendRow,
+                            'vend_nombre' => $vendRow->NOMBRE ?? null,
+                        ]);
+                    } catch (\Throwable $e) {
+                        Log::error('⚠️ ME_VENDEDOR_DATA_ERROR', [
+                            'vend_clave' => $vendClave,
+                            'error'      => $e->getMessage(),
+                        ]);
+                    }
+                } else {
+                    Log::warning('⚠️ ME_VENDEDOR_NO_VEND_CLAVE', [
+                        'identity_id' => $identity->id,
+                    ]);
+                }
+            }
+
             // ✅ PASO 5: Response
             return response()->json([
                 'user' => new UsuarioResource($usuario, [
-                    'departamentos' => $departamentos,
-                    'sl' => $slRow,
-                    'vacaciones' => $vcRow,
+                    'departamentos'       => $departamentos,
+                    'sl'                  => $slRow,
+                    'vacaciones'          => $vcRow,
                     'historialvacaciones' => $hvcRow,
-                    'faltas' => $mfRow,
-                    'acumuladosperiodos' => $acRows,
-                    'roles' => $roles,
-                    'TB' => $tbRow,
-                    'CLIE' => $clieRow,  // 🆕 Datos del cliente
-                    'firebird_tb_clave' => $identity->firebird_tb_clave ?? null,
-                    'firebird_clie_clave' => $identity->firebird_clie_clave ?? null,  // 🆕
-                    'turnoActivo' => $turnoActivo,
-
-                    // extras para debug front si quieres verlos
-                    'firebird_user_id' => (int)$usuario->ID,
-                    'usuarios_clave' => (string)$usuario->CLAVE,
-                    'identity_id' => $identity->id,
-                    'empresaNoi' => $identity->firebird_empresa ?? null,
-                    'tipo_usuario' => $esEmpleado ? 'empleado' : ($esCliente ? 'cliente' : null),  // 🆕
+                    'faltas'              => $mfRow,
+                    'acumuladosperiodos'  => $acRows,
+                    'roles'               => $roles,
+                    'TB'                  => $tbRow,
+                    'CLIE'                => $clieRow,
+                    'VEND'                => $vendRow,
+                    'firebird_tb_clave'   => $identity->firebird_tb_clave ?? null,
+                    'firebird_clie_clave' => $identity->firebird_clie_clave ?? null,
+                    'firebird_vend_clave' => $identity->firebird_vend_clave ?? null,
+                    'turnoActivo'         => $turnoActivo,
+                    'firebird_user_id'    => (int)$usuario->ID,
+                    'usuarios_clave'      => (string)$usuario->CLAVE,
+                    'identity_id'         => $identity->id,
+                    'empresaNoi'          => $identity->firebird_empresa ?? null,
+                    'tipo_usuario'        => $esEmpleado ? 'empleado' : ($esCliente ? 'cliente' : ($esVendedor ? 'vendedor' : null)),
                 ])
             ], 200);
         } catch (SignatureInvalidException $e) {
