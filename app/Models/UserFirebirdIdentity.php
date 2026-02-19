@@ -21,6 +21,8 @@ class UserFirebirdIdentity extends Model
         'firebird_empresa',
         'firebird_clie_clave',
         'firebird_clie_tabla',
+        'firebird_vend_clave',
+        'firebird_vend_tabla'
     ];
 
     public function roles(): HasMany

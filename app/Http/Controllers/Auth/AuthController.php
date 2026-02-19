@@ -38,7 +38,7 @@ class AuthController extends Controller
      * - AUTH/JWT: USUARIOS.ID
      * - Relación NOI (TB/SL/VC/etc): USUARIOS.CLAVE
      */
- public function signIn(Request $request)
+    public function signIn(Request $request)
     {
         try {
             $request->validate([
@@ -108,6 +108,8 @@ class AuthController extends Controller
                 'identity_empresa' => $identity->firebird_empresa ?? null,
                 'identity_tb_tabla' => $identity->firebird_tb_tabla ?? null,
                 'identity_clie_tabla' => $identity->firebird_clie_tabla ?? null,
+                'firebird_vend_clave' => null,
+                'firebird_vend_clave' => null,
             ]);
 
             $roles = collect();
@@ -137,8 +139,8 @@ class AuthController extends Controller
                 // 'usuario' => $usuario->USUARIO,
                 'iat'     => time(),
                 'exp'     => time() + $this->jwtExpiration,
-                'iss'     => config('app.url'),        
-                'aud'     => 'fibrasan',          
+                'iss'     => config('app.url'),
+                'aud'     => 'fibrasan',
                 'jti'     => Str::random(32),
             ];
 

@@ -220,7 +220,6 @@ class SyncFirebirdClieUsers extends Command
             $this->info("🎭 Roles asignados: {$rolesAsignados}");
             $this->info("✅ Ya tenían rol: {$yaTenianRol}");
             $this->info("📊 Total identidades: " . $identidadesClie->count());
-
         } catch (\Exception $e) {
             $this->error("❌ Error al asignar roles faltantes: " . $e->getMessage());
             Log::error('Error al asignar roles faltantes CLIE', [
@@ -401,7 +400,6 @@ class SyncFirebirdClieUsers extends Command
             $usuario = $connection->selectOne("SELECT ID FROM USUARIOS WHERE CLAVE = ?", [$nuevaClave]);
 
             return $usuario->ID ?? null;
-
         } catch (\Exception $e) {
             Log::error('Error al crear usuario Firebird desde CLIE', [
                 'nombre' => $nombre,
@@ -417,39 +415,53 @@ class SyncFirebirdClieUsers extends Command
     protected function registrarPivote(int $firebirdUserId, int $firebirdClieClave): ?int
     {
         try {
-            // 🔍 Verificar si ya existe
-            $existe = DB::connection('mysql')
+            // 🔎 ¿Ya existe pivote exacto (user + clie)?
+            $exacto = DB::connection('mysql')
                 ->table('users_firebird_identities')
                 ->where('firebird_user_clave', $firebirdUserId)
                 ->where('firebird_clie_tabla', 'CLIE03')
                 ->where('firebird_clie_clave', $firebirdClieClave)
                 ->first();
 
-            if ($existe) {
-                $this->info("📌 Pivote ya existe, usando ID: {$existe->id}");
-                return $existe->id;
+            if ($exacto) {
+                $this->info("⏭️  Pivote ya existe, omitiendo ID: {$exacto->id}");
+                return $exacto->id;
             }
 
-            // ➕ Insertar nuevo pivote
+            // 🔎 ¿Ya existe cualquier registro para este usuario? → NO tocar nada
+            $registroExistente = DB::connection('mysql')
+                ->table('users_firebird_identities')
+                ->where('firebird_user_clave', $firebirdUserId)
+                ->first();
+
+            if ($registroExistente) {
+                $this->warn("⚠️  Ya existe registro para user ID {$firebirdUserId}, omitiendo sin modificar");
+                return null;
+            }
+
+            // ✅ No existe nada → insertar nuevo
             $id = DB::connection('mysql')
                 ->table('users_firebird_identities')
                 ->insertGetId([
                     'firebird_user_clave' => $firebirdUserId,
-                    'firebird_tb_clave' => null,
-                    'firebird_tb_tabla' => null,
-                    'firebird_empresa' => null,
+                    'firebird_tb_clave'   => null,
+                    'firebird_tb_tabla'   => null,
+                    'firebird_empresa'    => null,
                     'firebird_clie_clave' => $firebirdClieClave,
                     'firebird_clie_tabla' => 'CLIE03',
-                    'created_at' => Carbon::now()
+                    'firebird_vend_clave' => null,
+                    'firebird_vend_tabla' => null,
+                    'created_at'          => now(),
                 ]);
 
             $this->info("📌 Pivote creado con ID: {$id}");
             return $id;
         } catch (\Exception $e) {
+            $this->error("❌ Error al registrar pivote: " . $e->getMessage());
             Log::error('Error al registrar pivote CLIE', [
                 'fb_user_id' => $firebirdUserId,
                 'clie_clave' => $firebirdClieClave,
-                'error' => $e->getMessage()
+                'error'      => $e->getMessage(),
             ]);
             return null;
         }

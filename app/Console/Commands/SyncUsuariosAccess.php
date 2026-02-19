@@ -128,6 +128,8 @@ class SyncUsuariosAccess extends Command
                     'firebird_empresa' => null,
                     'firebird_clie_clave' => null,
                     'firebird_clie_tabla' => null,
+                    'firebird_vend_clave' => null,
+                    'firebird_vend_clave' => null,
                     'created_at' => Carbon::now()
                 ]);
 
