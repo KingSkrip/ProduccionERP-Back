@@ -16,6 +16,12 @@ use App\Http\Controllers\SuperAdmin\ReportesProduccion\ReportesProduccionControl
 use App\Http\Controllers\SuperAdmin\Roles\RolesController;
 use App\Http\Controllers\Clientes\EstadosCuentaController;
 use App\Http\Controllers\Clientes\PedidosController;
+
+
+use App\Http\Controllers\Agentes\EstadosCuentaAgentesController;
+use App\Http\Controllers\Agentes\PedidosAgentesController;
+
+
 use App\Http\Controllers\TaskController;
 use Illuminate\Support\Facades\Route;
 
@@ -240,6 +246,31 @@ Route::prefix('clientes/pedidos')->middleware('jwt.auth')->group(function () {
     Route::post('/{cvePed}/email', [PedidosController::class, 'enviarEmail']);
     Route::delete('/{cvePed}', [PedidosController::class, 'destroy']);
 });
+
+Route::prefix('estados-Cu3nt4Ag3nT32')->middleware('jwt.auth')->group(function () {
+    Route::get('/', [EstadosCuentaAgentesController::class, 'index']);
+    Route::get('/resumen', [EstadosCuentaAgentesController::class, 'resumen']);
+    Route::get('/anio/{anio}', [EstadosCuentaAgentesController::class, 'porAnio']);
+    Route::get('/{id}', [EstadosCuentaAgentesController::class, 'show']);
+    Route::get('/{id}/pdf', [EstadosCuentaAgentesController::class, 'descargarPDF']);
+    Route::post('/descargar-multiples', [EstadosCuentaAgentesController::class, 'descargarMultiples']);
+    Route::post('/{id}/enviar-email', [EstadosCuentaAgentesController::class, 'enviarEmail']);
+    Route::post('/generar', [EstadosCuentaAgentesController::class, 'generar']);
+    Route::patch('/{id}/estado', [EstadosCuentaAgentesController::class, 'actualizarEstado']);
+    Route::delete('/{id}', [EstadosCuentaAgentesController::class, 'destroy']);
+});
+
+Route::prefix('agentes/pedidos')->middleware('jwt.auth')->group(function () {
+    Route::get('/', [PedidosAgentesController::class, 'index']);
+    Route::get('/resumen', [PedidosAgentesController::class, 'resumen']);
+    Route::get('/anio/{anio}', [PedidosAgentesController::class, 'porAnio'])->whereNumber('anio');
+    Route::post('/descargar-multiples', [PedidosAgentesController::class, 'descargarMultiples']);
+    Route::get('/{cvePed}', [PedidosAgentesController::class, 'show']);
+    Route::get('/{cvePed}/pdf', [PedidosAgentesController::class, 'descargarPDF']);
+    Route::post('/{cvePed}/email', [PedidosAgentesController::class, 'enviarEmail']);
+    Route::delete('/{cvePed}', [PedidosAgentesController::class, 'destroy']);
+});
+
 
 
 /**

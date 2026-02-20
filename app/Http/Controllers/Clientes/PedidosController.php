@@ -130,8 +130,11 @@ class PedidosController extends Controller
     protected function parseDate($value): ?string
     {
         if (empty($value)) return null;
-        try { return Carbon::parse($value)->format('Y-m-d'); }
-        catch (\Exception $e) { return null; }
+        try {
+            return Carbon::parse($value)->format('Y-m-d');
+        } catch (\Exception $e) {
+            return null;
+        }
     }
 
     /* =======================================================
@@ -178,7 +181,7 @@ class PedidosController extends Controller
             $clie      = $this->sanitize($this->getClienteClave());
             $resultado = $this->getPedidosSP()->first(
                 fn($item) =>
-                    $this->sanitize($item->CVE_CTE ?? '') === $clie &&
+                $this->sanitize($item->CVE_CTE ?? '') === $clie &&
                     $this->sanitize($item->PEDIDO   ?? '') === $this->sanitize($cvePed)
             );
 
@@ -213,8 +216,11 @@ class PedidosController extends Controller
             $vencidos = $datos->filter(function ($item) use ($hoy) {
                 $fecha = $item->{'FECHA ENT.'} ?? null;
                 if (empty($fecha)) return false;
-                try { return Carbon::parse($fecha)->lt($hoy); }
-                catch (\Exception $e) { return false; }
+                try {
+                    return Carbon::parse($fecha)->lt($hoy);
+                } catch (\Exception $e) {
+                    return false;
+                }
             });
 
             return response()->json([
@@ -241,9 +247,10 @@ class PedidosController extends Controller
         try {
             $clie      = $this->sanitize($this->getClienteClave());
             $pedidosSP = $this->getPedidosSP()
-                ->filter(fn($item) =>
+                ->filter(
+                    fn($item) =>
                     $this->sanitize($item->CVE_CTE ?? '') === $clie &&
-                    (int) ($item->ANIO ?? 0) === $anio
+                        (int) ($item->ANIO ?? 0) === $anio
                 )
                 ->sortByDesc(fn($item) => $item->{'FECHA ELAB.'} ?? '')
                 ->values();
@@ -276,7 +283,7 @@ class PedidosController extends Controller
             $clie      = $this->sanitize($this->getClienteClave());
             $resultado = $this->getPedidosSP()->first(
                 fn($item) =>
-                    $this->sanitize($item->CVE_CTE ?? '') === $clie &&
+                $this->sanitize($item->CVE_CTE ?? '') === $clie &&
                     $this->sanitize($item->PEDIDO   ?? '') === $this->sanitize($cvePed)
             );
 
@@ -314,7 +321,7 @@ class PedidosController extends Controller
 
             $pedidosSP = $this->getPedidosSP()->filter(
                 fn($item) =>
-                    $this->sanitize($item->CVE_CTE ?? '') === $clie &&
+                $this->sanitize($item->CVE_CTE ?? '') === $clie &&
                     in_array($this->sanitize($item->PEDIDO ?? ''), $cvePedidos)
             )->values();
 
@@ -354,7 +361,7 @@ class PedidosController extends Controller
             $clie      = $this->sanitize($this->getClienteClave());
             $resultado = $this->getPedidosSP()->first(
                 fn($item) =>
-                    $this->sanitize($item->CVE_CTE ?? '') === $clie &&
+                $this->sanitize($item->CVE_CTE ?? '') === $clie &&
                     $this->sanitize($item->PEDIDO   ?? '') === $this->sanitize($cvePed)
             );
 
