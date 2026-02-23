@@ -155,7 +155,37 @@ Route::prefix('reportes-produccion')->group(function () {
     Route::get('/acabado', [ReportesProduccionController::class, 'getAcabadoReal']);
     Route::get('/departamento/{id}', [ReportesProduccionController::class, 'getByDepartment']);
     Route::get('all', [ReportesProduccionController::class, 'getAllReports']);
+
+    Route::get('facturado-por-dia', [ReportesProduccionController::class, 'getFacturadoPorDia']);
+
+    Route::get('/estampados-por-dia', [ReportesProduccionController::class, 'getEstampadoPorDia']);
+    Route::get('/tintoreria-por-dia', [ReportesProduccionController::class, 'getTintoreriaPorDia']);
+    Route::get('/tejido-por-dia', [ReportesProduccionController::class, 'getTejidoPorDia']);
+    Route::get('/acabado-por-dia', [ReportesProduccionController::class, 'getAcabadoPorDia']);
 });
+
+
+// Route::prefix('reportes-produccion')->group(function () {
+//     Route::get('/', [ReportesProduccionController::class, 'index']);
+//     Route::get('/summary', [ReportesProduccionController::class, 'getSummary']);
+//     Route::get('/estampados', [ReportesProduccionController::class, 'getEstampado']);
+
+//     Route::get('/tintoreria', [ReportesProduccionController::class, 'getTintoreria']);
+//   // 🆕
+//     Route::get('/tejido', [ReportesProduccionController::class, 'getProduccionTejido']);
+//     Route::get('/tejido-resumen', [ReportesProduccionController::class, 'getTejido']);
+//           // 🆕
+//     Route::get('/revisado', [ReportesProduccionController::class, 'getRevisadoTejido']);
+//     Route::get('/pendientes', [ReportesProduccionController::class, 'getPorRevisarTejido']);
+//     Route::get('/con-saldo', [ReportesProduccionController::class, 'getSaldosTejido']);
+//     Route::get('/entregado-embarques', [ReportesProduccionController::class, 'getEntregadoaEmbarques']);
+//     Route::get('/facturado', [ReportesProduccionController::class, 'getFacturado']);
+
+//     Route::get('/acabado', [ReportesProduccionController::class, 'getAcabadoReal']);
+//            // 🆕
+//     Route::get('/departamento/{id}', [ReportesProduccionController::class, 'getByDepartment']);
+//     Route::get('all', [ReportesProduccionController::class, 'getAllReports']);
+// });
 
 
 Route::prefix('tasks')->middleware('jwt.auth')->group(function () {

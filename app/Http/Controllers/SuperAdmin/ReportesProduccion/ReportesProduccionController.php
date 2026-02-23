@@ -239,6 +239,88 @@ class ReportesProduccionController extends Controller
 
 
     /**
+     * 🔥 Subtotales de FACTURADO agrupados por día
+     */
+    public function getFacturadoPorDia(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'fecha_inicio' => 'required|string',
+                'fecha_fin'    => 'required|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Parámetros inválidos',
+                    'errors'  => $validator->errors(),
+                ], 400);
+            }
+
+            $fechaInicio       = substr($request->input('fecha_inicio'), 0, 10);
+            $fechaFin          = substr($request->input('fecha_fin'), 0, 10);
+            $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFin . ' +1 day'));
+
+            $sql = "
+            SELECT
+                F.fecha_doc                                         AS FECHA,
+                COUNT(DISTINCT F.cve_doc)                          AS FACTURAS,
+                SUM(P.cant)                                        AS CANT,
+                P.uni_venta                                        AS UM,
+                SUM(DISTINCT COALESCE(F.can_tot, 0))              AS IMPORTE,
+                SUM(DISTINCT COALESCE(F.imp_tot4, 0))             AS IMPUESTOS,
+                SUM(DISTINCT COALESCE(F.can_tot, 0)
+                    + COALESCE(F.imp_tot4, 0))                    AS TOTAL
+            FROM FACTF03 F
+            INNER JOIN PAR_FACTF03 P ON P.cve_doc = F.cve_doc
+            INNER JOIN CLIE03 C      ON C.clave   = F.cve_clpv
+            INNER JOIN INVE03 I      ON I.cve_art = P.cve_art
+            WHERE
+                F.status IN ('E', 'O')
+                AND F.fecha_doc >= ?
+                AND F.fecha_doc <  ?
+                AND I.lin_prod = 'PTPR'
+                AND C.nombre NOT IN (
+                    'COMERCIALIZADORA SION COMEX SAS',
+                    'TSHIRT GROUP'
+                )
+            GROUP BY F.fecha_doc, P.uni_venta
+            ORDER BY F.fecha_doc ASC
+        ";
+
+            $rows = DB::connection('firebird')->select($sql, [$fechaInicio, $fechaFinExclusiva]);
+
+            $subtotalesPorDia = array_map(fn($r) => [
+                'fecha'     => $r->FECHA ?? null,
+                'facturas'  => (int)   ($r->FACTURAS  ?? 0),
+                'cant'      => (float) ($r->CANT       ?? 0),
+                'um'        => $r->UM ?? null,
+                'importe'   => (float) ($r->IMPORTE    ?? 0),
+                'impuestos' => (float) ($r->IMPUESTOS  ?? 0),
+                'total'     => (float) ($r->TOTAL      ?? 0),
+            ], $rows);
+
+            return response()->json([
+                'success' => true,
+                'data'    => $subtotalesPorDia,
+                'filtros' => [
+                    'fecha_inicio'        => $fechaInicio,
+                    'fecha_fin'           => $fechaFin,
+                    'fecha_fin_exclusiva' => $fechaFinExclusiva,
+                    'total_registros'     => count($rows),
+                ],
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener facturado por día',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
+    /**
      * 🔥 Obtener solo datos de ESTAMPADO con filtros de fecha.
      */
     public function getEstampado(Request $request)
@@ -321,6 +403,65 @@ class ReportesProduccionController extends Controller
     }
 
     /**
+     * 🔥 Estampado por día
+     */
+    private function getEstampadoPorDiaData($fechaInicio, $fechaFin)
+    {
+        $sql = "
+        SELECT
+            CAST(op.FECHAENT AS DATE) AS FECHA,
+            SUM(op.CANTENT) AS CANTIDAD,
+            SUM(op.PZASENT) AS PIEZAS
+        FROM ORDENESPROC op
+        INNER JOIN PROCESOS p ON p.CODIGO = op.PROC
+        INNER JOIN DEPTOS d ON d.CLAVE = op.DEPTO
+        WHERE d.DEPTO = 'ESTAMPADO'
+          AND p.PROCESO = 'ESTAMPADO'
+          AND op.FECHAENT BETWEEN '{$fechaInicio}' AND '{$fechaFin}'
+        GROUP BY CAST(op.FECHAENT AS DATE)
+        ORDER BY CAST(op.FECHAENT AS DATE) ASC
+    ";
+
+        $rows = DB::connection('firebird')->select($sql);
+
+        return array_map(fn($r) => [
+            'FECHA'    => $r->FECHA,
+            'CANTIDAD' => (float) $r->CANTIDAD,
+            'PIEZAS'   => (int) $r->PIEZAS,
+        ], $rows);
+    }
+
+
+    /**
+     * 🔥 GET Estampado por día
+     */
+    public function getEstampadoPorDia(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'fecha_inicio' => 'required|string',
+                'fecha_fin'    => 'required|string',
+            ]);
+            if ($validator->fails()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 400);
+            }
+
+            $fi = $request->input('fecha_inicio');
+            $ff = $request->input('fecha_fin');
+
+            if (!$this->validarFormatoFechaFirebird($fi) || !$this->validarFormatoFechaFirebird($ff)) {
+                return response()->json(['success' => false, 'message' => 'Formato inválido. Use: dd.MM.yyyy HH:mm:ss'], 400);
+            }
+
+            $data = $this->getEstampadoPorDiaData($fi, $ff);
+
+            return response()->json(['success' => true, 'data' => $data]);
+        } catch (Throwable $e) {
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * 🔥 Obtener solo datos de TINTORERIA con filtros de fecha.
      */
     public function getTintoreria(Request $request)
@@ -397,6 +538,64 @@ class ReportesProduccionController extends Controller
                 'message' => 'Error al consultar reportes de TINTORERIA',
                 'error' => $e->getMessage(),
             ], 500);
+        }
+    }
+
+    /**
+     * 🔥 Tintorería por día
+     */
+    private function getTintoreriaPorDiaData($fechaInicio, $fechaFin)
+    {
+        $sql = "
+        SELECT
+            CAST(op.FECHAENT AS DATE) AS FECHA,
+            SUM(op.CANTENT) AS CANTIDAD,
+            SUM(op.PZASENT) AS PIEZAS
+        FROM ORDENESPROC op
+        INNER JOIN PROCESOS p ON p.CODIGO = op.PROC
+        INNER JOIN DEPTOS d ON d.CLAVE = op.DEPTO
+        WHERE d.DEPTO = 'TINTORERIA'
+          AND p.PROCESO = 'TEÑIDO'
+          AND op.FECHAENT BETWEEN '{$fechaInicio}' AND '{$fechaFin}'
+        GROUP BY CAST(op.FECHAENT AS DATE)
+        ORDER BY CAST(op.FECHAENT AS DATE) ASC
+    ";
+
+        $rows = DB::connection('firebird')->select($sql);
+
+        return array_map(fn($r) => [
+            'FECHA'    => $r->FECHA,
+            'CANTIDAD' => (float) $r->CANTIDAD,
+            'PIEZAS'   => (int) $r->PIEZAS,
+        ], $rows);
+    }
+
+    /**
+     * 🔥 GET Tintorería por día
+     */
+    public function getTintoreriaPorDia(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'fecha_inicio' => 'required|string',
+                'fecha_fin'    => 'required|string',
+            ]);
+            if ($validator->fails()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 400);
+            }
+
+            $fi = $request->input('fecha_inicio');
+            $ff = $request->input('fecha_fin');
+
+            if (!$this->validarFormatoFechaFirebird($fi) || !$this->validarFormatoFechaFirebird($ff)) {
+                return response()->json(['success' => false, 'message' => 'Formato inválido. Use: dd.MM.yyyy HH:mm:ss'], 400);
+            }
+
+            $data = $this->getTintoreriaPorDiaData($fi, $ff);
+
+            return response()->json(['success' => true, 'data' => $data]);
+        } catch (Throwable $e) {
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
         }
     }
 
@@ -483,6 +682,65 @@ class ReportesProduccionController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * 🔥 Tejido por día
+     */
+    private function getTejidoPorDiaData($fechaInicio, $fechaFin)
+    {
+        $sql = "
+        SELECT
+            CAST(op.FECHAENT AS DATE) AS FECHA,
+            SUM(op.CANTENT) AS CANTIDAD,
+            SUM(op.PZASENT) AS PIEZAS
+        FROM ORDENESPROC op
+        INNER JOIN PROCESOS p ON p.CODIGO = op.PROC
+        INNER JOIN DEPTOS d ON d.CLAVE = op.DEPTO
+        WHERE d.DEPTO = 'TEJIDO'
+          AND p.PROCESO = 'TEJIDO'
+          AND op.FECHAENT BETWEEN '{$fechaInicio}' AND '{$fechaFin}'
+        GROUP BY CAST(op.FECHAENT AS DATE)
+        ORDER BY CAST(op.FECHAENT AS DATE) ASC
+    ";
+
+        $rows = DB::connection('firebird')->select($sql);
+
+        return array_map(fn($r) => [
+            'FECHA'    => $r->FECHA,
+            'CANTIDAD' => (float) $r->CANTIDAD,
+            'PIEZAS'   => (int) $r->PIEZAS,
+        ], $rows);
+    }
+
+    /**
+     * 🔥 GET Tejido por día
+     */
+    public function getTejidoPorDia(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'fecha_inicio' => 'required|string',
+                'fecha_fin'    => 'required|string',
+            ]);
+            if ($validator->fails()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 400);
+            }
+
+            $fi = $request->input('fecha_inicio');
+            $ff = $request->input('fecha_fin');
+
+            if (!$this->validarFormatoFechaFirebird($fi) || !$this->validarFormatoFechaFirebird($ff)) {
+                return response()->json(['success' => false, 'message' => 'Formato inválido. Use: dd.MM.yyyy HH:mm:ss'], 400);
+            }
+
+            $data = $this->getTejidoPorDiaData($fi, $ff);
+
+            return response()->json(['success' => true, 'data' => $data]);
+        } catch (Throwable $e) {
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
 
     /**
      * 🔥 Obtener producción de TEJIDO por artículo (con filtros de fecha)
@@ -987,15 +1245,70 @@ class ReportesProduccionController extends Controller
         }
     }
 
-
-
-    /***
-     * 
+    /**
+     * 🔥 Acabado (Control de Calidad) por día
      */
+    private function getAcabadoPorDiaData($fechaInicio, $fechaFin)
+    {
+        $excluidos = array_values(array_diff($this->departamentosExcluidos, ['CONTROL DE CALIDAD']));
+        $excluidosStr = implode("','", $excluidos);
 
+        $sql = "
+        SELECT
+            CAST(op.FECHAENT AS DATE) AS FECHA,
+            SUM(op.CANTENT) AS CANTIDAD,
+            SUM(op.PZASENT) AS PIEZAS
+        FROM ORDENESPROC op
+        INNER JOIN PROCESOS p ON p.CODIGO = op.PROC
+        INNER JOIN DEPTOS d ON d.CLAVE = op.DEPTO
+        WHERE d.DEPTO = 'CONTROL DE CALIDAD'
+          AND p.PROCESO = 'CONTROL DE CALIDAD'
+          AND d.DEPTO NOT IN ('{$excluidosStr}')
+          AND op.FECHAENT BETWEEN '{$fechaInicio}' AND '{$fechaFin}'
+        GROUP BY CAST(op.FECHAENT AS DATE)
+        ORDER BY CAST(op.FECHAENT AS DATE) ASC
+    ";
+
+        $rows = DB::connection('firebird')->select($sql);
+
+        // ✅ Castear explícitamente para que no lleguen como string
+        return array_map(fn($r) => [
+            'FECHA'    => $r->FECHA,
+            'CANTIDAD' => (float) $r->CANTIDAD,
+            'PIEZAS'   => (int) $r->PIEZAS,
+        ], $rows);
+    }
 
     /**
-     * 🔥 NUEVO: Obtener TODOS los reportes en una sola petición
+     * 🔥 GET Acabado por día
+     */
+    public function getAcabadoPorDia(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'fecha_inicio' => 'required|string',
+                'fecha_fin'    => 'required|string',
+            ]);
+            if ($validator->fails()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 400);
+            }
+
+            $fi = $request->input('fecha_inicio');
+            $ff = $request->input('fecha_fin');
+
+            if (!$this->validarFormatoFechaFirebird($fi) || !$this->validarFormatoFechaFirebird($ff)) {
+                return response()->json(['success' => false, 'message' => 'Formato inválido. Use: dd.MM.yyyy HH:mm:ss'], 400);
+            }
+
+            $data = $this->getAcabadoPorDiaData($fi, $ff);
+            return response()->json(['success' => true, 'data' => $data]);
+        } catch (Throwable $e) {
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * GET ALL REPORTS
      */
     public function getAllReports(Request $request)
     {
@@ -1075,32 +1388,32 @@ class ReportesProduccionController extends Controller
         $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFinISO . ' +1 day'));
 
         $sql = "
-    SELECT
-        C.nombre      AS CLIENTE,
-        F.cve_doc     AS FACTURA,
-        F.status      AS STATUS,
-        F.fecha_doc   AS FECHA,
-        SUM(P.cant)   AS CANT,
-        P.uni_venta   AS UM,
+        SELECT
+            C.nombre      AS CLIENTE,
+            F.cve_doc     AS FACTURA,
+            F.status      AS STATUS,
+            F.fecha_doc   AS FECHA,
+            SUM(P.cant)   AS CANT,
+            P.uni_venta   AS UM,
 
-        /* 🔥 SIN multiplicar tipcamb */
-        MAX(COALESCE(F.can_tot, 0))              AS IMPORTE,
-        MAX(COALESCE(F.imp_tot4, 0))             AS IMPUESTOS,
-        MAX(COALESCE(F.can_tot, 0) + COALESCE(F.imp_tot4, 0)) AS TOTAL
-    FROM FACTF03 F
-    INNER JOIN PAR_FACTF03 P ON P.cve_doc = F.cve_doc
-    INNER JOIN CLIE03 C      ON C.clave   = F.cve_clpv
-    INNER JOIN INVE03 I      ON I.cve_art = P.cve_art
-    WHERE 
-        F.status IN ('E','O')
-        AND F.fecha_doc >= ?
-        AND F.fecha_doc < ?
-        AND I.lin_prod = 'PTPR'
-        AND C.nombre NOT IN ('COMERCIALIZADORA SION COMEX SAS', 'TSHIRT GROUP')
-    GROUP BY
-        C.nombre, F.cve_doc, F.status, F.fecha_doc, P.uni_venta
-    ORDER BY F.cve_doc
-    ";
+            /* 🔥 SIN multiplicar tipcamb */
+            MAX(COALESCE(F.can_tot, 0))              AS IMPORTE,
+            MAX(COALESCE(F.imp_tot4, 0))             AS IMPUESTOS,
+            MAX(COALESCE(F.can_tot, 0) + COALESCE(F.imp_tot4, 0)) AS TOTAL
+        FROM FACTF03 F
+        INNER JOIN PAR_FACTF03 P ON P.cve_doc = F.cve_doc
+        INNER JOIN CLIE03 C      ON C.clave   = F.cve_clpv
+        INNER JOIN INVE03 I      ON I.cve_art = P.cve_art
+        WHERE 
+            F.status IN ('E','O')
+            AND F.fecha_doc >= ?
+            AND F.fecha_doc < ?
+            AND I.lin_prod = 'PTPR'
+            AND C.nombre NOT IN ('COMERCIALIZADORA SION COMEX SAS', 'TSHIRT GROUP')
+        GROUP BY
+            C.nombre, F.cve_doc, F.status, F.fecha_doc, P.uni_venta
+        ORDER BY F.cve_doc
+        ";
 
         $rows = DB::connection('firebird')->select($sql, [$fechaInicioISO, $fechaFinExclusiva]);
 
@@ -1228,6 +1541,8 @@ class ReportesProduccionController extends Controller
             ->groupBy('d.DEPTO', 'p.PROCESO')
             ->get();
     }
+
+
 
     private function getEstampadosData($fechaInicio, $fechaFin)
     {
@@ -1365,4 +1680,4 @@ class ReportesProduccionController extends Controller
     ";
         return DB::connection('firebird')->select($query);
     }
-}   
+}
