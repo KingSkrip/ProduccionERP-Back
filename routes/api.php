@@ -53,12 +53,7 @@ Route::prefix('dash')->group(function () {
 
 
 //EDITAR PERFIL PERSONAL
-Route::middleware('jwt.auth')->group(function () {
-    Route::get('perfil', [PerfilController::class, 'show'])->name('hola');
-    Route::post('perfil', [PerfilController::class, 'updatePerfil']);
-    Route::put('perfil/password', [PerfilController::class, 'updatePassword']);
-    Route::delete('perfil', [PerfilController::class, 'destroy']);
-});
+
 
 
 //GESTIONAR SUADMINS
@@ -236,11 +231,15 @@ Route::middleware('jwt.auth')->group(function () {
     Route::patch('mailbox/workorder/{workorderId}/star',      [MailboxController::class, 'toggleStarByWorkorder']);
     Route::patch('mailbox/workorder/{workorderId}/important', [MailboxController::class, 'toggleImportantByWorkorder']);
     Route::patch('mailbox/workorder/{workorderId}/move',      [MailboxController::class, 'moveByWorkorder']);
-
     Route::get('mailbox/workorder/{id}', [MailboxController::class, 'showWorkorder']);
-
-
     Route::post('/mailbox/reply', [MailboxController::class, 'replyes']);
+
+
+
+    Route::get('perfil', [PerfilController::class, 'show'])->name('hola');
+    Route::post('perfil', [PerfilController::class, 'updatePerfil']);
+    Route::put('perfil/password', [PerfilController::class, 'updatePassword']);
+    Route::delete('perfil', [PerfilController::class, 'destroy']);
 });
 
 
