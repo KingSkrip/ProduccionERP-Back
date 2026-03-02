@@ -13,6 +13,9 @@ use Illuminate\Support\Facades\Mail;
 
 class PedidosAgentesController extends Controller
 {
+    protected ?bool $accesoTotalCache = null;
+    protected mixed $agenteClaveCacheValue = null;
+
     protected function fb()
     {
         return DB::connection('firebird');
@@ -32,7 +35,9 @@ class PedidosAgentesController extends Controller
     ======================================================= */
     protected function tieneAccesoTotal(): bool
     {
+
         $user = Auth::user();
+        if ($this->accesoTotalCache !== null) return $this->accesoTotalCache;
         if (!$user) return false;
 
         $identity = DB::connection('mysql')
@@ -56,7 +61,7 @@ class PedidosAgentesController extends Controller
             'tiene_acceso'    => in_array(9, $subPermissions) || in_array(10, $subPermissions),
         ]);
 
-        return in_array(9, $subPermissions) || in_array(10, $subPermissions);
+        return $this->accesoTotalCache = in_array(9, $subPermissions) || in_array(10, $subPermissions);
     }
 
     protected function getAgenteClave()
@@ -64,7 +69,7 @@ class PedidosAgentesController extends Controller
         Log::info('🔍 Entrando a getAgenteClave');
 
         $user = Auth::user();
-
+        if ($this->agenteClaveCacheValue !== null) return $this->agenteClaveCacheValue;
         if (!$user) {
             Log::warning('⛔ Usuario no autenticado');
             abort(401, 'No autenticado');
@@ -94,7 +99,7 @@ class PedidosAgentesController extends Controller
             'firebird_vend_clave' => $identity->firebird_vend_clave,
         ]);
 
-        return $identity->firebird_vend_clave;
+        return $this->agenteClaveCacheValue = $identity->firebird_vend_clave;
     }
 
     protected function sanitize($value): string
@@ -108,7 +113,10 @@ class PedidosAgentesController extends Controller
     protected function getPedidosSP(): \Illuminate\Support\Collection
     {
         $empresa = $this->getEmpresa();
-        return collect($this->fb()->select("SELECT * FROM P_PEDIDOSENCMAIN(?)", [$empresa]))
+        static $cache = null;
+        if ($cache !== null) return $cache;
+
+        return $cache = collect($this->fb()->select("SELECT * FROM P_PEDIDOSENCMAIN(?)", [$empresa]))
             ->filter(fn($item) => !empty(trim($item->CLIENTE ?? '')));
     }
 
