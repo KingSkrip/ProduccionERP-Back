@@ -27,50 +27,50 @@ class PedidosAgentesController extends Controller
         return $empresa;
     }
 
-protected function getAgenteClave()
-{
-    Log::info('🔍 Entrando a getAgenteClave');
+    protected function getAgenteClave()
+    {
+        Log::info('🔍 Entrando a getAgenteClave');
 
-    $user = Auth::user();
+        $user = Auth::user();
 
-    if (!$user) {
-        Log::warning('⛔ Usuario no autenticado');
-        abort(401, 'No autenticado');
-    }
+        if (!$user) {
+            Log::warning('⛔ Usuario no autenticado');
+            abort(401, 'No autenticado');
+        }
 
-    Log::info('👤 Usuario autenticado', [
-        'user_id' => $user->id ?? null,
-        'firebird_ID' => $user->ID ?? null,
-        'email' => $user->email ?? null,
-    ]);
-
-    $identityQuery = DB::connection('mysql')
-        ->table('users_firebird_identities')
-        ->where('firebird_user_clave', $user->ID)
-        ->where('firebird_vend_tabla', 'VEND03')
-        ->whereNotNull('firebird_vend_clave');
-
-    Log::info('🧠 Query preparada', [
-        'firebird_user_clave' => $user->ID,
-        'firebird_vend_tabla' => 'VEND03',
-    ]);
-
-    $identity = $identityQuery->first();
-
-    if (!$identity) {
-        Log::warning('⛔ No se encontró identidad vinculada', [
-            'firebird_user_clave' => $user->ID,
+        Log::info('👤 Usuario autenticado', [
+            'user_id' => $user->id ?? null,
+            'firebird_ID' => $user->ID ?? null,
+            'email' => $user->email ?? null,
         ]);
-        abort(403, 'No es cliente CLIE');
+
+        $identityQuery = DB::connection('mysql')
+            ->table('users_firebird_identities')
+            ->where('firebird_user_clave', $user->ID)
+            ->where('firebird_vend_tabla', 'VEND03')
+            ->whereNotNull('firebird_vend_clave');
+
+        Log::info('🧠 Query preparada', [
+            'firebird_user_clave' => $user->ID,
+            'firebird_vend_tabla' => 'VEND03',
+        ]);
+
+        $identity = $identityQuery->first();
+
+        if (!$identity) {
+            Log::warning('⛔ No se encontró identidad vinculada', [
+                'firebird_user_clave' => $user->ID,
+            ]);
+            abort(403, 'No es cliente CLIE');
+        }
+
+        Log::info('✅ Identidad encontrada', [
+            'firebird_vend_clave' => $identity->firebird_vend_clave,
+            'registro_completo' => $identity,
+        ]);
+
+        return $identity->firebird_vend_clave;
     }
-
-    Log::info('✅ Identidad encontrada', [
-        'firebird_vend_clave' => $identity->firebird_vend_clave,
-        'registro_completo' => $identity,
-    ]);
-
-    return $identity->firebird_vend_clave;
-}
 
 
     protected function sanitize($value): string
@@ -81,11 +81,12 @@ protected function getAgenteClave()
     /* =======================================================
         🛒 SP - todos los pedidos de la empresa
     ======================================================= */
-    protected function getPedidosSP(): \Illuminate\Support\Collection
-    {
-        $empresa = $this->getEmpresa();
-        return collect($this->fb()->select("SELECT * FROM P_PEDIDOSENCMAIN(?)", [$empresa]));
-    }
+protected function getPedidosSP(): \Illuminate\Support\Collection
+{
+    $empresa = $this->getEmpresa();
+    return collect($this->fb()->select("SELECT * FROM P_PEDIDOSENCMAIN(?)", [$empresa]))
+        ->filter(fn($item) => !empty(trim($item->CLIENTE ?? '')));
+}
 
     /* =======================================================
         📦 Artículos y cardigans usando ID (int) del SP
@@ -170,253 +171,256 @@ protected function getAgenteClave()
     /* =======================================================
         📄 INDEX
     ======================================================= */
-public function index(Request $request)
-{
-    try {
-        $cveVend = (int) $this->getAgenteClave();
+    public function index(Request $request)
+    {
+        try {
+            $cveVend = (int) $this->getAgenteClave();
 
-        $pedidosSP = $this->getPedidosSP()
-            ->filter(fn($item) => (int) ($item->AGENTE ?? 0) === $cveVend)
-            ->sortByDesc(fn($item) => $item->{'FECHA ELAB.'} ?? '')
-            ->values();
+            $pedidosSP = $this->getPedidosSP()
+                ->filter(fn($item) => (int) ($item->AGENTE ?? 0) === $cveVend)
+                ->sortByDesc(fn($item) => $item->{'FECHA ELAB.'} ?? '')
+                ->values();
 
-        $ids    = $pedidosSP->pluck('ID')->filter()->map(fn($id) => (int) $id)->values()->toArray();
-        $extras = $this->getPartidasPorIds($ids);
+            $ids    = $pedidosSP->pluck('ID')->filter()->map(fn($id) => (int) $id)->values()->toArray();
+            $extras = $this->getPartidasPorIds($ids);
 
-        $pedidos = $pedidosSP->map(function ($item) use ($extras) {
-            $id        = (string) ($item->ID ?? '');
-            $articulos = $extras['articulos']->get($id, collect())->values()->toArray();
-            $cardigans = $extras['cardigans']->get($id, collect())->values()->toArray();
-            return $this->mapPedido($item, $articulos, $cardigans);
-        })->values();
+            $pedidos = $pedidosSP->map(function ($item) use ($extras) {
+                $id        = (string) ($item->ID ?? '');
+                $articulos = $extras['articulos']->get($id, collect())->values()->toArray();
+                $cardigans = $extras['cardigans']->get($id, collect())->values()->toArray();
+                return $this->mapPedido($item, $articulos, $cardigans);
+            })->values();
 
-        return response()->json([
-            'success' => true,
-            'data'    => $pedidos,
-            'total'   => $pedidos->count(),
-        ]);
-    } catch (\Exception $e) {
-        Log::error('ERROR_INDEX_PEDIDOS', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
-        return response()->json(['success' => false, 'message' => 'Error al obtener pedidos', 'error' => $e->getMessage()], 500);
+            return response()->json([
+                'success' => true,
+                'data'    => $pedidos,
+                'total'   => $pedidos->count(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('ERROR_INDEX_PEDIDOS', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return response()->json(['success' => false, 'message' => 'Error al obtener pedidos', 'error' => $e->getMessage()], 500);
+        }
     }
-}
 
 
     /* =======================================================
         🔍 SHOW
     ======================================================= */
-public function show(string $cvePed)
-{
-    try {
-        $cveVend   = (int) $this->getAgenteClave();
-        $resultado = $this->getPedidosSP()->first(
-            fn($item) =>
-            (int) ($item->AGENTE ?? 0) === $cveVend &&
-            $this->sanitize($item->PEDIDO ?? '') === $this->sanitize($cvePed)
-        );
+    public function show(string $cvePed)
+    {
+        try {
+            $cveVend   = (int) $this->getAgenteClave();
+            $resultado = $this->getPedidosSP()->first(
+                fn($item) =>
+                (int) ($item->AGENTE ?? 0) === $cveVend &&
+                    $this->sanitize($item->PEDIDO ?? '') === $this->sanitize($cvePed)
+            );
 
-        if (!$resultado) return response()->json(['success' => false, 'message' => 'Pedido no encontrado'], 404);
+            if (!$resultado) return response()->json(['success' => false, 'message' => 'Pedido no encontrado'], 404);
 
-        $idStr  = (string) ($resultado->ID ?? '');
-        $extras = $this->getPartidasPorIds([(int) ($resultado->ID ?? 0)]);
+            $idStr  = (string) ($resultado->ID ?? '');
+            $extras = $this->getPartidasPorIds([(int) ($resultado->ID ?? 0)]);
 
-        return response()->json(['success' => true, 'data' => $this->mapPedido(
-            $resultado,
-            $extras['articulos']->get($idStr, collect())->values()->toArray(),
-            $extras['cardigans']->get($idStr, collect())->values()->toArray()
-        )]);
-    } catch (\Exception $e) {
-        Log::error('ERROR_SHOW_PEDIDO', ['message' => $e->getMessage(), 'cve_ped' => $cvePed]);
-        return response()->json(['success' => false, 'message' => 'Error al obtener el pedido', 'error' => $e->getMessage()], 500);
+            return response()->json(['success' => true, 'data' => $this->mapPedido(
+                $resultado,
+                $extras['articulos']->get($idStr, collect())->values()->toArray(),
+                $extras['cardigans']->get($idStr, collect())->values()->toArray()
+            )]);
+        } catch (\Exception $e) {
+            Log::error('ERROR_SHOW_PEDIDO', ['message' => $e->getMessage(), 'cve_ped' => $cvePed]);
+            return response()->json(['success' => false, 'message' => 'Error al obtener el pedido', 'error' => $e->getMessage()], 500);
+        }
     }
-}
 
 
     /* =======================================================
         📊 RESUMEN
     ======================================================= */
-public function resumen()
-{
-    try {
-        $cveVend = (int) $this->getAgenteClave();
-        $datos   = $this->getPedidosSP()
-            ->filter(fn($item) => (int) ($item->AGENTE ?? 0) === $cveVend);
+    public function resumen()
+    {
+        try {
+            $cveVend = (int) $this->getAgenteClave();
+            $datos   = $this->getPedidosSP()
+                ->filter(fn($item) => (int) ($item->AGENTE ?? 0) === $cveVend);
 
-        $hoy      = Carbon::now();
-        $vencidos = $datos->filter(function ($item) use ($hoy) {
-            $fecha = $item->{'FECHA ENT.'} ?? null;
-            if (empty($fecha)) return false;
-            try { return Carbon::parse($fecha)->lt($hoy); }
-            catch (\Exception $e) { return false; }
-        });
+            $hoy      = Carbon::now();
+            $vencidos = $datos->filter(function ($item) use ($hoy) {
+                $fecha = $item->{'FECHA ENT.'} ?? null;
+                if (empty($fecha)) return false;
+                try {
+                    return Carbon::parse($fecha)->lt($hoy);
+                } catch (\Exception $e) {
+                    return false;
+                }
+            });
 
-        return response()->json([
-            'success' => true,
-            'data'    => [
-                'total_pedidos'    => $datos->count(),
-                'pedidos_vencidos' => $vencidos->count(),
-                'completos'        => $datos->filter(fn($i) => $this->sanitize($i->{'PARC. O COMPL.'} ?? '') === 'Completo')->count(),
-                'parciales'        => $datos->filter(fn($i) => $this->sanitize($i->{'PARC. O COMPL.'} ?? '') === 'Parcial')->count(),
-                'sin_def'          => $datos->filter(fn($i) => str_contains($this->sanitize($i->{'PARC. O COMPL.'} ?? ''), 'Sin'))->count(),
-            ],
-        ]);
-    } catch (\Exception $e) {
-        Log::error('ERROR_RESUMEN_PEDIDOS', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
-        return response()->json(['success' => false, 'message' => 'Error al obtener resumen', 'error' => $e->getMessage()], 500);
+            return response()->json([
+                'success' => true,
+                'data'    => [
+                    'total_pedidos'    => $datos->count(),
+                    'pedidos_vencidos' => $vencidos->count(),
+                    'completos'        => $datos->filter(fn($i) => $this->sanitize($i->{'PARC. O COMPL.'} ?? '') === 'Completo')->count(),
+                    'parciales'        => $datos->filter(fn($i) => $this->sanitize($i->{'PARC. O COMPL.'} ?? '') === 'Parcial')->count(),
+                    'sin_def'          => $datos->filter(fn($i) => str_contains($this->sanitize($i->{'PARC. O COMPL.'} ?? ''), 'Sin'))->count(),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('ERROR_RESUMEN_PEDIDOS', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return response()->json(['success' => false, 'message' => 'Error al obtener resumen', 'error' => $e->getMessage()], 500);
+        }
     }
-}
 
     /* =======================================================
         📅 POR AÑO
     ======================================================= */
-public function porAnio(int $anio)
-{
-    try {
-        $cveVend   = (int) $this->getAgenteClave();
-        $pedidosSP = $this->getPedidosSP()
-            ->filter(
-                fn($item) =>
-                (int) ($item->AGENTE ?? 0) === $cveVend &&
-                (int) ($item->ANIO   ?? 0) === $anio
-            )
-            ->sortByDesc(fn($item) => $item->{'FECHA ELAB.'} ?? '')
-            ->values();
+    public function porAnio(int $anio)
+    {
+        try {
+            $cveVend   = (int) $this->getAgenteClave();
+            $pedidosSP = $this->getPedidosSP()
+                ->filter(
+                    fn($item) =>
+                    (int) ($item->AGENTE ?? 0) === $cveVend &&
+                        (int) ($item->ANIO   ?? 0) === $anio
+                )
+                ->sortByDesc(fn($item) => $item->{'FECHA ELAB.'} ?? '')
+                ->values();
 
-        $ids    = $pedidosSP->pluck('ID')->filter()->map(fn($id) => (int) $id)->values()->toArray();
-        $extras = $this->getPartidasPorIds($ids);
+            $ids    = $pedidosSP->pluck('ID')->filter()->map(fn($id) => (int) $id)->values()->toArray();
+            $extras = $this->getPartidasPorIds($ids);
 
-        $pedidos = $pedidosSP->map(function ($item) use ($extras) {
-            $idStr = (string) ($item->ID ?? '');
-            return $this->mapPedido(
-                $item,
-                $extras['articulos']->get($idStr, collect())->values()->toArray(),
-                $extras['cardigans']->get($idStr, collect())->values()->toArray()
-            );
-        })->values();
+            $pedidos = $pedidosSP->map(function ($item) use ($extras) {
+                $idStr = (string) ($item->ID ?? '');
+                return $this->mapPedido(
+                    $item,
+                    $extras['articulos']->get($idStr, collect())->values()->toArray(),
+                    $extras['cardigans']->get($idStr, collect())->values()->toArray()
+                );
+            })->values();
 
-        return response()->json(['success' => true, 'anio' => $anio, 'data' => $pedidos, 'total' => $pedidos->count()]);
-    } catch (\Exception $e) {
-        Log::error('ERROR_POR_ANIO_PEDIDOS', ['message' => $e->getMessage(), 'anio' => $anio]);
-        return response()->json(['success' => false, 'message' => 'Error al obtener pedidos por año', 'error' => $e->getMessage()], 500);
+            return response()->json(['success' => true, 'anio' => $anio, 'data' => $pedidos, 'total' => $pedidos->count()]);
+        } catch (\Exception $e) {
+            Log::error('ERROR_POR_ANIO_PEDIDOS', ['message' => $e->getMessage(), 'anio' => $anio]);
+            return response()->json(['success' => false, 'message' => 'Error al obtener pedidos por año', 'error' => $e->getMessage()], 500);
+        }
     }
-}
 
     /* =======================================================
         📄 PDF
     ======================================================= */
-public function descargarPDF(string $cvePed)
-{
-    try {
-        $cveVend   = (int) $this->getAgenteClave();
-        $resultado = $this->getPedidosSP()->first(
-            fn($item) =>
-            (int) ($item->AGENTE ?? 0) === $cveVend &&
-            $this->sanitize($item->PEDIDO ?? '') === $this->sanitize($cvePed)
-        );
+    public function descargarPDF(string $cvePed)
+    {
+        try {
+            $cveVend   = (int) $this->getAgenteClave();
+            $resultado = $this->getPedidosSP()->first(
+                fn($item) =>
+                (int) ($item->AGENTE ?? 0) === $cveVend &&
+                    $this->sanitize($item->PEDIDO ?? '') === $this->sanitize($cvePed)
+            );
 
-        if (!$resultado) return response()->json(['success' => false, 'message' => 'Pedido no encontrado'], 404);
+            if (!$resultado) return response()->json(['success' => false, 'message' => 'Pedido no encontrado'], 404);
 
-        $idStr  = (string) ($resultado->ID ?? '');
-        $extras = $this->getPartidasPorIds([(int) ($resultado->ID ?? 0)]);
+            $idStr  = (string) ($resultado->ID ?? '');
+            $extras = $this->getPartidasPorIds([(int) ($resultado->ID ?? 0)]);
 
-        $pdf = Pdf::loadView('pdfs.pedido', [
-            'pedido'           => $this->mapPedido(
-                $resultado,
-                $extras['articulos']->get($idStr, collect())->values()->toArray(),
-                $extras['cardigans']->get($idStr, collect())->values()->toArray()
-            ),
-            'fecha_generacion' => Carbon::now()->format('d/m/Y H:i:s'),
-        ]);
+            $pdf = Pdf::loadView('pdfs.pedido', [
+                'pedido'           => $this->mapPedido(
+                    $resultado,
+                    $extras['articulos']->get($idStr, collect())->values()->toArray(),
+                    $extras['cardigans']->get($idStr, collect())->values()->toArray()
+                ),
+                'fecha_generacion' => Carbon::now()->format('d/m/Y H:i:s'),
+            ]);
 
-        return $pdf->download("pedido-{$cvePed}.pdf");
-    } catch (\Exception $e) {
-        Log::error('ERROR_DESCARGAR_PDF_PEDIDO', ['message' => $e->getMessage(), 'cve_ped' => $cvePed]);
-        return response()->json(['success' => false, 'message' => 'Error al generar PDF', 'error' => $e->getMessage()], 500);
+            return $pdf->download("pedido-{$cvePed}.pdf");
+        } catch (\Exception $e) {
+            Log::error('ERROR_DESCARGAR_PDF_PEDIDO', ['message' => $e->getMessage(), 'cve_ped' => $cvePed]);
+            return response()->json(['success' => false, 'message' => 'Error al generar PDF', 'error' => $e->getMessage()], 500);
+        }
     }
-}
 
     /* =======================================================
         📦 DESCARGAR MÚLTIPLES
     ======================================================= */
-public function descargarMultiples(Request $request)
-{
-    try {
-        $request->validate(['pedidos' => 'required|array|min:1', 'pedidos.*' => 'required|string']);
+    public function descargarMultiples(Request $request)
+    {
+        try {
+            $request->validate(['pedidos' => 'required|array|min:1', 'pedidos.*' => 'required|string']);
 
-        $cveVend    = (int) $this->getAgenteClave();
-        $cvePedidos = array_map([$this, 'sanitize'], $request->pedidos);
+            $cveVend    = (int) $this->getAgenteClave();
+            $cvePedidos = array_map([$this, 'sanitize'], $request->pedidos);
 
-        $pedidosSP = $this->getPedidosSP()->filter(
-            fn($item) =>
-            (int) ($item->AGENTE ?? 0) === $cveVend &&
-            in_array($this->sanitize($item->PEDIDO ?? ''), $cvePedidos)
-        )->values();
+            $pedidosSP = $this->getPedidosSP()->filter(
+                fn($item) =>
+                (int) ($item->AGENTE ?? 0) === $cveVend &&
+                    in_array($this->sanitize($item->PEDIDO ?? ''), $cvePedidos)
+            )->values();
 
-        if ($pedidosSP->isEmpty()) return response()->json(['success' => false, 'message' => 'No se encontraron pedidos'], 404);
+            if ($pedidosSP->isEmpty()) return response()->json(['success' => false, 'message' => 'No se encontraron pedidos'], 404);
 
-        $ids    = $pedidosSP->pluck('ID')->filter()->map(fn($id) => (int) $id)->values()->toArray();
-        $extras = $this->getPartidasPorIds($ids);
+            $ids    = $pedidosSP->pluck('ID')->filter()->map(fn($id) => (int) $id)->values()->toArray();
+            $extras = $this->getPartidasPorIds($ids);
 
-        $pedidos = $pedidosSP->map(function ($item) use ($extras) {
-            $idStr = (string) ($item->ID ?? '');
-            return $this->mapPedido(
-                $item,
-                $extras['articulos']->get($idStr, collect())->values()->toArray(),
-                $extras['cardigans']->get($idStr, collect())->values()->toArray()
-            );
-        })->values();
+            $pedidos = $pedidosSP->map(function ($item) use ($extras) {
+                $idStr = (string) ($item->ID ?? '');
+                return $this->mapPedido(
+                    $item,
+                    $extras['articulos']->get($idStr, collect())->values()->toArray(),
+                    $extras['cardigans']->get($idStr, collect())->values()->toArray()
+                );
+            })->values();
 
-        $pdf = Pdf::loadView('pdfs.pedidos-multiples', [
-            'pedidos'          => $pedidos,
-            'fecha_generacion' => Carbon::now()->format('d/m/Y H:i:s'),
-        ]);
+            $pdf = Pdf::loadView('pdfs.pedidos-multiples', [
+                'pedidos'          => $pedidos,
+                'fecha_generacion' => Carbon::now()->format('d/m/Y H:i:s'),
+            ]);
 
-        return $pdf->download("pedidos-" . date('YmdHis') . ".pdf");
-    } catch (\Exception $e) {
-        Log::error('ERROR_DESCARGAR_MULTIPLES_PEDIDOS', ['message' => $e->getMessage()]);
-        return response()->json(['success' => false, 'message' => 'Error al generar PDF múltiple', 'error' => $e->getMessage()], 500);
+            return $pdf->download("pedidos-" . date('YmdHis') . ".pdf");
+        } catch (\Exception $e) {
+            Log::error('ERROR_DESCARGAR_MULTIPLES_PEDIDOS', ['message' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'Error al generar PDF múltiple', 'error' => $e->getMessage()], 500);
+        }
     }
-}
 
     /* =======================================================
         📧 EMAIL
     ======================================================= */
-public function enviarEmail(Request $request, string $cvePed)
-{
-    try {
-        $request->validate(['email' => 'required|email']);
+    public function enviarEmail(Request $request, string $cvePed)
+    {
+        try {
+            $request->validate(['email' => 'required|email']);
 
-        $cveVend   = (int) $this->getAgenteClave();
-        $resultado = $this->getPedidosSP()->first(
-            fn($item) =>
-            (int) ($item->AGENTE ?? 0) === $cveVend &&
-            $this->sanitize($item->PEDIDO ?? '') === $this->sanitize($cvePed)
-        );
+            $cveVend   = (int) $this->getAgenteClave();
+            $resultado = $this->getPedidosSP()->first(
+                fn($item) =>
+                (int) ($item->AGENTE ?? 0) === $cveVend &&
+                    $this->sanitize($item->PEDIDO ?? '') === $this->sanitize($cvePed)
+            );
 
-        if (!$resultado) return response()->json(['success' => false, 'message' => 'Pedido no encontrado'], 404);
+            if (!$resultado) return response()->json(['success' => false, 'message' => 'Pedido no encontrado'], 404);
 
-        $idStr  = (string) ($resultado->ID ?? '');
-        $extras = $this->getPartidasPorIds([(int) ($resultado->ID ?? 0)]);
-        $data   = [
-            'pedido'           => $this->mapPedido(
-                $resultado,
-                $extras['articulos']->get($idStr, collect())->values()->toArray(),
-                $extras['cardigans']->get($idStr, collect())->values()->toArray()
-            ),
-            'fecha_generacion' => Carbon::now()->format('d/m/Y H:i:s'),
-        ];
+            $idStr  = (string) ($resultado->ID ?? '');
+            $extras = $this->getPartidasPorIds([(int) ($resultado->ID ?? 0)]);
+            $data   = [
+                'pedido'           => $this->mapPedido(
+                    $resultado,
+                    $extras['articulos']->get($idStr, collect())->values()->toArray(),
+                    $extras['cardigans']->get($idStr, collect())->values()->toArray()
+                ),
+                'fecha_generacion' => Carbon::now()->format('d/m/Y H:i:s'),
+            ];
 
-        $pdf = Pdf::loadView('pdfs.pedido', $data);
-        Mail::send('emails.pedido', $data, function ($message) use ($request, $pdf, $cvePed) {
-            $message->to($request->email)->subject('Pedido - ' . $cvePed)->attachData($pdf->output(), "pedido-{$cvePed}.pdf");
-        });
+            $pdf = Pdf::loadView('pdfs.pedido', $data);
+            Mail::send('emails.pedido', $data, function ($message) use ($request, $pdf, $cvePed) {
+                $message->to($request->email)->subject('Pedido - ' . $cvePed)->attachData($pdf->output(), "pedido-{$cvePed}.pdf");
+            });
 
-        return response()->json(['success' => true, 'message' => 'Email enviado correctamente']);
-    } catch (\Exception $e) {
-        Log::error('ERROR_ENVIAR_EMAIL_PEDIDO', ['message' => $e->getMessage(), 'cve_ped' => $cvePed]);
-        return response()->json(['success' => false, 'message' => 'Error al enviar email', 'error' => $e->getMessage()], 500);
+            return response()->json(['success' => true, 'message' => 'Email enviado correctamente']);
+        } catch (\Exception $e) {
+            Log::error('ERROR_ENVIAR_EMAIL_PEDIDO', ['message' => $e->getMessage(), 'cve_ped' => $cvePed]);
+            return response()->json(['success' => false, 'message' => 'Error al enviar email', 'error' => $e->getMessage()], 500);
+        }
     }
-}
 
     /* =======================================================
         🗑 DELETE (no permitido)

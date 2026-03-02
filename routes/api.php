@@ -113,7 +113,6 @@ Route::prefix('rh/E_ONE')->middleware('jwt.auth')->group(function () {
 });
 
 
-
 Route::prefix('colaboradores')->middleware('jwt.auth')->group(function () {
     Route::get('vacaciones', [SoliVacacionesController::class, 'index']);
     Route::get('vacaciones/create', [SoliVacacionesController::class, 'create']);
@@ -126,12 +125,10 @@ Route::prefix('colaboradores')->middleware('jwt.auth')->group(function () {
 
 
 
-Route::middleware(['jwt.auth'])  // Keep only your JWT auth
-    ->prefix('firebird')     // Combine the prefixes manually
-    ->group(function () {
-        Route::get('pedidos', [AutorizacionPedidosController::class, 'index']);
-        Route::put('pedidos/{id}/autorizar-credito', [AutorizacionPedidosController::class, 'update']);
-    });
+Route::middleware(['jwt.auth'])->prefix('firebird')->group(function () {
+    Route::get('pedidos', [AutorizacionPedidosController::class, 'index']);
+    Route::put('pedidos/{id}/autorizar-credito', [AutorizacionPedidosController::class, 'update']);
+});
 
 
 
