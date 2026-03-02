@@ -238,26 +238,26 @@ class ReportesProduccionController extends Controller
     // }
 
     public function getFacturado(Request $request)
-{
-    try {
-        $validator = Validator::make($request->all(), [
-            'fecha_inicio' => 'required|string',
-            'fecha_fin'    => 'required|string',
-        ]);
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'fecha_inicio' => 'required|string',
+                'fecha_fin'    => 'required|string',
+            ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Parámetros inválidos',
-                'errors'  => $validator->errors(),
-            ], 400);
-        }
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Parámetros inválidos',
+                    'errors'  => $validator->errors(),
+                ], 400);
+            }
 
-        $fechaInicio       = substr($request->input('fecha_inicio'), 0, 10);
-        $fechaFin          = substr($request->input('fecha_fin'), 0, 10);
-        $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFin . ' +1 day'));
+            $fechaInicio       = substr($request->input('fecha_inicio'), 0, 10);
+            $fechaFin          = substr($request->input('fecha_fin'), 0, 10);
+            $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFin . ' +1 day'));
 
-        $sql = "
+            $sql = "
             SELECT
                 F.FECHA_DOC AS FECHA,
                 CASE EXTRACT(MONTH FROM F.FECHA_DOC)
@@ -320,80 +320,79 @@ class ReportesProduccionController extends Controller
             ORDER BY F.FECHA_DOC, F.FOLIO, P.NUM_PAR
         ";
 
-        $rows = DB::connection('firebird')->select($sql, [$fechaInicio, $fechaFinExclusiva]);
+            $rows = DB::connection('firebird')->select($sql, [$fechaInicio, $fechaFinExclusiva]);
 
-        $detalle = array_map(function ($r) {
-            return [
-                'fecha'                  => $r->FECHA ?? null,
-                'mes'                    => $r->MES ?? null,
-                'cliente'                => $r->CLIENTE ?? null,
-                'factura'                => $r->FACTURA ?? null,
-                'remision'               => $r->REMISION ?? '-',
-                'pedido'                 => $r->PEDIDO ?? null,
-                'modalidad'              => $r->MODALIDAD ?? null,
-                'empresa'                => $r->EMPRESA ?? null,
-                'clasificacion_producto' => $r->CLASIFICACION_PRODUCTO ?? null,
-                'descripcion_producto'   => $r->DESCRIPCION_PRODUCTO ?? null,
-                'color'                  => $r->COLOR ?? null,
-                'composicion'            => $r->COMPOSICION ?? null,
-                'composicion2'           => $r->COMPOSICION2 ?? null,
-                'cant'                   => (float) ($r->KG ?? 0),
-                'um'                     => $r->UM ?? null,
-                'precio_bruto'           => (float) ($r->PRECIO_BRUTO ?? 0),
-                'importe'                => (float) ($r->SUBTOTAL ?? 0),
-                'impuestos'              => (float) ($r->IVA ?? 0),
-                'total'                  => (float) ($r->TOTAL ?? 0),
-            ];
-        }, $rows);
-
-        // Totales monetarios por FACTURA (sin duplicar)
-        $facturas = [];
-        foreach ($rows as $r) {
-            $fac = $r->FACTURA ?? null;
-            if (!$fac) continue;
-
-            if (!isset($facturas[$fac])) {
-                $facturas[$fac] = [
-                    'importe'   => (float) ($r->SUBTOTAL ?? 0),
-                    'impuestos' => (float) ($r->IVA ?? 0),
-                    'total'     => (float) ($r->TOTAL ?? 0),
+            $detalle = array_map(function ($r) {
+                return [
+                    'fecha'                  => $r->FECHA ?? null,
+                    'mes'                    => $r->MES ?? null,
+                    'cliente'                => $r->CLIENTE ?? null,
+                    'factura'                => $r->FACTURA ?? null,
+                    'remision'               => $r->REMISION ?? '-',
+                    'pedido'                 => $r->PEDIDO ?? null,
+                    'modalidad'              => $r->MODALIDAD ?? null,
+                    'empresa'                => $r->EMPRESA ?? null,
+                    'clasificacion_producto' => $r->CLASIFICACION_PRODUCTO ?? null,
+                    'descripcion_producto'   => $r->DESCRIPCION_PRODUCTO ?? null,
+                    'color'                  => $r->COLOR ?? null,
+                    'composicion'            => $r->COMPOSICION ?? null,
+                    'composicion2'           => $r->COMPOSICION2 ?? null,
+                    'cant'                   => (float) ($r->KG ?? 0),
+                    'um'                     => $r->UM ?? null,
+                    'precio_bruto'           => (float) ($r->PRECIO_BRUTO ?? 0),
+                    'importe'                => (float) ($r->SUBTOTAL ?? 0),
+                    'impuestos'              => (float) ($r->IVA ?? 0),
+                    'total'                  => (float) ($r->TOTAL ?? 0),
                 ];
+            }, $rows);
+
+            // Totales monetarios por FACTURA (sin duplicar)
+            $facturas = [];
+            foreach ($rows as $r) {
+                $fac = $r->FACTURA ?? null;
+                if (!$fac) continue;
+
+                if (!isset($facturas[$fac])) {
+                    $facturas[$fac] = [
+                        'importe'   => (float) ($r->SUBTOTAL ?? 0),
+                        'impuestos' => (float) ($r->IVA ?? 0),
+                        'total'     => (float) ($r->TOTAL ?? 0),
+                    ];
+                }
             }
-        }
 
-        $totalImporte   = array_sum(array_column($facturas, 'importe'));
-        $totalImpuestos = array_sum(array_column($facturas, 'impuestos'));
-        $totalGeneral   = array_sum(array_column($facturas, 'total'));
-        $totalCant      = array_sum(array_column($detalle, 'cant'));
+            $totalImporte   = array_sum(array_column($facturas, 'importe'));
+            $totalImpuestos = array_sum(array_column($facturas, 'impuestos'));
+            $totalGeneral   = array_sum(array_column($facturas, 'total'));
+            $totalCant      = array_sum(array_column($detalle, 'cant'));
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'totales' => [
-                    'facturas'  => count($facturas),
-                    'cant'      => (float) $totalCant,
-                    'importe'   => (float) $totalImporte,
-                    'impuestos' => (float) $totalImpuestos,
-                    'total'     => (float) $totalGeneral,
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'totales' => [
+                        'facturas'  => count($facturas),
+                        'cant'      => (float) $totalCant,
+                        'importe'   => (float) $totalImporte,
+                        'impuestos' => (float) $totalImpuestos,
+                        'total'     => (float) $totalGeneral,
+                    ],
+                    'detalle' => $detalle,
                 ],
-                'detalle' => $detalle,
-            ],
-            'filtros' => [
-                'fecha_inicio'        => $fechaInicio,
-                'fecha_fin'           => $fechaFin,
-                'fecha_fin_exclusiva' => $fechaFinExclusiva,
-                'total_registros'     => count($rows),
-            ],
-        ], 200);
-
-    } catch (\Throwable $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Error al obtener FACTURADO',
-            'error'   => $e->getMessage(),
-        ], 500);
+                'filtros' => [
+                    'fecha_inicio'        => $fechaInicio,
+                    'fecha_fin'           => $fechaFin,
+                    'fecha_fin_exclusiva' => $fechaFinExclusiva,
+                    'total_registros'     => count($rows),
+                ],
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener FACTURADO',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
     }
-}
 
 
     // /**
@@ -1838,10 +1837,10 @@ CAST(SUM(P.TOTIMP4) AS NUMERIC(18,2)) AS IMPUESTOS,
             }
         }
 
-$totalKg       = array_sum(array_column($detalle, 'cant'));    // ✅
-$totalSubtotal = array_sum(array_column($detalle, 'importe')); // ✅
-$totalIva      = array_sum(array_column($detalle, 'iva'));
-$totalGeneral  = array_sum(array_column($detalle, 'total'));
+        $totalKg       = array_sum(array_column($detalle, 'cant'));    // ✅
+        $totalSubtotal = array_sum(array_column($detalle, 'importe')); // ✅
+        $totalIva      = array_sum(array_column($detalle, 'iva'));
+        $totalGeneral  = array_sum(array_column($detalle, 'total'));
 
         return [
             'totales' => [
