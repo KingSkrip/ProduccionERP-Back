@@ -11,17 +11,15 @@ use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Mail;
 
-class EstadosCuentaAgentesController extends Controller
+class EstadosCuentaAgentesJSController extends Controller
 {
     protected function fb()
     {
         return DB::connection('firebird');
     }
 
-    protected function queryBase(?string $cveVend = null): string
+    protected function queryBase()
     {
-        $filtroVendedor = $cveVend ? "AND TRIM(c.CVE_VEND) = TRIM(?)" : "";
-
         return "
         SELECT * FROM (
             SELECT
@@ -47,7 +45,7 @@ class EstadosCuentaAgentesController extends Controller
                 'Y TSHIRT GROUP'
             )
             AND cm.NO_FACTURA IS NOT NULL
-            {$filtroVendedor}
+            AND TRIM(c.CVE_VEND) = TRIM(?)
             GROUP BY
                 c.CLAVE, c.NOMBRE, c.RFC, c.STATUS, c.CVE_VEND,
                 cm.NO_FACTURA, cm.FECHA_APLI, cm.FECHA_VENC,
@@ -57,40 +55,6 @@ class EstadosCuentaAgentesController extends Controller
         WHERE 1=1
     ";
     }
-
-    protected function tieneAccesoTotal(): bool
-    {
-        $user = Auth::user();
-
-        if (!$user) return false;
-
-        // Buscar la identity del usuario
-        $identity = DB::connection('mysql')
-            ->table('users_firebird_identities')
-            ->where('firebird_user_clave', $user->ID)
-            ->first();
-
-        if (!$identity) return false;
-
-        // Leer los subrol_id desde model_has_roles
-        $subPermissions = DB::connection('mysql')
-            ->table('model_has_roles')
-            ->where('firebird_identity_id', $identity->id)
-            ->pluck('subrol_id')
-            ->filter() // quita nulos
-            ->toArray();
-
-        Log::info('🔐 SUB_PERMISSIONS_CHECK', [
-            'user_id'         => $user->ID,
-            'identity_id'     => $identity->id,
-            'sub_permissions' => $subPermissions,
-            'tiene_acceso'    => in_array(9, $subPermissions) || in_array(10, $subPermissions),
-        ]);
-
-        return in_array(9, $subPermissions) || in_array(10, $subPermissions);
-    }
-
-
 
     protected function getAgenteClave()
     {
@@ -144,18 +108,12 @@ class EstadosCuentaAgentesController extends Controller
     public function index(Request $request)
     {
         try {
-            $accesoTotal = $this->tieneAccesoTotal();
-            $cveVend     = $accesoTotal ? null : $this->getAgenteClave();
-            $params      = $accesoTotal ? [] : [$cveVend];
+            $cveVend = $this->getAgenteClave();
 
-            $query    = $this->queryBase($cveVend);
+            $query = $this->queryBase();
             $query .= " ORDER BY FECHA_APLI DESC";
 
-
-
-            // $resultados = $this->fb()->select($query, [$cveVend]);
-
-            $resultados = $this->fb()->select($query, $params);
+            $resultados = $this->fb()->select($query, [$cveVend]);
 
             $estadosCuenta = collect($resultados)->map(function ($item) {
                 return [
@@ -197,23 +155,21 @@ class EstadosCuentaAgentesController extends Controller
     /* =======================================================
         📊 RESUMEN - Totales del cliente
     ======================================================= */
-public function resumen()
-{
-    try {
-        $accesoTotal = $this->tieneAccesoTotal();
-        $cveVend     = $accesoTotal ? null : $this->getAgenteClave();
-        $params      = $accesoTotal ? [] : [$cveVend];
+    public function resumen()
+    {
+        try {
+            $cveVend = $this->getAgenteClave();
 
-        // ✅ Solo buscar cliente específico si NO tiene acceso total
-        if (!$accesoTotal) {
+            // Trae el primer cliente del vendedor para datos generales
             $queryCliente = "
-                SELECT FIRST 1
-                    CLAVE, NOMBRE, RFC, STATUS,
-                    ROUND(COALESCE(SALDO, 0), 2) AS SALDO
-                FROM CLIE03
-                WHERE TRIM(CVE_VEND) = TRIM(?)
-            ";
-            $cliente = $this->fb()->selectOne($queryCliente, [$cveVend]);
+            SELECT FIRST 1
+                CLAVE, NOMBRE, RFC, STATUS,
+                ROUND(COALESCE(SALDO, 0), 2) AS SALDO
+            FROM CLIE03
+            WHERE TRIM(CVE_VEND) = TRIM('$cveVend')
+        ";
+
+            $cliente = $this->fb()->selectOne($queryCliente);
 
             if (!$cliente) {
                 return response()->json([
@@ -222,64 +178,59 @@ public function resumen()
                     'clave_buscada' => $cveVend
                 ], 404);
             }
-        }
 
-        $query      = $this->queryBase($cveVend);
-        $resultados = $this->fb()->select($query, $params);
-        $datos      = collect($resultados);
+            $query = $this->queryBase();
+            $resultados = $this->fb()->select($query, [$cveVend]);
+            $datos      = collect($resultados);
 
-        $totalCargos = $datos->sum('CARGOS');
-        $totalAbonos = $datos->sum('ABONOS');
+            $totalCargos = $datos->sum('CARGOS');
+            $totalAbonos = $datos->sum('ABONOS');
 
-        // ✅ Saldo total según acceso
-        $saldoQuery = $accesoTotal
-            ? "SELECT ROUND(COALESCE(SUM(SALDO), 0), 2) AS SALDO_TOTAL FROM CLIE03"
-            : "SELECT ROUND(COALESCE(SUM(SALDO), 0), 2) AS SALDO_TOTAL FROM CLIE03 WHERE TRIM(CVE_VEND) = TRIM(?)";
+            // Saldo total sumado de todos los clientes del vendedor
+            $saldoTotal = $this->fb()->selectOne(
+                "SELECT ROUND(COALESCE(SUM(SALDO), 0), 2) AS SALDO_TOTAL FROM CLIE03 WHERE TRIM(CVE_VEND) = TRIM('$cveVend')"
+            )->SALDO_TOTAL ?? 0;
 
-        $saldoTotal = $accesoTotal
-            ? $this->fb()->selectOne($saldoQuery)->SALDO_TOTAL ?? 0
-            : $this->fb()->selectOne($saldoQuery, [$cveVend])->SALDO_TOTAL ?? 0;
+            $hoy      = Carbon::now();
+            $vencidos = $datos->filter(function ($item) use ($hoy) {
+                if (!$item->FECHA_VENC || $item->SALDOS <= 0) return false;
+                try {
+                    return Carbon::parse($item->FECHA_VENC)->lt($hoy);
+                } catch (\Exception $e) {
+                    return false;
+                }
+            });
 
-        $hoy      = Carbon::now();
-        $vencidos = $datos->filter(function ($item) use ($hoy) {
-            if (!$item->FECHA_VENC || $item->SALDOS <= 0) return false;
-            try {
-                return Carbon::parse($item->FECHA_VENC)->lt($hoy);
-            } catch (\Exception $e) {
-                return false;
-            }
-        });
-
-        return response()->json([
-            'success' => true,
-            'data'    => [
-                'vendedor' => [
-                    'cve_vend' => $cveVend ?? 'TODOS',
-                ],
-                'totales' => [
-                    'cargos'      => round($totalCargos, 2),
-                    'abonos'      => round($totalAbonos, 2),
-                    'saldo_total' => (float) $saldoTotal,
-                ],
-                'documentos' => [
-                    'total'         => $datos->count(),
-                    'vencidos'      => $vencidos->count(),
-                    'monto_vencido' => round($vencidos->sum('SALDOS'), 2),
+            return response()->json([
+                'success' => true,
+                'data'    => [
+                    'vendedor' => [
+                        'cve_vend' => $cveVend,
+                    ],
+                    'totales' => [
+                        'cargos'      => round($totalCargos, 2),
+                        'abonos'      => round($totalAbonos, 2),
+                        'saldo_total' => (float) $saldoTotal,
+                    ],
+                    'documentos' => [
+                        'total'         => $datos->count(),
+                        'vencidos'      => $vencidos->count(),
+                        'monto_vencido' => round($vencidos->sum('SALDOS'), 2),
+                    ]
                 ]
-            ]
-        ]);
-    } catch (\Exception $e) {
-        Log::error('ERROR_RESUMEN_ESTADOS_CUENTA', [
-            'message' => $e->getMessage(),
-            'trace'   => $e->getTraceAsString(),
-        ]);
-        return response()->json([
-            'success' => false,
-            'message' => 'Error al obtener resumen',
-            'error'   => $e->getMessage()
-        ], 500);
+            ]);
+        } catch (\Exception $e) {
+            Log::error('ERROR_RESUMEN_ESTADOS_CUENTA', [
+                'message' => $e->getMessage(),
+                'trace'   => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener resumen',
+                'error'   => $e->getMessage()
+            ], 500);
+        }
     }
-}
 
     /* =======================================================
         📅 POR AÑO - Movimientos filtrados por año
@@ -287,15 +238,12 @@ public function resumen()
     public function porAnio($anio)
     {
         try {
-            $accesoTotal = $this->tieneAccesoTotal();
-            $cveVend     = $accesoTotal ? null : $this->getAgenteClave();
-            $params      = $accesoTotal ? [$anio] : [$cveVend, $anio];
+            $cveVend = $this->getAgenteClave();
 
-            $query  = $this->queryBase($cveVend);
+            $query  = $this->queryBase();
             $query .= " AND EXTRACT(YEAR FROM FECHA_APLI) = ?";
             $query .= " ORDER BY FECHA_APLI DESC";
-
-            $resultados = $this->fb()->select($query, $params);
+            $resultados = $this->fb()->select($query, [$cveVend, $anio]);
 
             $estadosCuenta = collect($resultados)->map(function ($item) {
                 return [
@@ -337,14 +285,12 @@ public function resumen()
     public function show($noFactura)
     {
         try {
-            $accesoTotal = $this->tieneAccesoTotal();
-            $cveVend     = $accesoTotal ? null : $this->getAgenteClave();
-            $params      = $accesoTotal ? [$noFactura] : [$cveVend, $noFactura];
+            $cveVend = $this->getAgenteClave();
 
-            $query  = $this->queryBase($cveVend);
+            $query  = $this->queryBase();
             $query .= " AND TRIM(DOCUMENTO) = TRIM(?)";
 
-            $resultado = $this->fb()->selectOne($query, $params);
+            $resultado = $this->fb()->selectOne($query, [$cveVend, $noFactura]);
 
             if (!$resultado) {
                 return response()->json([

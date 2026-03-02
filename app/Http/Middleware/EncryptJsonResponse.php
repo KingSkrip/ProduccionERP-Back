@@ -68,6 +68,14 @@ class EncryptJsonResponse
         'api/clientes/pedidos/*',
 
 
+        //AGENTES PEDIDOS
+        'api/estados-Cu3nt4Ag3nT32/*',
+
+
+        //AGENTES PEDIDOS
+        'api/agentes/pedidos/*',
+
+
 
     ];
 

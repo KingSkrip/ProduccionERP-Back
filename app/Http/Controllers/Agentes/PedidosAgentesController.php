@@ -27,6 +27,38 @@ class PedidosAgentesController extends Controller
         return $empresa;
     }
 
+    /* =======================================================
+        🔐 HELPER - Verificar si tiene acceso total (sub_permission 9 o 10)
+    ======================================================= */
+    protected function tieneAccesoTotal(): bool
+    {
+        $user = Auth::user();
+        if (!$user) return false;
+
+        $identity = DB::connection('mysql')
+            ->table('users_firebird_identities')
+            ->where('firebird_user_clave', $user->ID)
+            ->first();
+
+        if (!$identity) return false;
+
+        $subPermissions = DB::connection('mysql')
+            ->table('model_has_roles')
+            ->where('firebird_identity_id', $identity->id)
+            ->pluck('subrol_id')
+            ->filter()
+            ->toArray();
+
+        Log::info('🔐 SUB_PERMISSIONS_CHECK (Agentes/Pedidos)', [
+            'user_id'         => $user->ID,
+            'identity_id'     => $identity->id,
+            'sub_permissions' => $subPermissions,
+            'tiene_acceso'    => in_array(9, $subPermissions) || in_array(10, $subPermissions),
+        ]);
+
+        return in_array(9, $subPermissions) || in_array(10, $subPermissions);
+    }
+
     protected function getAgenteClave()
     {
         Log::info('🔍 Entrando a getAgenteClave');
@@ -39,39 +71,31 @@ class PedidosAgentesController extends Controller
         }
 
         Log::info('👤 Usuario autenticado', [
-            'user_id' => $user->id ?? null,
-            'firebird_ID' => $user->ID ?? null,
-            'email' => $user->email ?? null,
+            'user_id'      => $user->id ?? null,
+            'firebird_ID'  => $user->ID ?? null,
+            'email'        => $user->email ?? null,
         ]);
 
-        $identityQuery = DB::connection('mysql')
+        $identity = DB::connection('mysql')
             ->table('users_firebird_identities')
             ->where('firebird_user_clave', $user->ID)
             ->where('firebird_vend_tabla', 'VEND03')
-            ->whereNotNull('firebird_vend_clave');
-
-        Log::info('🧠 Query preparada', [
-            'firebird_user_clave' => $user->ID,
-            'firebird_vend_tabla' => 'VEND03',
-        ]);
-
-        $identity = $identityQuery->first();
+            ->whereNotNull('firebird_vend_clave')
+            ->first();
 
         if (!$identity) {
             Log::warning('⛔ No se encontró identidad vinculada', [
                 'firebird_user_clave' => $user->ID,
             ]);
-            abort(403, 'No es cliente CLIE');
+            abort(403, 'No es agente VEND');
         }
 
         Log::info('✅ Identidad encontrada', [
             'firebird_vend_clave' => $identity->firebird_vend_clave,
-            'registro_completo' => $identity,
         ]);
 
         return $identity->firebird_vend_clave;
     }
-
 
     protected function sanitize($value): string
     {
@@ -81,16 +105,15 @@ class PedidosAgentesController extends Controller
     /* =======================================================
         🛒 SP - todos los pedidos de la empresa
     ======================================================= */
-protected function getPedidosSP(): \Illuminate\Support\Collection
-{
-    $empresa = $this->getEmpresa();
-    return collect($this->fb()->select("SELECT * FROM P_PEDIDOSENCMAIN(?)", [$empresa]))
-        ->filter(fn($item) => !empty(trim($item->CLIENTE ?? '')));
-}
+    protected function getPedidosSP(): \Illuminate\Support\Collection
+    {
+        $empresa = $this->getEmpresa();
+        return collect($this->fb()->select("SELECT * FROM P_PEDIDOSENCMAIN(?)", [$empresa]))
+            ->filter(fn($item) => !empty(trim($item->CLIENTE ?? '')));
+    }
 
     /* =======================================================
         📦 Artículos y cardigans usando ID (int) del SP
-        V_PED_PART.CVE_PED = SP.ID  (no SP.PEDIDO)
     ======================================================= */
     protected function getPartidasPorIds(array $ids): array
     {
@@ -119,7 +142,6 @@ protected function getPedidosSP(): \Illuminate\Support\Collection
         );
 
         return [
-            // Key por ID como string para lookup fácil
             'articulos' => collect($articulos)->groupBy(fn($r) => (string) $r->CVE_PED),
             'cardigans' => collect($cardigans)->groupBy(fn($r) => (string) $r->CVE_PED),
         ];
@@ -127,16 +149,14 @@ protected function getPedidosSP(): \Illuminate\Support\Collection
 
     /* =======================================================
         🔧 mapPedido
-        cve_ped  = PEDIDO  ("260181") — se muestra al usuario
-        id       = ID      (3578)     — se usa para V_PED_PART
     ======================================================= */
     protected function mapPedido(object $item, array $articulos = [], array $cardigans = []): array
     {
         return [
             'id'            => (int)   ($item->ID      ?? 0),
             'anio'          => (int)   ($item->ANIO     ?? 0),
-            'cve_ped'       => $this->sanitize($item->PEDIDO    ?? ''),   // "260181"
-            'pedido_n'      => $this->sanitize($item->PEDIDON   ?? ''),   // "181"
+            'cve_ped'       => $this->sanitize($item->PEDIDO    ?? ''),
+            'pedido_n'      => $this->sanitize($item->PEDIDON   ?? ''),
             'cve_clie'      => $this->sanitize($item->CVE_CTE   ?? ''),
             'nombre'        => $this->sanitize($item->CLIENTE    ?? ''),
             'referencia'    => $this->sanitize($item->REFERENCIA ?? ''),
@@ -174,10 +194,17 @@ protected function getPedidosSP(): \Illuminate\Support\Collection
     public function index(Request $request)
     {
         try {
-            $cveVend = (int) $this->getAgenteClave();
+            $accesoTotal = $this->tieneAccesoTotal();
 
-            $pedidosSP = $this->getPedidosSP()
-                ->filter(fn($item) => (int) ($item->AGENTE ?? 0) === $cveVend)
+            $pedidosSP = $this->getPedidosSP();
+
+            // Si NO tiene acceso total, filtrar solo por su agente
+            if (!$accesoTotal) {
+                $cveVend   = (int) $this->getAgenteClave();
+                $pedidosSP = $pedidosSP->filter(fn($item) => (int) ($item->AGENTE ?? 0) === $cveVend);
+            }
+
+            $pedidosSP = $pedidosSP
                 ->sortByDesc(fn($item) => $item->{'FECHA ELAB.'} ?? '')
                 ->values();
 
@@ -202,19 +229,22 @@ protected function getPedidosSP(): \Illuminate\Support\Collection
         }
     }
 
-
     /* =======================================================
         🔍 SHOW
     ======================================================= */
     public function show(string $cvePed)
     {
         try {
-            $cveVend   = (int) $this->getAgenteClave();
-            $resultado = $this->getPedidosSP()->first(
-                fn($item) =>
-                (int) ($item->AGENTE ?? 0) === $cveVend &&
-                    $this->sanitize($item->PEDIDO ?? '') === $this->sanitize($cvePed)
-            );
+            $accesoTotal = $this->tieneAccesoTotal();
+
+            $resultado = $this->getPedidosSP()->first(function ($item) use ($cvePed, $accesoTotal) {
+                $matchPedido = $this->sanitize($item->PEDIDO ?? '') === $this->sanitize($cvePed);
+
+                if ($accesoTotal) return $matchPedido;
+
+                $cveVend = (int) $this->getAgenteClave();
+                return (int) ($item->AGENTE ?? 0) === $cveVend && $matchPedido;
+            });
 
             if (!$resultado) return response()->json(['success' => false, 'message' => 'Pedido no encontrado'], 404);
 
@@ -232,16 +262,20 @@ protected function getPedidosSP(): \Illuminate\Support\Collection
         }
     }
 
-
     /* =======================================================
         📊 RESUMEN
     ======================================================= */
     public function resumen()
     {
         try {
-            $cveVend = (int) $this->getAgenteClave();
-            $datos   = $this->getPedidosSP()
-                ->filter(fn($item) => (int) ($item->AGENTE ?? 0) === $cveVend);
+            $accesoTotal = $this->tieneAccesoTotal();
+
+            $datos = $this->getPedidosSP();
+
+            if (!$accesoTotal) {
+                $cveVend = (int) $this->getAgenteClave();
+                $datos   = $datos->filter(fn($item) => (int) ($item->AGENTE ?? 0) === $cveVend);
+            }
 
             $hoy      = Carbon::now();
             $vencidos = $datos->filter(function ($item) use ($hoy) {
@@ -276,13 +310,17 @@ protected function getPedidosSP(): \Illuminate\Support\Collection
     public function porAnio(int $anio)
     {
         try {
-            $cveVend   = (int) $this->getAgenteClave();
+            $accesoTotal = $this->tieneAccesoTotal();
+
             $pedidosSP = $this->getPedidosSP()
-                ->filter(
-                    fn($item) =>
-                    (int) ($item->AGENTE ?? 0) === $cveVend &&
-                        (int) ($item->ANIO   ?? 0) === $anio
-                )
+                ->filter(function ($item) use ($anio, $accesoTotal) {
+                    $matchAnio = (int) ($item->ANIO ?? 0) === $anio;
+
+                    if ($accesoTotal) return $matchAnio;
+
+                    $cveVend = (int) $this->getAgenteClave();
+                    return (int) ($item->AGENTE ?? 0) === $cveVend && $matchAnio;
+                })
                 ->sortByDesc(fn($item) => $item->{'FECHA ELAB.'} ?? '')
                 ->values();
 
@@ -311,12 +349,16 @@ protected function getPedidosSP(): \Illuminate\Support\Collection
     public function descargarPDF(string $cvePed)
     {
         try {
-            $cveVend   = (int) $this->getAgenteClave();
-            $resultado = $this->getPedidosSP()->first(
-                fn($item) =>
-                (int) ($item->AGENTE ?? 0) === $cveVend &&
-                    $this->sanitize($item->PEDIDO ?? '') === $this->sanitize($cvePed)
-            );
+            $accesoTotal = $this->tieneAccesoTotal();
+
+            $resultado = $this->getPedidosSP()->first(function ($item) use ($cvePed, $accesoTotal) {
+                $matchPedido = $this->sanitize($item->PEDIDO ?? '') === $this->sanitize($cvePed);
+
+                if ($accesoTotal) return $matchPedido;
+
+                $cveVend = (int) $this->getAgenteClave();
+                return (int) ($item->AGENTE ?? 0) === $cveVend && $matchPedido;
+            });
 
             if (!$resultado) return response()->json(['success' => false, 'message' => 'Pedido no encontrado'], 404);
 
@@ -347,14 +389,17 @@ protected function getPedidosSP(): \Illuminate\Support\Collection
         try {
             $request->validate(['pedidos' => 'required|array|min:1', 'pedidos.*' => 'required|string']);
 
-            $cveVend    = (int) $this->getAgenteClave();
-            $cvePedidos = array_map([$this, 'sanitize'], $request->pedidos);
+            $accesoTotal = $this->tieneAccesoTotal();
+            $cvePedidos  = array_map([$this, 'sanitize'], $request->pedidos);
 
-            $pedidosSP = $this->getPedidosSP()->filter(
-                fn($item) =>
-                (int) ($item->AGENTE ?? 0) === $cveVend &&
-                    in_array($this->sanitize($item->PEDIDO ?? ''), $cvePedidos)
-            )->values();
+            $pedidosSP = $this->getPedidosSP()->filter(function ($item) use ($cvePedidos, $accesoTotal) {
+                $matchPedido = in_array($this->sanitize($item->PEDIDO ?? ''), $cvePedidos);
+
+                if ($accesoTotal) return $matchPedido;
+
+                $cveVend = (int) $this->getAgenteClave();
+                return (int) ($item->AGENTE ?? 0) === $cveVend && $matchPedido;
+            })->values();
 
             if ($pedidosSP->isEmpty()) return response()->json(['success' => false, 'message' => 'No se encontraron pedidos'], 404);
 
@@ -390,12 +435,16 @@ protected function getPedidosSP(): \Illuminate\Support\Collection
         try {
             $request->validate(['email' => 'required|email']);
 
-            $cveVend   = (int) $this->getAgenteClave();
-            $resultado = $this->getPedidosSP()->first(
-                fn($item) =>
-                (int) ($item->AGENTE ?? 0) === $cveVend &&
-                    $this->sanitize($item->PEDIDO ?? '') === $this->sanitize($cvePed)
-            );
+            $accesoTotal = $this->tieneAccesoTotal();
+
+            $resultado = $this->getPedidosSP()->first(function ($item) use ($cvePed, $accesoTotal) {
+                $matchPedido = $this->sanitize($item->PEDIDO ?? '') === $this->sanitize($cvePed);
+
+                if ($accesoTotal) return $matchPedido;
+
+                $cveVend = (int) $this->getAgenteClave();
+                return (int) ($item->AGENTE ?? 0) === $cveVend && $matchPedido;
+            });
 
             if (!$resultado) return response()->json(['success' => false, 'message' => 'Pedido no encontrado'], 404);
 
