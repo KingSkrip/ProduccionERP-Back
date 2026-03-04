@@ -284,6 +284,7 @@ Route::prefix('estados-Cu3nt4Ag3nT32')->middleware('jwt.auth')->group(function (
     Route::post('/generar', [EstadosCuentaAgentesController::class, 'generar']);
     Route::patch('/{id}/estado', [EstadosCuentaAgentesController::class, 'actualizarEstado']);
     Route::delete('/{id}', [EstadosCuentaAgentesController::class, 'destroy']);
+    Route::post('/generar-url', [EstadosCuentaAgentesController::class, 'generarUrlTemporal']);
 });
 
 Route::prefix('agentes/pedidos')->middleware('jwt.auth')->group(function () {

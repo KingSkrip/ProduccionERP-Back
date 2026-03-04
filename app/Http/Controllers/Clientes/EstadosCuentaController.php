@@ -357,7 +357,7 @@ class EstadosCuentaController extends Controller
         }
     }
 
-    /* =======================================================
+/* =======================================================
         📦 DESCARGAR MÚLTIPLES PDFs
     ======================================================= */
     public function descargarMultiples(Request $request)
@@ -388,13 +388,15 @@ class EstadosCuentaController extends Controller
                 ], 404);
             }
 
+            // Agrupar por clave de cliente (igual que el blade espera en $por_cliente)
+            $por_cliente = collect($resultados)->groupBy(fn($d) => trim($d->CLAVE));
+
             $data = [
-                'documentos'       => $resultados,
+                'por_cliente'      => $por_cliente,
                 'fecha_generacion' => Carbon::now()->format('d/m/Y H:i:s'),
-                'cliente'          => trim($resultados[0]->NOMBRE ?? '')
             ];
 
-            $pdf = PDF::loadView('pdfs.estados-cuenta-multiples', $data);
+            $pdf = PDF::loadView('pdfs.mis-estados-cuenta-multiples', $data);
 
             return $pdf->download("estados-cuenta-" . date('YmdHis') . ".pdf");
         } catch (\Exception $e) {

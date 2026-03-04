@@ -22,39 +22,59 @@ class EstadosCuentaAgentesController extends Controller
     {
         $filtroVendedor = $cveVend ? "AND TRIM(c.CVE_VEND) = TRIM(?)" : "";
 
+        // 🔥 Clientes a excluir cuando tenga acceso total (subrol 9 o 10)
+        $clientesExcluidos = "
+        'SFA CAPITAL',
+        'ALLIANCE INTERACTIVE TECHNOLOGIES',
+        'CREACIONES LAIZA',
+        'TEXTILES HECLA',
+        'SABU SHAKRUKA CUENTA REM',
+        'TEXTILES EL TRIUNFO',
+        'INFANTILES DINAMITA',
+        'SABU SALVADOR SHAKRUKA ROMANO',
+        'ISAAC ZONANA (INSUMOS)',
+        'ALTA FIBRA TECA',
+        'ZURIZEN'
+    ";
+
+        $filtroClientesEspeciales = !$cveVend
+            ? "AND TRIM(UPPER(c.NOMBRE)) NOT IN ($clientesExcluidos)"
+            : "";
+
         return "
-        SELECT * FROM (
-            SELECT
-                c.CLAVE,
-                c.NOMBRE,
-                c.RFC,
-                c.STATUS,
-                c.CVE_VEND,
-                cm.NO_FACTURA AS DOCUMENTO,
-                cm.FECHA_APLI,
-                cm.FECHA_VENC,
-                ROUND(cm.IMPORTE, 2) AS CARGOS,
-                ROUND(COALESCE(SUM(cd.IMPMON_EXT), 0), 2) AS ABONOS,
-                ROUND(cm.IMPORTE - COALESCE(SUM(cd.IMPMON_EXT), 0), 2) AS SALDOS,
-                ROUND(c.SALDO, 2) AS TOTAL_SALDO
-            FROM CLIE03 c
-            INNER JOIN CUEN_M03 cm ON c.CLAVE = cm.CVE_CLIE
-            LEFT JOIN CUEN_DET03 cd
-                ON cm.CVE_CLIE = cd.CVE_CLIE
-                AND cm.NO_FACTURA = cd.NO_FACTURA
-            WHERE TRIM(UPPER(c.NOMBRE)) NOT IN (
-                'COMERCIALIZADORA SION COMEX SAS',
-                'Y TSHIRT GROUP'
-            )
-            AND cm.NO_FACTURA IS NOT NULL
-            {$filtroVendedor}
-            GROUP BY
-                c.CLAVE, c.NOMBRE, c.RFC, c.STATUS, c.CVE_VEND,
-                cm.NO_FACTURA, cm.FECHA_APLI, cm.FECHA_VENC,
-                cm.IMPORTE, c.SALDO
-            HAVING ROUND(cm.IMPORTE - COALESCE(SUM(cd.IMPMON_EXT), 0), 2) > 0
-        ) sub
-        WHERE 1=1
+    SELECT * FROM (
+        SELECT
+            c.CLAVE,
+            c.NOMBRE,
+            c.RFC,
+            c.STATUS,
+            c.CVE_VEND,
+            cm.NO_FACTURA AS DOCUMENTO,
+            cm.FECHA_APLI,
+            cm.FECHA_VENC,
+            ROUND(cm.IMPORTE, 2) AS CARGOS,
+            ROUND(COALESCE(SUM(cd.IMPMON_EXT), 0), 2) AS ABONOS,
+            ROUND(cm.IMPORTE - COALESCE(SUM(cd.IMPMON_EXT), 0), 2) AS SALDOS,
+            ROUND(c.SALDO, 2) AS TOTAL_SALDO
+        FROM CLIE03 c
+        INNER JOIN CUEN_M03 cm ON c.CLAVE = cm.CVE_CLIE
+        LEFT JOIN CUEN_DET03 cd
+            ON cm.CVE_CLIE = cd.CVE_CLIE
+            AND cm.NO_FACTURA = cd.NO_FACTURA
+        WHERE TRIM(UPPER(c.NOMBRE)) NOT IN (
+            'COMERCIALIZADORA SION COMEX SAS',
+            'Y TSHIRT GROUP'
+        )
+        $filtroClientesEspeciales
+        AND cm.NO_FACTURA IS NOT NULL
+        {$filtroVendedor}
+        GROUP BY
+            c.CLAVE, c.NOMBRE, c.RFC, c.STATUS, c.CVE_VEND,
+            cm.NO_FACTURA, cm.FECHA_APLI, cm.FECHA_VENC,
+            cm.IMPORTE, c.SALDO
+        HAVING ROUND(cm.IMPORTE - COALESCE(SUM(cd.IMPMON_EXT), 0), 2) > 0
+    ) sub
+    WHERE 1=1
     ";
     }
 
@@ -197,89 +217,89 @@ class EstadosCuentaAgentesController extends Controller
     /* =======================================================
         📊 RESUMEN - Totales del cliente
     ======================================================= */
-public function resumen()
-{
-    try {
-        $accesoTotal = $this->tieneAccesoTotal();
-        $cveVend     = $accesoTotal ? null : $this->getAgenteClave();
-        $params      = $accesoTotal ? [] : [$cveVend];
+    public function resumen()
+    {
+        try {
+            $accesoTotal = $this->tieneAccesoTotal();
+            $cveVend     = $accesoTotal ? null : $this->getAgenteClave();
+            $params      = $accesoTotal ? [] : [$cveVend];
 
-        // ✅ Solo buscar cliente específico si NO tiene acceso total
-        if (!$accesoTotal) {
-            $queryCliente = "
+            // ✅ Solo buscar cliente específico si NO tiene acceso total
+            if (!$accesoTotal) {
+                $queryCliente = "
                 SELECT FIRST 1
                     CLAVE, NOMBRE, RFC, STATUS,
                     ROUND(COALESCE(SALDO, 0), 2) AS SALDO
                 FROM CLIE03
                 WHERE TRIM(CVE_VEND) = TRIM(?)
             ";
-            $cliente = $this->fb()->selectOne($queryCliente, [$cveVend]);
+                $cliente = $this->fb()->selectOne($queryCliente, [$cveVend]);
 
-            if (!$cliente) {
-                return response()->json([
-                    'success'       => false,
-                    'message'       => 'No se encontraron clientes para este vendedor',
-                    'clave_buscada' => $cveVend
-                ], 404);
+                if (!$cliente) {
+                    return response()->json([
+                        'success'       => false,
+                        'message'       => 'No se encontraron clientes para este vendedor',
+                        'clave_buscada' => $cveVend
+                    ], 404);
+                }
             }
-        }
 
-        $query      = $this->queryBase($cveVend);
-        $resultados = $this->fb()->select($query, $params);
-        $datos      = collect($resultados);
+            $query      = $this->queryBase($cveVend);
+            $resultados = $this->fb()->select($query, $params);
+            $datos      = collect($resultados);
 
-        $totalCargos = $datos->sum('CARGOS');
-        $totalAbonos = $datos->sum('ABONOS');
+            $totalCargos = $datos->sum('CARGOS');
+            $totalAbonos = $datos->sum('ABONOS');
 
-        // ✅ Saldo total según acceso
-        $saldoQuery = $accesoTotal
-            ? "SELECT ROUND(COALESCE(SUM(SALDO), 0), 2) AS SALDO_TOTAL FROM CLIE03"
-            : "SELECT ROUND(COALESCE(SUM(SALDO), 0), 2) AS SALDO_TOTAL FROM CLIE03 WHERE TRIM(CVE_VEND) = TRIM(?)";
+            // ✅ Saldo total según acceso
+            $saldoQuery = $accesoTotal
+                ? "SELECT ROUND(COALESCE(SUM(SALDO), 0), 2) AS SALDO_TOTAL FROM CLIE03"
+                : "SELECT ROUND(COALESCE(SUM(SALDO), 0), 2) AS SALDO_TOTAL FROM CLIE03 WHERE TRIM(CVE_VEND) = TRIM(?)";
 
-        $saldoTotal = $accesoTotal
-            ? $this->fb()->selectOne($saldoQuery)->SALDO_TOTAL ?? 0
-            : $this->fb()->selectOne($saldoQuery, [$cveVend])->SALDO_TOTAL ?? 0;
+            $saldoTotal = $accesoTotal
+                ? $this->fb()->selectOne($saldoQuery)->SALDO_TOTAL ?? 0
+                : $this->fb()->selectOne($saldoQuery, [$cveVend])->SALDO_TOTAL ?? 0;
 
-        $hoy      = Carbon::now();
-        $vencidos = $datos->filter(function ($item) use ($hoy) {
-            if (!$item->FECHA_VENC || $item->SALDOS <= 0) return false;
-            try {
-                return Carbon::parse($item->FECHA_VENC)->lt($hoy);
-            } catch (\Exception $e) {
-                return false;
-            }
-        });
+            $hoy      = Carbon::now();
+            $vencidos = $datos->filter(function ($item) use ($hoy) {
+                if (!$item->FECHA_VENC || $item->SALDOS <= 0) return false;
+                try {
+                    return Carbon::parse($item->FECHA_VENC)->lt($hoy);
+                } catch (\Exception $e) {
+                    return false;
+                }
+            });
 
-        return response()->json([
-            'success' => true,
-            'data'    => [
-                'vendedor' => [
-                    'cve_vend' => $cveVend ?? 'TODOS',
-                ],
-                'totales' => [
-                    'cargos'      => round($totalCargos, 2),
-                    'abonos'      => round($totalAbonos, 2),
-                    'saldo_total' => (float) $saldoTotal,
-                ],
-                'documentos' => [
-                    'total'         => $datos->count(),
-                    'vencidos'      => $vencidos->count(),
-                    'monto_vencido' => round($vencidos->sum('SALDOS'), 2),
+            return response()->json([
+                'success' => true,
+                'data'    => [
+                    'vendedor' => [
+                        'cve_vend' => $cveVend ?? 'TODOS',
+                    ],
+                    'totales' => [
+                        'cargos'      => round($totalCargos, 2),
+                        'abonos'      => round($totalAbonos, 2),
+                        'saldo_total' => (float) $saldoTotal,
+                    ],
+                    'documentos' => [
+                        'total'         => $datos->count(),
+                        'vencidos'      => $vencidos->count(),
+                        'monto_vencido' => round($vencidos->sum('SALDOS'), 2),
+                    ]
                 ]
-            ]
-        ]);
-    } catch (\Exception $e) {
-        Log::error('ERROR_RESUMEN_ESTADOS_CUENTA', [
-            'message' => $e->getMessage(),
-            'trace'   => $e->getTraceAsString(),
-        ]);
-        return response()->json([
-            'success' => false,
-            'message' => 'Error al obtener resumen',
-            'error'   => $e->getMessage()
-        ], 500);
+            ]);
+        } catch (\Exception $e) {
+            Log::error('ERROR_RESUMEN_ESTADOS_CUENTA', [
+                'message' => $e->getMessage(),
+                'trace'   => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener resumen',
+                'error'   => $e->getMessage()
+            ], 500);
+        }
     }
-}
 
     /* =======================================================
         📅 POR AÑO - Movimientos filtrados por año
@@ -388,12 +408,15 @@ public function resumen()
     public function descargarPDF($noFactura)
     {
         try {
-            $cveVend = $this->getAgenteClave();
+            $accesoTotal = $this->tieneAccesoTotal();
+            $cveVend     = $accesoTotal ? null : $this->getAgenteClave();
 
-            $query  = $this->queryBase();
+            $query  = $this->queryBase($cveVend); // ✅ pasar $cveVend
             $query .= " AND TRIM(DOCUMENTO) = TRIM(?)";
 
-            $resultado = $this->fb()->selectOne($query, [$cveVend, $noFactura]);
+            $params = $accesoTotal ? [$noFactura] : [$cveVend, $noFactura];
+
+            $resultado = $this->fb()->selectOne($query, $params);
 
             if (!$resultado) {
                 return response()->json(['success' => false, 'message' => 'Documento no encontrado'], 404);
@@ -423,16 +446,21 @@ public function resumen()
                 'documentos.*' => 'required|string'
             ]);
 
-            $cveVend    = $this->getAgenteClave();
-            $documentos = $request->documentos;
+            $accesoTotal = $this->tieneAccesoTotal();
+            $cveVend     = $accesoTotal ? null : $this->getAgenteClave();
+            $documentos  = array_map('trim', $request->documentos);
 
             $placeholders = implode(',', array_fill(0, count($documentos), '?'));
 
-            $query  = $this->queryBase();
+            // ✅ Pasar $cveVend para que queryBase genere el filtro correcto
+            $query  = $this->queryBase($cveVend);
             $query .= " AND TRIM(DOCUMENTO) IN ({$placeholders})";
             $query .= " ORDER BY FECHA_APLI DESC";
 
-            $params = array_merge([$cveVend], $documentos);
+            // ✅ Params: solo documentos si acceso total, o [cveVend, ...docs] si no
+            $params = $accesoTotal
+                ? $documentos
+                : array_merge([$cveVend], $documentos);
 
             $resultados = $this->fb()->select($query, $params);
 
@@ -440,17 +468,23 @@ public function resumen()
                 return response()->json(['success' => false, 'message' => 'No se encontraron documentos'], 404);
             }
 
+            // Agrupar por cliente para el blade
+            $porCliente = collect($resultados)->groupBy(fn($r) => trim($r->CLAVE));
+
             $data = [
-                'documentos'       => $resultados,
+                'por_cliente'      => $porCliente,
                 'fecha_generacion' => Carbon::now()->format('d/m/Y H:i:s'),
-                'cliente'          => trim($resultados[0]->NOMBRE ?? '')
             ];
 
             $pdf = PDF::loadView('pdfs.estados-cuenta-multiples', $data);
             return $pdf->download("estados-cuenta-" . date('YmdHis') . ".pdf");
         } catch (\Exception $e) {
             Log::error('ERROR_DESCARGAR_MULTIPLES', ['message' => $e->getMessage()]);
-            return response()->json(['success' => false, 'message' => 'Error al generar PDF múltiple', 'error' => $e->getMessage()], 500);
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al generar PDF múltiple',
+                'error'   => $e->getMessage()
+            ], 500);
         }
     }
 
@@ -560,4 +594,5 @@ public function resumen()
             'message' => 'No se permite eliminar estados de cuenta'
         ], 403);
     }
+    
 }

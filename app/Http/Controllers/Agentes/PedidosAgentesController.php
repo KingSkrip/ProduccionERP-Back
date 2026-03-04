@@ -9,12 +9,26 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Mail;
 
 class PedidosAgentesController extends Controller
 {
     protected ?bool $accesoTotalCache = null;
     protected mixed $agenteClaveCacheValue = null;
+    protected array $clientesBloqueados = [
+        'SFA CAPITAL',
+        'ALLIANCE INTERACTIVE TECHNOLOGIES',
+        'CREACIONES LAIZA',
+        'TEXTILES HECLA',
+        'SABU SHAKRUKA CUENTA REM',
+        'TEXTILES EL TRIUNFO',
+        'INFANTILES DINAMITA',
+        'SABU SALVADOR SHAKRUKA ROMANO',
+        'ISAAC ZONANA (INSUMOS)',
+        'ALTA FIBRA TECA',
+        'ZURIZEN',
+    ];
 
     protected function fb()
     {
@@ -110,14 +124,24 @@ class PedidosAgentesController extends Controller
     /* =======================================================
         🛒 SP - todos los pedidos de la empresa
     ======================================================= */
-    protected function getPedidosSP(): \Illuminate\Support\Collection
+    protected function getPedidosSP(): Collection
     {
         $empresa = $this->getEmpresa();
         static $cache = null;
         if ($cache !== null) return $cache;
 
-        return $cache = collect($this->fb()->select("SELECT * FROM P_PEDIDOSENCMAIN(?)", [$empresa]))
-            ->filter(fn($item) => !empty(trim($item->CLIENTE ?? '')));
+        $pedidos = collect(
+            $this->fb()->select("SELECT * FROM P_PEDIDOSENCMAIN(?)", [$empresa])
+        )->filter(fn($item) => !empty(trim($item->CLIENTE ?? '')));
+
+        if ($this->tieneAccesoTotal()) {
+            $pedidos = $pedidos->filter(function ($item) {
+                $nombre = strtoupper(trim($item->CLIENTE ?? ''));
+                return !in_array($nombre, $this->clientesBloqueados);
+            });
+        }
+
+        return $cache = $pedidos->values();
     }
 
     /* =======================================================
@@ -155,10 +179,33 @@ class PedidosAgentesController extends Controller
         ];
     }
 
+    protected function getStOrdenesPorIds(array $ids): \Illuminate\Support\Collection
+    {
+        if (empty($ids)) return collect();
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+
+        $resultados = $this->fb()->select(
+            "SELECT 
+            OE.CVE_PED,
+            OP.PROC,
+            OP.ST,
+            OP.ORDEN,
+            OP.CONSPROC
+         FROM ORDENESENC OE
+         INNER JOIN ORDENESPROC OP ON OP.CVE_ORDEN = OE.ID
+         WHERE OE.CVE_PED IN ({$placeholders})
+         ORDER BY OE.CVE_PED, OP.CONSPROC",
+            $ids
+        );
+
+        return collect($resultados)->groupBy(fn($r) => (string) $r->CVE_PED);
+    }
+
     /* =======================================================
         🔧 mapPedido
     ======================================================= */
-    protected function mapPedido(object $item, array $articulos = [], array $cardigans = []): array
+    protected function mapPedido(object $item, array $articulos = [], array $cardigans = [], array $ordenes = []): array
     {
         return [
             'id'            => (int)   ($item->ID      ?? 0),
@@ -183,6 +230,7 @@ class PedidosAgentesController extends Controller
             'status'        => $this->sanitize($item->{'PARC. O COMPL.'} ?? ''),
             'articulos'     => array_map(fn($a) => (array) $a, $articulos),
             'cardigans'     => array_map(fn($c) => (array) $c, $cardigans),
+            'ordenes_proc' => array_map(fn($o) => (array) $o, $ordenes), 
         ];
     }
 
@@ -216,14 +264,16 @@ class PedidosAgentesController extends Controller
                 ->sortByDesc(fn($item) => $item->{'FECHA ELAB.'} ?? '')
                 ->values();
 
-            $ids    = $pedidosSP->pluck('ID')->filter()->map(fn($id) => (int) $id)->values()->toArray();
-            $extras = $this->getPartidasPorIds($ids);
+            $ids      = $pedidosSP->pluck('ID')->filter()->map(fn($id) => (int) $id)->values()->toArray();
+            $extras   = $this->getPartidasPorIds($ids);
+            $stOrdens = $this->getStOrdenesPorIds($ids);
 
-            $pedidos = $pedidosSP->map(function ($item) use ($extras) {
-                $id        = (string) ($item->ID ?? '');
-                $articulos = $extras['articulos']->get($id, collect())->values()->toArray();
-                $cardigans = $extras['cardigans']->get($id, collect())->values()->toArray();
-                return $this->mapPedido($item, $articulos, $cardigans);
+            $pedidos = $pedidosSP->map(function ($item) use ($extras, $stOrdens) {
+                $idStr     = (string) ($item->ID ?? '');
+                $articulos = $extras['articulos']->get($idStr, collect())->values()->toArray();
+                $cardigans = $extras['cardigans']->get($idStr, collect())->values()->toArray();
+                $ordenes   = $stOrdens->get($idStr, collect())->values()->toArray();
+                return $this->mapPedido($item, $articulos, $cardigans, $ordenes);
             })->values();
 
             return response()->json([
@@ -256,13 +306,16 @@ class PedidosAgentesController extends Controller
 
             if (!$resultado) return response()->json(['success' => false, 'message' => 'Pedido no encontrado'], 404);
 
-            $idStr  = (string) ($resultado->ID ?? '');
-            $extras = $this->getPartidasPorIds([(int) ($resultado->ID ?? 0)]);
+            $id     = (int) ($resultado->ID ?? 0);
+            $idStr  = (string) $id;
+            $extras   = $this->getPartidasPorIds([$id]);
+            $stOrdens = $this->getStOrdenesPorIds([$id]);
 
             return response()->json(['success' => true, 'data' => $this->mapPedido(
                 $resultado,
                 $extras['articulos']->get($idStr, collect())->values()->toArray(),
-                $extras['cardigans']->get($idStr, collect())->values()->toArray()
+                $extras['cardigans']->get($idStr, collect())->values()->toArray(),
+                $stOrdens->get($idStr, collect())->values()->toArray()
             )]);
         } catch (\Exception $e) {
             Log::error('ERROR_SHOW_PEDIDO', ['message' => $e->getMessage(), 'cve_ped' => $cvePed]);
@@ -332,16 +385,16 @@ class PedidosAgentesController extends Controller
                 ->sortByDesc(fn($item) => $item->{'FECHA ELAB.'} ?? '')
                 ->values();
 
-            $ids    = $pedidosSP->pluck('ID')->filter()->map(fn($id) => (int) $id)->values()->toArray();
-            $extras = $this->getPartidasPorIds($ids);
+            $ids      = $pedidosSP->pluck('ID')->filter()->map(fn($id) => (int) $id)->values()->toArray();
+            $extras   = $this->getPartidasPorIds($ids);
+            $stOrdens = $this->getStOrdenesPorIds($ids); // 👈
 
-            $pedidos = $pedidosSP->map(function ($item) use ($extras) {
-                $idStr = (string) ($item->ID ?? '');
-                return $this->mapPedido(
-                    $item,
-                    $extras['articulos']->get($idStr, collect())->values()->toArray(),
-                    $extras['cardigans']->get($idStr, collect())->values()->toArray()
-                );
+            $pedidos = $pedidosSP->map(function ($item) use ($extras, $stOrdens) {
+                $idStr     = (string) ($item->ID ?? '');
+                $articulos = $extras['articulos']->get($idStr, collect())->values()->toArray();
+                $cardigans = $extras['cardigans']->get($idStr, collect())->values()->toArray();
+                $ordenes   = $stOrdens->get($idStr, collect())->values()->toArray(); // 👈
+                return $this->mapPedido($item, $articulos, $cardigans, $ordenes);
             })->values();
 
             return response()->json(['success' => true, 'anio' => $anio, 'data' => $pedidos, 'total' => $pedidos->count()]);
