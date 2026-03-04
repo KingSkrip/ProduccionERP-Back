@@ -126,4 +126,11 @@ class UserFirebirdIdentity extends Model
             ?? $tbData->CELULAR
             ?? null;
     }
+
+
+
+    public function ocultos()
+    {
+        return $this->hasMany(Ocultar::class, 'user_id');
+    }
 }

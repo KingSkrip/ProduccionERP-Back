@@ -147,13 +147,15 @@ Route::prefix('reportes-produccion')->group(function () {
     Route::get('/acabado', [ReportesProduccionController::class, 'getAcabadoReal']);
     Route::get('/departamento/{id}', [ReportesProduccionController::class, 'getByDepartment']);
     Route::get('all', [ReportesProduccionController::class, 'getAllReports']);
-
     Route::get('facturado-por-dia', [ReportesProduccionController::class, 'getFacturadoPorDia']);
-
     Route::get('/estampados-por-dia', [ReportesProduccionController::class, 'getEstampadoPorDia']);
     Route::get('/tintoreria-por-dia', [ReportesProduccionController::class, 'getTintoreriaPorDia']);
     Route::get('/tejido-por-dia', [ReportesProduccionController::class, 'getTejidoPorDia']);
     Route::get('/acabado-por-dia', [ReportesProduccionController::class, 'getAcabadoPorDia']);
+    Route::middleware('jwt.auth')->group(function () {
+        Route::get('/ocultar/{z200_id}', [ReportesProduccionController::class, 'getEstadoOculto']);
+        Route::post('/ocultar/{z200_id}', [ReportesProduccionController::class, 'toggleOcultar']);
+    });
 });
 
 

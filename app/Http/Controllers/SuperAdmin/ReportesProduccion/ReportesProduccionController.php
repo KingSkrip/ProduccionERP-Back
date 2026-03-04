@@ -4,8 +4,11 @@ namespace App\Http\Controllers\SuperAdmin\ReportesProduccion;
 
 use App\Events\ReportesActualizados;
 use App\Http\Controllers\Controller;
+use App\Models\Ocultar;
+use App\Models\UserFirebirdIdentity;
 use Exception;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -496,7 +499,7 @@ class ReportesProduccionController extends Controller
                 CAST(SUM(P.CANT) AS NUMERIC(18,2))      AS CANT,
                 P.UNI_VENTA                             AS UM,
                 CAST(SUM(P.CANT * P.PREC) AS NUMERIC(18,2))          AS IMPORTE,
-CAST(SUM(P.TOTIMP4) AS NUMERIC(18,2)) AS IMPUESTOS,
+            CAST(SUM(P.TOTIMP4) AS NUMERIC(18,2)) AS IMPUESTOS,
                 CAST(SUM(P.CANT * P.PREC * 1.16) AS NUMERIC(18,2))   AS TOTAL
             FROM FACTF03 F
             INNER JOIN PAR_FACTF03   P    ON P.CVE_DOC  = F.CVE_DOC
@@ -2053,5 +2056,133 @@ CAST(SUM(P.TOTIMP4) AS NUMERIC(18,2)) AS IMPUESTOS,
         ORDER BY a.NOMBRE
         ";
         return DB::connection('firebird')->select($query);
+    }
+
+    public function toggleOcultar(Request $request, $z200_id)
+    {
+        Log::info('toggleOcultar - INICIO', [
+            'z200_id' => $z200_id,
+            'auth_user' => Auth::user()
+        ]);
+
+        try {
+
+            $user = Auth::user();
+
+            if (!$user) {
+                Log::warning('toggleOcultar - Usuario no autenticado');
+                return response()->json(['message' => 'No autenticado'], 401);
+            }
+
+            Log::info('toggleOcultar - Usuario autenticado', [
+                'user_id' => $user->ID
+            ]);
+
+            $identity = UserFirebirdIdentity::where('firebird_user_clave', $user->ID)->first();
+
+            if (!$identity) {
+                Log::warning('toggleOcultar - Identidad no encontrada', [
+                    'firebird_user_clave' => $user->ID
+                ]);
+
+                return response()->json(['message' => 'Identidad no encontrada'], 404);
+            }
+
+            Log::info('toggleOcultar - Identidad encontrada', [
+                'identity_id' => $identity->id
+            ]);
+
+            $registro = Ocultar::firstOrCreate([
+                'user_id' => $identity->id,
+                'z200_id' => $z200_id,
+            ]);
+
+            Log::info('toggleOcultar - Registro obtenido/creado', [
+                'registro_id' => $registro->id,
+                'oculto_actual' => $registro->oculto
+            ]);
+
+            $registro->oculto = !$registro->oculto;
+            $registro->save();
+
+            Log::info('toggleOcultar - Estado cambiado', [
+                'nuevo_oculto' => $registro->oculto
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'oculto'  => $registro->oculto,
+            ]);
+        } catch (\Exception $e) {
+
+            Log::error('toggleOcultar - ERROR', [
+                'message' => $e->getMessage(),
+                'line' => $e->getLine(),
+                'file' => $e->getFile()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Error interno'
+            ], 500);
+        }
+    }
+
+    public function getEstadoOculto(Request $request, $z200_id)
+    {
+        Log::info('getEstadoOculto - INICIO', [
+            'z200_id' => $z200_id,
+            'auth_user' => Auth::user()
+        ]);
+
+        try {
+
+            $user = Auth::user();
+
+            if (!$user) {
+                Log::warning('getEstadoOculto - Usuario no autenticado');
+                return response()->json(['success' => true, 'oculto' => false]);
+            }
+
+            $identity = UserFirebirdIdentity::where('firebird_user_clave', $user->ID)->first();
+
+            if (!$identity) {
+                Log::warning('getEstadoOculto - Identidad no encontrada', [
+                    'firebird_user_clave' => $user->ID
+                ]);
+
+                return response()->json(['success' => true, 'oculto' => false]);
+            }
+
+            Log::info('getEstadoOculto - Identidad encontrada', [
+                'identity_id' => $identity->id
+            ]);
+
+            $registro = Ocultar::where('user_id', $identity->id)
+                ->where('z200_id', $z200_id)
+                ->first();
+
+            Log::info('getEstadoOculto - Registro consultado', [
+                'existe_registro' => $registro ? true : false,
+                'oculto' => $registro ? $registro->oculto : false
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'oculto' => $registro ? (bool) $registro->oculto : false,
+            ]);
+        } catch (\Exception $e) {
+
+            Log::error('getEstadoOculto - ERROR', [
+                'message' => $e->getMessage(),
+                'line' => $e->getLine(),
+                'file' => $e->getFile()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Error interno'
+            ], 500);
+        }
     }
 }
