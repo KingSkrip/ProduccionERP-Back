@@ -290,10 +290,11 @@ class ReportesProduccionController extends Controller
                 AND ACB2.ESTAMPADO = 0) AS COMPOSICION2,
                 CAST(P.CANT AS NUMERIC(18,2)) AS KG,
                 P.UNI_VENTA AS UM,
-                CAST(P.PREC AS NUMERIC(18,2)) AS PRECIO_BRUTO,
+                 CAST(P.PREC AS NUMERIC(18,2)) AS PRECIO_BRUTO,
                 CAST(P.CANT * P.PREC AS NUMERIC(18,2)) AS SUBTOTAL,
                 CAST(P.TOTIMP4 AS NUMERIC(18,2)) AS IVA,
-                CAST((P.CANT * P.PREC) * 1.16 AS NUMERIC(18,2)) AS TOTAL
+                
+                CAST(( (P.CANT * P.PREC) + P.TOTIMP4 ) AS NUMERIC(18,2)) AS TOTAL
             FROM FACTF03 F
             INNER JOIN PAR_FACTF03   P    ON P.CVE_DOC  = F.CVE_DOC
             INNER JOIN CLIE03        C    ON C.CLAVE    = F.CVE_CLPV
@@ -347,30 +348,18 @@ class ReportesProduccionController extends Controller
             }, $rows);
 
             // Totales monetarios por FACTURA (sin duplicar)
-            $facturas = [];
-            foreach ($rows as $r) {
-                $fac = $r->FACTURA ?? null;
-                if (!$fac) continue;
-
-                if (!isset($facturas[$fac])) {
-                    $facturas[$fac] = [
-                        'importe'   => (float) ($r->SUBTOTAL ?? 0),
-                        'impuestos' => (float) ($r->IVA ?? 0),
-                        'total'     => (float) ($r->TOTAL ?? 0),
-                    ];
-                }
-            }
-
-            $totalImporte   = array_sum(array_column($facturas, 'importe'));
-            $totalImpuestos = array_sum(array_column($facturas, 'impuestos'));
-            $totalGeneral   = array_sum(array_column($facturas, 'total'));
+            $totalImporte   = array_sum(array_column($detalle, 'importe'));
+            $totalImpuestos = array_sum(array_column($detalle, 'impuestos'));
+            $totalGeneral   = array_sum(array_column($detalle, 'total'));
             $totalCant      = array_sum(array_column($detalle, 'cant'));
+
+            $facturasUnicas = count(array_unique(array_column($detalle, 'factura')));
 
             return response()->json([
                 'success' => true,
                 'data' => [
                     'totales' => [
-                        'facturas'  => count($facturas),
+                        'facturas'  => $facturasUnicas,
                         'cant'      => (float) $totalCant,
                         'importe'   => (float) $totalImporte,
                         'impuestos' => (float) $totalImpuestos,
@@ -1766,7 +1755,8 @@ CAST(SUM(P.TOTIMP4) AS NUMERIC(18,2)) AS IMPUESTOS,
                 CAST(P.PREC AS NUMERIC(18,2)) AS PRECIO_BRUTO,
                 CAST(P.CANT * P.PREC AS NUMERIC(18,2)) AS SUBTOTAL,
                 CAST(P.TOTIMP4 AS NUMERIC(18,2)) AS IVA,
-                CAST((P.CANT * P.PREC) * 1.16 AS NUMERIC(18,2)) AS TOTAL
+                CAST(( (P.CANT * P.PREC) + P.TOTIMP4 ) AS NUMERIC(18,2)) AS TOTAL
+              
             FROM FACTF03 F
             INNER JOIN PAR_FACTF03   P    ON P.CVE_DOC  = F.CVE_DOC
             INNER JOIN CLIE03        C    ON C.CLAVE    = F.CVE_CLPV

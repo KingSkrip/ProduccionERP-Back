@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
-class ReportesProduccionController extends Controller
+class ReportesProduccionCOPYController extends Controller
 {
     /**
      * Departamentos excluidos del reporte
