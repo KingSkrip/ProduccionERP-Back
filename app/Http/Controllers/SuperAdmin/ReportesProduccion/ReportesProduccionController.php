@@ -273,27 +273,27 @@ class ReportesProduccionController extends Controller
     /**
      * 🔥 Subtotales de FACTURADO agrupados por día
      */
-public function getFacturadoPorDia(Request $request)
-{
-    try {
-        $validator = Validator::make($request->all(), [
-            'fecha_inicio' => 'required|string',
-            'fecha_fin'    => 'required|string',
-        ]);
+    public function getFacturadoPorDia(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'fecha_inicio' => 'required|string',
+                'fecha_fin'    => 'required|string',
+            ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Parámetros inválidos',
-                'errors'  => $validator->errors(),
-            ], 400);
-        }
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Parámetros inválidos',
+                    'errors'  => $validator->errors(),
+                ], 400);
+            }
 
-        $fechaInicioISO    = substr($request->input('fecha_inicio'), 0, 10);
-        $fechaFinISO       = substr($request->input('fecha_fin'), 0, 10);
-        $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFinISO . ' +1 day'));
+            $fechaInicioISO    = substr($request->input('fecha_inicio'), 0, 10);
+            $fechaFinISO       = substr($request->input('fecha_fin'), 0, 10);
+            $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFinISO . ' +1 day'));
 
-        $sql = "
+            $sql = "
             SELECT
                 F.FECHA_DOC                             AS FECHA,
                 COUNT(DISTINCT F.CVE_DOC)               AS FACTURAS,
@@ -329,8 +329,8 @@ public function getFacturadoPorDia(Request $request)
             ORDER BY F.FECHA_DOC ASC
         ";
 
-        // Notas de venta agrupadas por día
-        $sqlNotasVenta = "
+            // Notas de venta agrupadas por día
+            $sqlNotasVenta = "
             SELECT
                 CAST(F.FECHA_DOC AS DATE)      AS FECHA,
                 COUNT(F.CVE_DOC)               AS REGISTROS,
@@ -343,48 +343,48 @@ public function getFacturadoPorDia(Request $request)
             ORDER BY CAST(F.FECHA_DOC AS DATE) ASC
         ";
 
-        $rows           = DB::connection('firebird')->select($sql, [$fechaInicioISO, $fechaFinExclusiva]);
-        $rowsNotasVenta = DB::connection('firebird')->select($sqlNotasVenta, [$fechaInicioISO, $fechaFinExclusiva]);
+            $rows           = DB::connection('firebird')->select($sql, [$fechaInicioISO, $fechaFinExclusiva]);
+            $rowsNotasVenta = DB::connection('firebird')->select($sqlNotasVenta, [$fechaInicioISO, $fechaFinExclusiva]);
 
-        $subtotalesPorDia = array_map(fn($r) => [
-            'fecha'     => $r->FECHA     ?? null,
-            'facturas'  => (int)   ($r->FACTURAS  ?? 0),
-            'cant'      => (float) ($r->CANT      ?? 0),
-            'um'        => $r->UM        ?? null,
-            'importe'   => (float) ($r->IMPORTE   ?? 0),
-            'impuestos' => (float) ($r->IMPUESTOS ?? 0),
-            'total'     => (float) ($r->TOTAL     ?? 0),
-        ], $rows);
-
-        // Indexar notas de venta por fecha para fácil acceso desde el front
-        $notasVentaPorDia = [];
-        foreach ($rowsNotasVenta as $r) {
-            $fecha = substr($r->FECHA ?? '', 0, 10);
-            $notasVentaPorDia[$fecha] = [
-                'registros' => (int)   ($r->REGISTROS ?? 0),
+            $subtotalesPorDia = array_map(fn($r) => [
+                'fecha'     => $r->FECHA     ?? null,
+                'facturas'  => (int)   ($r->FACTURAS  ?? 0),
+                'cant'      => (float) ($r->CANT      ?? 0),
+                'um'        => $r->UM        ?? null,
+                'importe'   => (float) ($r->IMPORTE   ?? 0),
+                'impuestos' => (float) ($r->IMPUESTOS ?? 0),
                 'total'     => (float) ($r->TOTAL     ?? 0),
-            ];
-        }
+            ], $rows);
 
-        return response()->json([
-            'success' => true,
-            'data'    => $subtotalesPorDia,       // ← sin cambios
-            'notas_venta_por_dia' => $notasVentaPorDia, // ← nuevo
-            'filtros' => [
-                'fecha_inicio'        => $fechaInicioISO,
-                'fecha_fin'           => $fechaFinISO,
-                'fecha_fin_exclusiva' => $fechaFinExclusiva,
-                'total_registros'     => count($rows),
-            ],
-        ], 200);
-    } catch (\Throwable $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Error al obtener facturado por día',
-            'error'   => $e->getMessage(),
-        ], 500);
+            // Indexar notas de venta por fecha para fácil acceso desde el front
+            $notasVentaPorDia = [];
+            foreach ($rowsNotasVenta as $r) {
+                $fecha = substr($r->FECHA ?? '', 0, 10);
+                $notasVentaPorDia[$fecha] = [
+                    'registros' => (int)   ($r->REGISTROS ?? 0),
+                    'total'     => (float) ($r->TOTAL     ?? 0),
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'data'    => $subtotalesPorDia,       // ← sin cambios
+                'notas_venta_por_dia' => $notasVentaPorDia, // ← nuevo
+                'filtros' => [
+                    'fecha_inicio'        => $fechaInicioISO,
+                    'fecha_fin'           => $fechaFinISO,
+                    'fecha_fin_exclusiva' => $fechaFinExclusiva,
+                    'total_registros'     => count($rows),
+                ],
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener facturado por día',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
     }
-}
 
 
     /**
@@ -1446,13 +1446,13 @@ public function getFacturadoPorDia(Request $request)
         }
     }
 
-private function getFacturadoData($fechaInicio, $fechaFin)
-{
-    $fechaInicioISO    = substr($fechaInicio, 0, 10);
-    $fechaFinISO       = substr($fechaFin, 0, 10);
-    $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFinISO . ' +1 day'));
+    private function getFacturadoData($fechaInicio, $fechaFin)
+    {
+        $fechaInicioISO    = substr($fechaInicio, 0, 10);
+        $fechaFinISO       = substr($fechaFin, 0, 10);
+        $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFinISO . ' +1 day'));
 
-    $sql = "
+        $sql = "
             SELECT
             F.FECHA_DOC AS FECHA,
             CASE EXTRACT(MONTH FROM F.FECHA_DOC)
@@ -1516,7 +1516,7 @@ private function getFacturadoData($fechaInicio, $fechaFin)
         ORDER BY F.FECHA_DOC, F.FOLIO, P.NUM_PAR
     ";
 
-    $sqlNotasVenta = "
+        $sqlNotasVenta = "
         SELECT F.IMPORTE
         FROM FACTV03 F
         WHERE F.STATUS = 'E'
@@ -1524,78 +1524,79 @@ private function getFacturadoData($fechaInicio, $fechaFin)
           AND F.FECHA_DOC <= ?
     ";
 
-    $rows           = DB::connection('firebird')->select($sql, [$fechaInicioISO, $fechaFinExclusiva]);
-    $rowsNotasVenta = DB::connection('firebird')->select($sqlNotasVenta, [$fechaInicioISO, $fechaFinExclusiva]);
+        $rows           = DB::connection('firebird')->select($sql, [$fechaInicioISO, $fechaFinExclusiva]);
+        $rowsNotasVenta = DB::connection('firebird')->select($sqlNotasVenta, [$fechaInicioISO, $fechaFinExclusiva]);
 
-    $detalle = array_map(function ($r) {
-        return [
-            'fecha'                  => $r->FECHA ?? null,
-            'mes'                    => $r->MES ?? null,
-            'cliente'                => $r->CLIENTE ?? null,
-            'factura'                => $r->FACTURA ?? null,
-            'remision'               => $r->REMISION ?? '-',
-            'pedido'                 => $r->PEDIDO ?? null,
-            'modalidad'              => $r->MODALIDAD ?? null,
-            'empresa'                => $r->EMPRESA ?? null,
-            'clasificacion_producto' => $r->CLASIFICACION_PRODUCTO ?? null,
-            'descripcion_producto'   => $r->DESCRIPCION_PRODUCTO ?? null,
-            'color'                  => $r->COLOR ?? null,
-            'composicion'            => $r->COMPOSICION ?? null,
-            'composicion2'           => $r->COMPOSICION2 ?? null,
-            'precio_bruto'           => (float) ($r->PRECIO_BRUTO ?? 0),
-            'iva'                    => (float) ($r->IVA ?? 0),
-            'total'                  => (float) ($r->TOTAL ?? 0),
-            'importe'                => (float) ($r->SUBTOTAL ?? 0),
-            'fecha'                  => $r->FECHA ?? null,
-            'um'                     => $r->UM ?? null,
-            'cant'                   => (float) ($r->KG ?? 0),
-        ];
-    }, $rows);
-
-    // Totales agrupados por factura (sin duplicar)
-    $facturas = [];
-    foreach ($rows as $r) {
-        $fac = $r->FACTURA ?? null;
-        if (!$fac) continue;
-        if (!isset($facturas[$fac])) {
-            $facturas[$fac] = [
-                'importe' => (float) ($r->SUBTOTAL ?? 0),
-                'iva'     => (float) ($r->IVA ?? 0),
-                'total'   => (float) ($r->TOTAL ?? 0),
+        $detalle = array_map(function ($r) {
+            return [
+                'fecha'                  => $r->FECHA ?? null,
+                'mes'                    => $r->MES ?? null,
+                'cliente'                => $r->CLIENTE ?? null,
+                'factura'                => $r->FACTURA ?? null,
+                'remision'               => $r->REMISION ?? '-',
+                'pedido'                 => $r->PEDIDO ?? null,
+                'modalidad'              => $r->MODALIDAD ?? null,
+                'empresa'                => $r->EMPRESA ?? null,
+                'clasificacion_producto' => $r->CLASIFICACION_PRODUCTO ?? null,
+                'descripcion_producto'   => $r->DESCRIPCION_PRODUCTO ?? null,
+                'color'                  => $r->COLOR ?? null,
+                'composicion'            => $r->COMPOSICION ?? null,
+                'composicion2'           => $r->COMPOSICION2 ?? null,
+                'precio_bruto'           => (float) ($r->PRECIO_BRUTO ?? 0),
+                'iva'                    => (float) ($r->IVA ?? 0),
+                'impuestos'              => (float) ($r->IVA ?? 0),
+                'total'                  => (float) ($r->TOTAL ?? 0),
+                'importe'                => (float) ($r->SUBTOTAL ?? 0),
+                'fecha'                  => $r->FECHA ?? null,
+                'um'                     => $r->UM ?? null,
+                'cant'                   => (float) ($r->KG ?? 0),
             ];
+        }, $rows);
+
+        // Totales agrupados por factura (sin duplicar)
+        $facturas = [];
+        foreach ($rows as $r) {
+            $fac = $r->FACTURA ?? null;
+            if (!$fac) continue;
+            if (!isset($facturas[$fac])) {
+                $facturas[$fac] = [
+                    'importe' => (float) ($r->SUBTOTAL ?? 0),
+                    'iva'     => (float) ($r->IVA ?? 0),
+                    'total'   => (float) ($r->TOTAL ?? 0),
+                ];
+            }
         }
+
+        $totalKg       = array_sum(array_column($detalle, 'cant'));
+        $totalSubtotal = array_sum(array_column($detalle, 'importe'));
+        $totalIva      = array_sum(array_column($detalle, 'iva'));
+        $totalGeneral  = array_sum(array_column($detalle, 'total'));
+
+        // Notas de venta
+        $totalNotasVenta = array_sum(array_map(fn($r) => (float) ($r->IMPORTE ?? 0), $rowsNotasVenta));
+
+        return [
+            'totales' => [
+                'facturas'  => count($facturas),
+                'cant'      => (float) $totalKg,
+                'importe'   => (float) $totalSubtotal,
+                'impuestos' => (float) $totalIva,
+                'total'     => (float) $totalGeneral,
+            ],
+            'notas_venta' => [                        // ← nuevo
+                'registros' => count($rowsNotasVenta),
+                'total'     => $totalNotasVenta,
+            ],
+            'detalle' => $detalle,
+
+            'filtros' => [
+                'fecha_inicio'        => $fechaInicioISO,
+                'fecha_fin'           => $fechaFinISO,
+                'fecha_fin_exclusiva' => $fechaFinExclusiva,
+                'total_registros'     => count($rows),
+            ],
+        ];
     }
-
-    $totalKg       = array_sum(array_column($detalle, 'cant'));
-    $totalSubtotal = array_sum(array_column($detalle, 'importe'));
-    $totalIva      = array_sum(array_column($detalle, 'iva'));
-    $totalGeneral  = array_sum(array_column($detalle, 'total'));
-
-    // Notas de venta
-    $totalNotasVenta = array_sum(array_map(fn($r) => (float) ($r->IMPORTE ?? 0), $rowsNotasVenta));
-
-    return [
-        'totales' => [
-            'facturas'  => count($facturas),
-            'cant'      => (float) $totalKg,
-            'importe'   => (float) $totalSubtotal,
-            'impuestos' => (float) $totalIva,
-            'total'     => (float) $totalGeneral,
-        ],
-        'notas_venta' => [                        // ← nuevo
-            'registros' => count($rowsNotasVenta),
-            'total'     => $totalNotasVenta,
-        ],
-        'detalle' => $detalle,
-        
-        'filtros' => [
-            'fecha_inicio'        => $fechaInicioISO,
-            'fecha_fin'           => $fechaFinISO,
-            'fecha_fin_exclusiva' => $fechaFinExclusiva,
-            'total_registros'     => count($rows),
-        ],
-    ];
-}
 
     private function getEmbarquesData($fechaInicio, $fechaFin)
     {
