@@ -594,5 +594,4 @@ class EstadosCuentaAgentesController extends Controller
             'message' => 'No se permite eliminar estados de cuenta'
         ], 403);
     }
-    
 }
