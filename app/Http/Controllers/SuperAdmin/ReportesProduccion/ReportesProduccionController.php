@@ -1593,8 +1593,6 @@ class ReportesProduccionController extends Controller
                 'cant'                   => (float) ($r->KG ?? 0),
             ];
         }, $rows);
-
-        // Totales agrupados por factura (sin duplicar)
         $facturas = [];
         foreach ($rows as $r) {
             $fac = $r->FACTURA ?? null;
@@ -1607,22 +1605,17 @@ class ReportesProduccionController extends Controller
                 ];
             }
         }
-
         $totalKg       = array_sum(array_column($detalle, 'cant'));
         $totalSubtotal = array_sum(array_column($detalle, 'importe'));
         $totalIva      = array_sum(array_column($detalle, 'iva'));
         $totalGeneral  = array_sum(array_column($detalle, 'total'));
-
-        // Notas de venta
         $totalNotasVenta = array_sum(array_map(fn($r) => (float) ($r->IMPORTE ?? 0), $rowsNotasVenta));
         $rowsNVporDia = DB::connection('firebird')->select(
             $sqlNotasVentaPorDia,
             [$fechaInicioISO, $fechaFinExclusiva]
         );
         $unidades = [];
-
         foreach ($rowsNotasVenta as $r) {
-
             $um = $r->UNI_VENTA ?? 'SIN_UM';
             $cant = (float) ($r->CANT ?? 0);
 
@@ -1635,11 +1628,9 @@ class ReportesProduccionController extends Controller
 
             $unidades[$um]['cant'] += $cant;
         }
-
         $notasVentaPorDia = [];
         foreach ($rowsNVporDia as $r) {
             $fecha = substr($r->FECHA ?? '', 0, 10);
-
             if (!isset($notasVentaPorDia[$fecha])) {
                 $notasVentaPorDia[$fecha] = [
                     'registros' => (int)   ($r->REGISTROS ?? 0),
@@ -1647,7 +1638,6 @@ class ReportesProduccionController extends Controller
                     'unidades'  => [],
                 ];
             }
-
             $notasVentaPorDia[$fecha]['unidades'][] = [
                 'um'   => $r->UM   ?? 'N/A',
                 'cant' => (float) ($r->CANT ?? 0),
