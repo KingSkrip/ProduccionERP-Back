@@ -199,8 +199,12 @@ class ReportesProduccionController extends Controller
             ";
 
             $sqlNotasVenta = "
-                SELECT F.IMPORTE
+                SELECT 
+                P.CANT,
+                P.UNI_VENTA,
+                F.IMPORTE
                 FROM FACTV03 F
+                INNER JOIN PAR_FACTV03 P ON F.CVE_DOC = P.CVE_DOC
                 WHERE F.STATUS = 'E'
                 AND F.FECHA_DOC >= ?
                 AND F.FECHA_DOC <= ?
@@ -237,6 +241,24 @@ class ReportesProduccionController extends Controller
             $totalCant      = array_sum(array_column($detalle, 'cant'));
             $facturasUnicas = count(array_unique(array_column($detalle, 'factura')));
             $totalNotasVenta = array_sum(array_map(fn($r) => (float) ($r->IMPORTE ?? 0), $rowsNotasVenta));
+            $unidades = [];
+
+            foreach ($rowsNotasVenta as $r) {
+
+                $um = $r->UNI_VENTA ?? 'SIN_UM';
+                $cant = (float) ($r->CANT ?? 0);
+
+                if (!isset($unidades[$um])) {
+                    $unidades[$um] = [
+                        'um' => $um,
+                        'cant' => 0
+                    ];
+                }
+
+                $unidades[$um]['cant'] += $cant;
+            }
+
+            $unidades = array_values($unidades);
 
             return response()->json([
                 'success' => true,
@@ -251,6 +273,7 @@ class ReportesProduccionController extends Controller
                     'notas_venta' => [
                         'registros' => count($rowsNotasVenta),
                         'total'     => $totalNotasVenta,
+                        'unidades'  => $unidades
                     ],
                     'detalle'     => $detalle,
                 ],
@@ -334,7 +357,7 @@ class ReportesProduccionController extends Controller
             SELECT
                 CAST(F.FECHA_DOC AS DATE)      AS FECHA,
                 COUNT(F.CVE_DOC)               AS REGISTROS,
-                CAST(SUM(F.IMPORTE) AS NUMERIC(18,2)) AS TOTAL
+                CAST(SUM(F.IMPORTE) AS NUMERIC(18,2)) AS TOTAL_NV
             FROM FACTV03 F
             WHERE F.STATUS = 'E'
               AND F.FECHA_DOC >= ?
@@ -362,7 +385,7 @@ class ReportesProduccionController extends Controller
                 $fecha = substr($r->FECHA ?? '', 0, 10);
                 $notasVentaPorDia[$fecha] = [
                     'registros' => (int)   ($r->REGISTROS ?? 0),
-                    'total'     => (float) ($r->TOTAL     ?? 0),
+                    'total_nv'  => (float) ($r->TOTAL_NV  ?? 0),
                 ];
             }
 
@@ -1453,77 +1476,95 @@ class ReportesProduccionController extends Controller
         $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFinISO . ' +1 day'));
 
         $sql = "
-            SELECT
-            F.FECHA_DOC AS FECHA,
-            CASE EXTRACT(MONTH FROM F.FECHA_DOC)
-                WHEN 1  THEN 'ENERO'
-                WHEN 2  THEN 'FEBRERO'
-                WHEN 3  THEN 'MARZO'
-                WHEN 4  THEN 'ABRIL'
-                WHEN 5  THEN 'MAYO'
-                WHEN 6  THEN 'JUNIO'
-                WHEN 7  THEN 'JULIO'
-                WHEN 8  THEN 'AGOSTO'
-                WHEN 9  THEN 'SEPTIEMBRE'
-                WHEN 10 THEN 'OCTUBRE'
-                WHEN 11 THEN 'NOVIEMBRE'
-                WHEN 12 THEN 'DICIEMBRE'
-            END AS MES,
-            C.NOMBRE AS CLIENTE,
-            CAST(F.FOLIO AS VARCHAR(20)) AS FACTURA,
-            '-' AS REMISION,
-            F.CVE_PEDI AS PEDIDO,
-            'Z100' AS MODALIDAD,
-            'COMERCIALIZADORA FIBRASAN' AS EMPRESA,
-            'TELA' AS CLASIFICACION_PRODUCTO,
-            COALESCE(T.CODIGO || ' ' || AR.NOMBRE, I.CVE_ART) AS DESCRIPCION_PRODUCTO,
-            TRIM(TRAILING FROM O.STR_OBS) AS COLOR,
-            COALESCE(COMP.CADCOMP || ' ' || HI.CODIGO, '-') AS COMPOSICION,
-            (SELECT FIRST 1 ACB2.DESCR
-            FROM ACABTIPO ACB2
-            WHERE ACB2.TIPO = AR.TIPOACAB
-            AND ACB2.ESTAMPADO = 0) AS COMPOSICION2,
-            CAST(P.CANT AS NUMERIC(18,2)) AS KG,
-            P.UNI_VENTA AS UM,
-            CAST(P.PREC AS NUMERIC(18,2)) AS PRECIO_BRUTO,
-            CAST(P.CANT * P.PREC AS NUMERIC(18,2)) AS SUBTOTAL,
-            CAST(P.TOTIMP4 AS NUMERIC(18,2)) AS IVA,
-            CAST(( (P.CANT * P.PREC) + P.TOTIMP4 ) AS NUMERIC(18,2)) AS TOTAL
-          
-        FROM FACTF03 F
-        INNER JOIN PAR_FACTF03   P    ON P.CVE_DOC  = F.CVE_DOC
-        INNER JOIN CLIE03        C    ON C.CLAVE    = F.CVE_CLPV
-        INNER JOIN INVE03        I    ON I.CVE_ART  = P.CVE_ART
-        LEFT  JOIN ARTICULOS     AR   ON AR.CVE_ART = I.CVE_ART
-        LEFT  JOIN TEJIDO        T    ON T.ID       = AR.TEJ
-        LEFT  JOIN COMPOSICION   COMP ON COMP.ID    = AR.COMP
-        LEFT  JOIN HILATURA      HI   ON HI.ID      = AR.HILAT
-        LEFT  JOIN OBS_DOCF03    O    ON O.CVE_OBS  = P.CVE_OBS
-        WHERE
-            F.STATUS        = 'E'
-        AND F.fecha_doc >= ?
-                    AND F.fecha_doc <= ?
-            AND P.CANT       > 0
-            AND NOT EXISTS (
-                SELECT 1
-                FROM FACTD03 FD
-                INNER JOIN PAR_FACTD03 PD ON PD.CVE_DOC = FD.CVE_DOC
-                WHERE FD.CVE_DOC  = F.DOC_SIG
-                AND FD.STATUS   = 'E'
-                AND PD.CVE_ART  = P.CVE_ART
-                AND PD.CANT     = P.CANT
-            )
-        ORDER BY F.FECHA_DOC, F.FOLIO, P.NUM_PAR
-    ";
+                SELECT
+                F.FECHA_DOC AS FECHA,
+                CASE EXTRACT(MONTH FROM F.FECHA_DOC)
+                    WHEN 1  THEN 'ENERO'
+                    WHEN 2  THEN 'FEBRERO'
+                    WHEN 3  THEN 'MARZO'
+                    WHEN 4  THEN 'ABRIL'
+                    WHEN 5  THEN 'MAYO'
+                    WHEN 6  THEN 'JUNIO'
+                    WHEN 7  THEN 'JULIO'
+                    WHEN 8  THEN 'AGOSTO'
+                    WHEN 9  THEN 'SEPTIEMBRE'
+                    WHEN 10 THEN 'OCTUBRE'
+                    WHEN 11 THEN 'NOVIEMBRE'
+                    WHEN 12 THEN 'DICIEMBRE'
+                END AS MES,
+                C.NOMBRE AS CLIENTE,
+                CAST(F.FOLIO AS VARCHAR(20)) AS FACTURA,
+                '-' AS REMISION,
+                F.CVE_PEDI AS PEDIDO,
+                'Z100' AS MODALIDAD,
+                'COMERCIALIZADORA FIBRASAN' AS EMPRESA,
+                'TELA' AS CLASIFICACION_PRODUCTO,
+                COALESCE(T.CODIGO || ' ' || AR.NOMBRE, I.CVE_ART) AS DESCRIPCION_PRODUCTO,
+                TRIM(TRAILING FROM O.STR_OBS) AS COLOR,
+                COALESCE(COMP.CADCOMP || ' ' || HI.CODIGO, '-') AS COMPOSICION,
+                (SELECT FIRST 1 ACB2.DESCR
+                FROM ACABTIPO ACB2
+                WHERE ACB2.TIPO = AR.TIPOACAB
+                AND ACB2.ESTAMPADO = 0) AS COMPOSICION2,
+                CAST(P.CANT AS NUMERIC(18,2)) AS KG,
+                P.UNI_VENTA AS UM,
+                CAST(P.PREC AS NUMERIC(18,2)) AS PRECIO_BRUTO,
+                CAST(P.CANT * P.PREC AS NUMERIC(18,2)) AS SUBTOTAL,
+                CAST(P.TOTIMP4 AS NUMERIC(18,2)) AS IVA,
+                CAST(( (P.CANT * P.PREC) + P.TOTIMP4 ) AS NUMERIC(18,2)) AS TOTAL
+            
+            FROM FACTF03 F
+            INNER JOIN PAR_FACTF03   P    ON P.CVE_DOC  = F.CVE_DOC
+            INNER JOIN CLIE03        C    ON C.CLAVE    = F.CVE_CLPV
+            INNER JOIN INVE03        I    ON I.CVE_ART  = P.CVE_ART
+            LEFT  JOIN ARTICULOS     AR   ON AR.CVE_ART = I.CVE_ART
+            LEFT  JOIN TEJIDO        T    ON T.ID       = AR.TEJ
+            LEFT  JOIN COMPOSICION   COMP ON COMP.ID    = AR.COMP
+            LEFT  JOIN HILATURA      HI   ON HI.ID      = AR.HILAT
+            LEFT  JOIN OBS_DOCF03    O    ON O.CVE_OBS  = P.CVE_OBS
+            WHERE
+                F.STATUS        = 'E'
+            AND F.fecha_doc >= ?
+                        AND F.fecha_doc <= ?
+                AND P.CANT       > 0
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM FACTD03 FD
+                    INNER JOIN PAR_FACTD03 PD ON PD.CVE_DOC = FD.CVE_DOC
+                    WHERE FD.CVE_DOC  = F.DOC_SIG
+                    AND FD.STATUS   = 'E'
+                    AND PD.CVE_ART  = P.CVE_ART
+                    AND PD.CANT     = P.CANT
+                )
+            ORDER BY F.FECHA_DOC, F.FOLIO, P.NUM_PAR
+        ";
 
         $sqlNotasVenta = "
-        SELECT F.IMPORTE
-        FROM FACTV03 F
-        WHERE F.STATUS = 'E'
-          AND F.FECHA_DOC >= ?
-          AND F.FECHA_DOC <= ?
-    ";
-
+            SELECT 
+            P.CANT,
+            P.UNI_VENTA,
+            F.IMPORTE
+            FROM FACTV03 F
+            INNER JOIN PAR_FACTV03 P ON F.CVE_DOC = P.CVE_DOC
+            WHERE F.STATUS = 'E'
+            AND F.FECHA_DOC >= ?
+            AND F.FECHA_DOC <= ?
+        ";
+        $sqlNotasVentaPorDia = "
+            SELECT
+                CAST(F.FECHA_DOC AS DATE)                     AS FECHA,
+                COUNT(F.CVE_DOC)                               AS REGISTROS,
+                CAST(SUM(F.IMPORTE) AS NUMERIC(18,2))          AS TOTAL_NV,
+                P.UNI_VENTA                                    AS UM,
+                CAST(SUM(P.CANT) AS NUMERIC(18,2))             AS CANT
+            FROM FACTV03 F
+            INNER JOIN PAR_FACTV03 P ON F.CVE_DOC = P.CVE_DOC
+            WHERE F.STATUS = 'E'
+            AND F.FECHA_DOC >= ?
+            AND F.FECHA_DOC <= ?
+            GROUP BY CAST(F.FECHA_DOC AS DATE), P.UNI_VENTA
+            ORDER BY CAST(F.FECHA_DOC AS DATE) ASC
+        ";
         $rows           = DB::connection('firebird')->select($sql, [$fechaInicioISO, $fechaFinExclusiva]);
         $rowsNotasVenta = DB::connection('firebird')->select($sqlNotasVenta, [$fechaInicioISO, $fechaFinExclusiva]);
 
@@ -1574,6 +1615,45 @@ class ReportesProduccionController extends Controller
 
         // Notas de venta
         $totalNotasVenta = array_sum(array_map(fn($r) => (float) ($r->IMPORTE ?? 0), $rowsNotasVenta));
+        $rowsNVporDia = DB::connection('firebird')->select(
+            $sqlNotasVentaPorDia,
+            [$fechaInicioISO, $fechaFinExclusiva]
+        );
+        $unidades = [];
+
+        foreach ($rowsNotasVenta as $r) {
+
+            $um = $r->UNI_VENTA ?? 'SIN_UM';
+            $cant = (float) ($r->CANT ?? 0);
+
+            if (!isset($unidades[$um])) {
+                $unidades[$um] = [
+                    'um' => $um,
+                    'cant' => 0
+                ];
+            }
+
+            $unidades[$um]['cant'] += $cant;
+        }
+
+        $notasVentaPorDia = [];
+        foreach ($rowsNVporDia as $r) {
+            $fecha = substr($r->FECHA ?? '', 0, 10);
+
+            if (!isset($notasVentaPorDia[$fecha])) {
+                $notasVentaPorDia[$fecha] = [
+                    'registros' => (int)   ($r->REGISTROS ?? 0),
+                    'total_nv'  => (float) ($r->TOTAL_NV  ?? 0),
+                    'unidades'  => [],
+                ];
+            }
+
+            $notasVentaPorDia[$fecha]['unidades'][] = [
+                'um'   => $r->UM   ?? 'N/A',
+                'cant' => (float) ($r->CANT ?? 0),
+            ];
+        }
+        $unidades = array_values($unidades);
 
         return [
             'totales' => [
@@ -1583,10 +1663,12 @@ class ReportesProduccionController extends Controller
                 'impuestos' => (float) $totalIva,
                 'total'     => (float) $totalGeneral,
             ],
-            'notas_venta' => [                        // ← nuevo
+            'notas_venta' => [
                 'registros' => count($rowsNotasVenta),
                 'total'     => $totalNotasVenta,
+                'unidades'  => $unidades
             ],
+            'notas_venta_por_dia' => $notasVentaPorDia,
             'detalle' => $detalle,
 
             'filtros' => [
