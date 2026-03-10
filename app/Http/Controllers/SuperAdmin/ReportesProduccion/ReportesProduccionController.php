@@ -229,16 +229,18 @@ class ReportesProduccionController extends Controller
         $sqlNotasVentaPorDia = "
             SELECT
                 CAST(F.FECHA_DOC AS DATE)                     AS FECHA,
-                COUNT(F.CVE_DOC)                               AS REGISTROS,
-                CAST(SUM(F.IMPORTE) AS NUMERIC(18,2))          AS TOTAL_NV,
-                P.UNI_VENTA                                    AS UM,
-                CAST(SUM(P.CANT) AS NUMERIC(18,2))             AS CANT
+                I.LIN_PROD                                    AS LINEA_PRODUCTO,
+                COUNT(DISTINCT F.CVE_DOC)                     AS REGISTROS,
+                CAST(SUM(F.IMPORTE) AS NUMERIC(18,2))         AS TOTAL_NV,
+                P.UNI_VENTA                                   AS UM,
+                CAST(SUM(P.CANT) AS NUMERIC(18,2))            AS CANT
             FROM FACTV03 F
             INNER JOIN PAR_FACTV03 P ON F.CVE_DOC = P.CVE_DOC
+            INNER JOIN INVE03      I ON I.CVE_ART = P.CVE_ART
             WHERE F.STATUS = 'E'
             AND F.FECHA_DOC >= ?
             AND F.FECHA_DOC <= ?
-            GROUP BY CAST(F.FECHA_DOC AS DATE), P.UNI_VENTA
+            GROUP BY CAST(F.FECHA_DOC AS DATE), I.LIN_PROD, P.UNI_VENTA
             ORDER BY CAST(F.FECHA_DOC AS DATE) ASC
         ";
 
@@ -377,17 +379,43 @@ class ReportesProduccionController extends Controller
         $notasVentaPorDia = [];
         foreach ($rowsNVporDia as $r) {
             $fecha = substr($r->FECHA ?? '', 0, 10);
+            $linea = $r->LINEA_PRODUCTO ?? 'SIN_LINEA';
+
             if (!isset($notasVentaPorDia[$fecha])) {
                 $notasVentaPorDia[$fecha] = [
-                    'registros' => (int)   ($r->REGISTROS ?? 0),
-                    'total_nv'  => (float) ($r->TOTAL_NV  ?? 0),
+                    'registros' => 0,
+                    'total_nv'  => 0.0,
                     'unidades'  => [],
+                    'por_linea' => [],   // ← NUEVO
                 ];
             }
+
+            $notasVentaPorDia[$fecha]['registros'] += (int)   ($r->REGISTROS ?? 0);
+            $notasVentaPorDia[$fecha]['total_nv']  += (float) ($r->TOTAL_NV  ?? 0);
+
             $notasVentaPorDia[$fecha]['unidades'][] = [
                 'um'   => $r->UM   ?? 'N/A',
                 'cant' => (float) ($r->CANT ?? 0),
             ];
+
+            // ← NUEVO: acumular por línea dentro del día
+            if (!isset($notasVentaPorDia[$fecha]['por_linea'][$linea])) {
+                $notasVentaPorDia[$fecha]['por_linea'][$linea] = [
+                    'cant'  => 0.0,
+                    'total' => 0.0,
+                ];
+            }
+            $notasVentaPorDia[$fecha]['por_linea'][$linea]['cant']  += (float) ($r->CANT     ?? 0);
+            $notasVentaPorDia[$fecha]['por_linea'][$linea]['total'] += (float) ($r->TOTAL_NV ?? 0);
+        }
+
+        // Redondear por_linea dentro de cada día
+        foreach ($notasVentaPorDia as $fecha => $data) {
+            foreach ($data['por_linea'] as $linea => $vals) {
+                $notasVentaPorDia[$fecha]['por_linea'][$linea]['cant']  = round($vals['cant'],  2);
+                $notasVentaPorDia[$fecha]['por_linea'][$linea]['total'] = round($vals['total'], 2);
+            }
+            $notasVentaPorDia[$fecha]['total_nv'] = round($data['total_nv'], 2);
         }
 
         $unidades = array_values($unidades);
@@ -753,6 +781,7 @@ class ReportesProduccionController extends Controller
                 ];
             }
 
+            
             return response()->json([
                 'success' => true,
                 'data'    => $subtotalesPorDia,       // ← sin cambios
