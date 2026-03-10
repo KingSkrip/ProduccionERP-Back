@@ -781,7 +781,7 @@ class ReportesProduccionController extends Controller
                 ];
             }
 
-            
+
             return response()->json([
                 'success' => true,
                 'data'    => $subtotalesPorDia,       // ← sin cambios
@@ -1792,76 +1792,123 @@ class ReportesProduccionController extends Controller
     /**
      * GET ALL REPORTS
      */
-    public function getAllReports(Request $request)
-    {
-        try {
-            $validator = Validator::make($request->all(), [
-                'fecha_inicio' => 'required|string',
-                'fecha_fin'    => 'required|string',
-            ]);
+    // public function getAllReports(Request $request)
+    // {
+    //     try {
+    //         $validator = Validator::make($request->all(), [
+    //             'fecha_inicio' => 'required|string',
+    //             'fecha_fin'    => 'required|string',
+    //         ]);
 
-            if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Parámetros inválidos',
-                    'errors'  => $validator->errors(),
-                ], 400);
-            }
+    //         if ($validator->fails()) {
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'message' => 'Parámetros inválidos',
+    //                 'errors'  => $validator->errors(),
+    //             ], 400);
+    //         }
 
-            $fechaInicio = $request->input('fecha_inicio');
-            $fechaFin = $request->input('fecha_fin');
+    //         $fechaInicio = $request->input('fecha_inicio');
+    //         $fechaFin = $request->input('fecha_fin');
 
-            // Validar formato
-            if (
-                !$this->validarFormatoFechaFirebird($fechaInicio) ||
-                !$this->validarFormatoFechaFirebird($fechaFin)
-            ) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Formato de fecha inválido. Use: dd.MM.yyyy HH:mm:ss',
-                ], 400);
-            }
+    //         // Validar formato
+    //         if (
+    //             !$this->validarFormatoFechaFirebird($fechaInicio) ||
+    //             !$this->validarFormatoFechaFirebird($fechaFin)
+    //         ) {
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'message' => 'Formato de fecha inválido. Use: dd.MM.yyyy HH:mm:ss',
+    //             ], 400);
+    //         }
 
-            $key = "reportes:all:" . md5($fechaInicio . '|' . $fechaFin);
+    //         $key = "reportes:all:" . md5($fechaInicio . '|' . $fechaFin);
 
-            $data = Cache::remember($key, now()->addSeconds(60), function () use ($fechaInicio, $fechaFin) {
-                return [
-                    'facturado'   => $this->getFacturadoData($fechaInicio, $fechaFin),
-                    'embarques'   => $this->getEmbarquesData($fechaInicio, $fechaFin),
-                    'tejido'      => $this->getTejidoResumenData($fechaInicio, $fechaFin),
-                    'tintoreria'  => $this->getTintoreriaData($fechaInicio, $fechaFin),
-                    'estampados'  => $this->getEstampadosData($fechaInicio, $fechaFin),
-                    'acabado'     => $this->getAcabadoData($fechaInicio, $fechaFin),
-                    'produccion'  => $this->getProduccionTejidoData($fechaInicio, $fechaFin),
-                    'revisado'    => $this->getRevisadoTejidoData($fechaInicio, $fechaFin),
-                    'porRevisar'  => $this->getPorRevisarTejidoData($fechaInicio, $fechaFin),
-                    'saldos'      => $this->getSaldosTejidoData($fechaInicio, $fechaFin),
-                ];
-            });
+    //         $data = Cache::remember($key, now()->addSeconds(60), function () use ($fechaInicio, $fechaFin) {
+    //             return [
+    //                 'facturado'   => $this->getFacturadoData($fechaInicio, $fechaFin),
+    //                 'embarques'   => $this->getEmbarquesData($fechaInicio, $fechaFin),
+    //                 'tejido'      => $this->getTejidoResumenData($fechaInicio, $fechaFin),
+    //                 'tintoreria'  => $this->getTintoreriaData($fechaInicio, $fechaFin),
+    //                 'estampados'  => $this->getEstampadosData($fechaInicio, $fechaFin),
+    //                 'acabado'     => $this->getAcabadoData($fechaInicio, $fechaFin),
+    //                 'produccion'  => $this->getProduccionTejidoData($fechaInicio, $fechaFin),
+    //                 'revisado'    => $this->getRevisadoTejidoData($fechaInicio, $fechaFin),
+    //                 'porRevisar'  => $this->getPorRevisarTejidoData($fechaInicio, $fechaFin),
+    //                 'saldos'      => $this->getSaldosTejidoData($fechaInicio, $fechaFin),
+    //             ];
+    //         });
 
-            //disparamos evento
-            // broadcast(new ReportesActualizados(
-            //     'Reportes actualizados',
-            //     ['total_registros' => count($data)]
-            // ))->toOthers();
+    //         //disparamos evento
+    //         // broadcast(new ReportesActualizados(
+    //         //     'Reportes actualizados',
+    //         //     ['total_registros' => count($data)]
+    //         // ))->toOthers();
 
-            return response()->json([
-                'success' => true,
-                'data' => $data,
-                'filtros' => [
-                    'fecha_inicio' => $fechaInicio,
-                    'fecha_fin' => $fechaFin,
-                ],
-            ], 200);
-        } catch (Throwable $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error al obtener reportes consolidados',
-                'error' => $e->getMessage(),
-            ], 500);
+    //         return response()->json([
+    //             'success' => true,
+    //             'data' => $data,
+    //             'filtros' => [
+    //                 'fecha_inicio' => $fechaInicio,
+    //                 'fecha_fin' => $fechaFin,
+    //             ],
+    //         ], 200);
+    //     } catch (Throwable $e) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Error al obtener reportes consolidados',
+    //             'error' => $e->getMessage(),
+    //         ], 500);
+    //     }
+    // }
+
+public function getAllReports(Request $request)
+{
+    Log::info('getAllReports - INICIO');
+    try {
+        $validator = Validator::make($request->all(), [
+            'fecha_inicio' => 'required|string',
+            'fecha_fin'    => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => 'Parámetros inválidos', 'errors' => $validator->errors()], 400);
         }
-    }
 
+        $fechaInicio = $request->input('fecha_inicio');
+        $fechaFin    = $request->input('fecha_fin');
+
+        if (!$this->validarFormatoFechaFirebird($fechaInicio) || !$this->validarFormatoFechaFirebird($fechaFin)) {
+            return response()->json(['success' => false, 'message' => 'Formato de fecha inválido. Use: dd.MM.yyyy HH:mm:ss'], 400);
+        }
+
+        $ttl = now()->addMinutes(5);
+        $h   = md5($fechaInicio . '|' . $fechaFin);
+
+        $data = [
+            'facturado'  => Cache::remember("rpt:facturado:$h",  $ttl, fn() => $this->getFacturadoData($fechaInicio, $fechaFin)),
+            'embarques'  => Cache::remember("rpt:embarques:$h",  $ttl, fn() => $this->getEmbarquesData($fechaInicio, $fechaFin)),
+            'tejido'     => Cache::remember("rpt:tejido:$h",     $ttl, fn() => $this->getTejidoResumenData($fechaInicio, $fechaFin)),
+            'tintoreria' => Cache::remember("rpt:tintoreria:$h", $ttl, fn() => $this->getTintoreriaData($fechaInicio, $fechaFin)),
+            'estampados' => Cache::remember("rpt:estampados:$h", $ttl, fn() => $this->getEstampadosData($fechaInicio, $fechaFin)),
+            'acabado'    => Cache::remember("rpt:acabado:$h",    $ttl, fn() => $this->getAcabadoData($fechaInicio, $fechaFin)),
+            'produccion' => Cache::remember("rpt:produccion:$h", $ttl, fn() => $this->getProduccionTejidoData($fechaInicio, $fechaFin)),
+            'revisado'   => Cache::remember("rpt:revisado:$h",   $ttl, fn() => $this->getRevisadoTejidoData($fechaInicio, $fechaFin)),
+            'porRevisar' => Cache::remember("rpt:porrevisar:$h", $ttl, fn() => $this->getPorRevisarTejidoData($fechaInicio, $fechaFin)),
+            'saldos'     => Cache::remember("rpt:saldos:$h",     $ttl, fn() => $this->getSaldosTejidoData($fechaInicio, $fechaFin)),
+        ];
+
+        return response()->json([
+            'success' => true,
+            'data'    => $data,
+            'filtros' => ['fecha_inicio' => $fechaInicio, 'fecha_fin' => $fechaFin],
+        ], 200);
+
+    } catch (Throwable $e) {
+        Log::error('getAllReports - ERROR: ' . $e->getMessage());
+        return response()->json(['success' => false, 'message' => 'Error al obtener reportes consolidados', 'error' => $e->getMessage()], 500);
+    }
+}
     private function getEmbarquesData($fechaInicio, $fechaFin)
     {
         $query = "
