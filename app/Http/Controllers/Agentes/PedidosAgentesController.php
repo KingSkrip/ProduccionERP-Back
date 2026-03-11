@@ -39,7 +39,7 @@ class PedidosAgentesController extends Controller
     {
         $fbDatabase = env('FB_DATABASE', '');
         preg_match('/\d{2}/', $fbDatabase, $matches);
-        $empresa = $matches[0] ?? '01';
+        $empresa = $matches[0] ?? '03';
         Log::info('empresa de pedidos', ['empresa' => $empresa]);
         return $empresa;
     }
@@ -230,7 +230,7 @@ class PedidosAgentesController extends Controller
             'status'        => $this->sanitize($item->{'PARC. O COMPL.'} ?? ''),
             'articulos'     => array_map(fn($a) => (array) $a, $articulos),
             'cardigans'     => array_map(fn($c) => (array) $c, $cardigans),
-            'ordenes_proc' => array_map(fn($o) => (array) $o, $ordenes), 
+            'ordenes_proc' => array_map(fn($o) => (array) $o, $ordenes),
         ];
     }
 
