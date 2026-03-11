@@ -298,6 +298,7 @@ Route::prefix('agentes/pedidos')->middleware('jwt.auth')->group(function () {
     Route::get('/{cvePed}/pdf', [PedidosAgentesController::class, 'descargarPDF']);
     Route::post('/{cvePed}/email', [PedidosAgentesController::class, 'enviarEmail']);
     Route::delete('/{cvePed}', [PedidosAgentesController::class, 'destroy']);
+    Route::get('/{cvePed}/detalle', [PedidosAgentesController::class, 'detalle']);
 });
 
 

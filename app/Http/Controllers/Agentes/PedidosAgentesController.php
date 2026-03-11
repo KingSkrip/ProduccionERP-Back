@@ -287,6 +287,70 @@ class PedidosAgentesController extends Controller
         }
     }
 
+
+    // En index() — elimina las 2 queries pesadas, solo devuelve encabezados
+    // public function index(Request $request)
+    // {
+    //     try {
+    //         $accesoTotal = $this->tieneAccesoTotal();
+    //         $pedidosSP   = $this->getPedidosSP();
+
+    //         if (!$accesoTotal) {
+    //             $cveVend   = (int) $this->getAgenteClave();
+    //             $pedidosSP = $pedidosSP->filter(fn($item) => (int) ($item->AGENTE ?? 0) === $cveVend);
+    //         }
+
+    //         $pedidos = $pedidosSP
+    //             ->sortByDesc(fn($item) => $item->{'FECHA ELAB.'} ?? '')
+    //             ->values()
+    //             ->map(fn($item) => $this->mapPedido($item)) // sin artículos ni órdenes
+    //             ->values();
+
+    //         return response()->json([
+    //             'success' => true,
+    //             'data'    => $pedidos,
+    //             'total'   => $pedidos->count(),
+    //         ]);
+    //     } catch (\Exception $e) {
+    //         Log::error('ERROR_INDEX_PEDIDOS', ['message' => $e->getMessage()]);
+    //         return response()->json(['success' => false, 'message' => 'Error al obtener pedidos'], 500);
+    //     }
+    // }
+
+    // NUEVO endpoint — solo se llama al expandir un pedido
+    public function detalle(string $cvePed)
+    {
+        try {
+            $accesoTotal = $this->tieneAccesoTotal();
+
+            $resultado = $this->getPedidosSP()->first(function ($item) use ($cvePed, $accesoTotal) {
+                $match = $this->sanitize($item->PEDIDO ?? '') === $this->sanitize($cvePed);
+                if ($accesoTotal) return $match;
+                $cveVend = (int) $this->getAgenteClave();
+                return (int) ($item->AGENTE ?? 0) === $cveVend && $match;
+            });
+
+            if (!$resultado) {
+                return response()->json(['success' => false, 'message' => 'Pedido no encontrado'], 404);
+            }
+
+            $id     = (int) ($resultado->ID ?? 0);
+            $idStr  = (string) $id;
+            $extras   = $this->getPartidasPorIds([$id]);
+            $stOrdens = $this->getStOrdenesPorIds([$id]);
+
+            return response()->json([
+                'success'    => true,
+                'articulos'  => $extras['articulos']->get($idStr, collect())->values(),
+                'cardigans'  => $extras['cardigans']->get($idStr, collect())->values(),
+                'ordenes'    => $stOrdens->get($idStr, collect())->values(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('ERROR_DETALLE_PEDIDO', ['message' => $e->getMessage(), 'cve_ped' => $cvePed]);
+            return response()->json(['success' => false, 'message' => 'Error al obtener detalle'], 500);
+        }
+    }
+
     /* =======================================================
         🔍 SHOW
     ======================================================= */
