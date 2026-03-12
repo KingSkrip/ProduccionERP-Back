@@ -538,9 +538,9 @@
                     Resumen &mdash; {{ $nombre }}
                 </div>
                 <div class="totales-values">
-                    <span>
+                    {{-- <span>
                         Cargos: <strong class="color-blue">${{ number_format($totalCargos, 2) }}</strong>
-                    </span>
+                    </span> --}}
                     <span>
                         Abonos: <strong class="color-green">${{ number_format($totalAbonos, 2) }}</strong>
                     </span>

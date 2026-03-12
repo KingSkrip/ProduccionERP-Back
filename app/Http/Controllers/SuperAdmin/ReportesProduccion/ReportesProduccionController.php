@@ -6,6 +6,7 @@ use App\Events\ReportesActualizados;
 use App\Http\Controllers\Controller;
 use App\Models\Ocultar;
 use App\Models\UserFirebirdIdentity;
+use DateTime;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -118,9 +119,28 @@ class ReportesProduccionController extends Controller
 
     private function getFacturadoData($fechaInicio, $fechaFin)
     {
-        $fechaInicioISO    = substr($fechaInicio, 0, 10);
-        $fechaFinISO       = substr($fechaFin, 0, 10);
+        // $fechaInicioISO    = substr($fechaInicio, 0, 10);
+        // $fechaFinISO       = substr($fechaFin, 0, 10);
+        // $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFinISO . ' +1 day'));
+
+
+        Log::info('getFacturadoData - fechas RAW', [
+            'fechaInicio_raw' => $fechaInicio,
+            'fechaFin_raw'    => $fechaFin,
+        ]);
+
+        $fechaInicioISO = \DateTime::createFromFormat('d.m.Y H:i:s', $fechaInicio)?->format('Y-m-d')
+            ?? substr($fechaInicio, 0, 10);
+        $fechaFinISO    = \DateTime::createFromFormat('d.m.Y H:i:s', $fechaFin)?->format('Y-m-d')
+            ?? substr($fechaFin, 0, 10);
         $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFinISO . ' +1 day'));
+
+        Log::info('getFacturadoData - fechas CALCULADAS', [
+            'fechaInicioISO'    => $fechaInicioISO,
+            'fechaFinISO'       => $fechaFinISO,
+            'fechaFinExclusiva' => $fechaFinExclusiva,
+        ]);
+
 
         $sql = "
                 SELECT
@@ -187,22 +207,8 @@ class ReportesProduccionController extends Controller
                 ORDER BY F.FECHA_DOC, F.FOLIO, P.NUM_PAR
         ";
 
-        // $sqlNotasVenta = "
-        //     SELECT DISTINCT
-        //         F.CAN_TOT,
-        //         P.UNI_VENTA,
-        //         F.IMPORTE,
-        //         I.LIN_PROD AS LINEA_PRODUCTO
-        //     FROM FACTV03 F
-        //     INNER JOIN PAR_FACTV03 P ON F.CVE_DOC = P.CVE_DOC
-        //     INNER JOIN INVE03      I ON I.CVE_ART = P.CVE_ART
-        //     WHERE F.STATUS = 'E'
-        //     AND F.FECHA_DOC >= ?
-        //     AND F.FECHA_DOC <= ?
-        // ";
         $sqlNotasVentaTotal = "
             SELECT
-             F.IMPORTE,
                 F.CVE_DOC,
                 F.IMPORTE
             FROM FACTV03 F
@@ -244,7 +250,7 @@ class ReportesProduccionController extends Controller
             ORDER BY CAST(F.FECHA_DOC AS DATE) ASC
         ";
 
-        $rows           = DB::connection('firebird')->select($sql, [$fechaInicioISO, $fechaFinExclusiva]);
+        $rows = DB::connection('firebird')->select($sql, [$fechaInicioISO, $fechaFinISO]);
         $rowsNotasVentaTotal = DB::connection('firebird')->select(
             $sqlNotasVentaTotal,
             [$fechaInicioISO, $fechaFinExclusiva]
@@ -337,9 +343,8 @@ class ReportesProduccionController extends Controller
 
         $rowsNVporDia = DB::connection('firebird')->select(
             $sqlNotasVentaPorDia,
-            [$fechaInicioISO, $fechaFinExclusiva]
+            [$fechaInicioISO, $fechaFinISO]
         );
-
         $unidades       = [];   // totales por unidad de medida (sin cambio)
         $notasPorLinea  = [];   // ← NUEVO: totales por línea PTPR / HILOS
 
@@ -462,8 +467,10 @@ class ReportesProduccionController extends Controller
                 ], 400);
             }
 
-            $fechaInicio       = substr($request->input('fecha_inicio'), 0, 10);
-            $fechaFin          = substr($request->input('fecha_fin'), 0, 10);
+            $fechaInicio = DateTime::createFromFormat('d.m.Y H:i:s', $request->input('fecha_inicio'))?->format('Y-m-d')
+                ?? substr($request->input('fecha_inicio'), 0, 10);
+            $fechaFin = DateTime::createFromFormat('d.m.Y H:i:s', $request->input('fecha_fin'))?->format('Y-m-d')
+                ?? substr($request->input('fecha_fin'), 0, 10);
             $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFin . ' +1 day'));
 
             $sql = "
@@ -1862,53 +1869,53 @@ class ReportesProduccionController extends Controller
     //     }
     // }
 
-public function getAllReports(Request $request)
-{
-    Log::info('getAllReports - INICIO');
-    try {
-        $validator = Validator::make($request->all(), [
-            'fecha_inicio' => 'required|string',
-            'fecha_fin'    => 'required|string',
-        ]);
+    public function getAllReports(Request $request)
+    {
+        Log::info('getAllReports - INICIO');
+        try {
+            $validator = Validator::make($request->all(), [
+                'fecha_inicio' => 'required|string',
+                'fecha_fin'    => 'required|string',
+            ]);
 
-        if ($validator->fails()) {
-            return response()->json(['success' => false, 'message' => 'Parámetros inválidos', 'errors' => $validator->errors()], 400);
+            if ($validator->fails()) {
+                return response()->json(['success' => false, 'message' => 'Parámetros inválidos', 'errors' => $validator->errors()], 400);
+            }
+
+            $fechaInicio = $request->input('fecha_inicio');
+            $fechaFin    = $request->input('fecha_fin');
+
+            if (!$this->validarFormatoFechaFirebird($fechaInicio) || !$this->validarFormatoFechaFirebird($fechaFin)) {
+                return response()->json(['success' => false, 'message' => 'Formato de fecha inválido. Use: dd.MM.yyyy HH:mm:ss'], 400);
+            }
+
+            $ttl = now()->addMinutes(5);
+            $h   = md5($fechaInicio . '|' . $fechaFin);
+
+            $data = [
+                'facturado'  => Cache::remember("rpt:facturado:$h",  $ttl, fn() => $this->getFacturadoData($fechaInicio, $fechaFin)),
+                // 'facturado'  => $this->getFacturadoData($fechaInicio, $fechaFin),
+                'embarques'  => Cache::remember("rpt:embarques:$h",  $ttl, fn() => $this->getEmbarquesData($fechaInicio, $fechaFin)),
+                'tejido'     => Cache::remember("rpt:tejido:$h",     $ttl, fn() => $this->getTejidoResumenData($fechaInicio, $fechaFin)),
+                'tintoreria' => Cache::remember("rpt:tintoreria:$h", $ttl, fn() => $this->getTintoreriaData($fechaInicio, $fechaFin)),
+                'estampados' => Cache::remember("rpt:estampados:$h", $ttl, fn() => $this->getEstampadosData($fechaInicio, $fechaFin)),
+                'acabado'    => Cache::remember("rpt:acabado:$h",    $ttl, fn() => $this->getAcabadoData($fechaInicio, $fechaFin)),
+                'produccion' => Cache::remember("rpt:produccion:$h", $ttl, fn() => $this->getProduccionTejidoData($fechaInicio, $fechaFin)),
+                'revisado'   => Cache::remember("rpt:revisado:$h",   $ttl, fn() => $this->getRevisadoTejidoData($fechaInicio, $fechaFin)),
+                'porRevisar' => Cache::remember("rpt:porrevisar:$h", $ttl, fn() => $this->getPorRevisarTejidoData($fechaInicio, $fechaFin)),
+                'saldos'     => Cache::remember("rpt:saldos:$h",     $ttl, fn() => $this->getSaldosTejidoData($fechaInicio, $fechaFin)),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data'    => $data,
+                'filtros' => ['fecha_inicio' => $fechaInicio, 'fecha_fin' => $fechaFin],
+            ], 200);
+        } catch (Throwable $e) {
+            Log::error('getAllReports - ERROR: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Error al obtener reportes consolidados', 'error' => $e->getMessage()], 500);
         }
-
-        $fechaInicio = $request->input('fecha_inicio');
-        $fechaFin    = $request->input('fecha_fin');
-
-        if (!$this->validarFormatoFechaFirebird($fechaInicio) || !$this->validarFormatoFechaFirebird($fechaFin)) {
-            return response()->json(['success' => false, 'message' => 'Formato de fecha inválido. Use: dd.MM.yyyy HH:mm:ss'], 400);
-        }
-
-        $ttl = now()->addMinutes(5);
-        $h   = md5($fechaInicio . '|' . $fechaFin);
-
-        $data = [
-            'facturado'  => Cache::remember("rpt:facturado:$h",  $ttl, fn() => $this->getFacturadoData($fechaInicio, $fechaFin)),
-            'embarques'  => Cache::remember("rpt:embarques:$h",  $ttl, fn() => $this->getEmbarquesData($fechaInicio, $fechaFin)),
-            'tejido'     => Cache::remember("rpt:tejido:$h",     $ttl, fn() => $this->getTejidoResumenData($fechaInicio, $fechaFin)),
-            'tintoreria' => Cache::remember("rpt:tintoreria:$h", $ttl, fn() => $this->getTintoreriaData($fechaInicio, $fechaFin)),
-            'estampados' => Cache::remember("rpt:estampados:$h", $ttl, fn() => $this->getEstampadosData($fechaInicio, $fechaFin)),
-            'acabado'    => Cache::remember("rpt:acabado:$h",    $ttl, fn() => $this->getAcabadoData($fechaInicio, $fechaFin)),
-            'produccion' => Cache::remember("rpt:produccion:$h", $ttl, fn() => $this->getProduccionTejidoData($fechaInicio, $fechaFin)),
-            'revisado'   => Cache::remember("rpt:revisado:$h",   $ttl, fn() => $this->getRevisadoTejidoData($fechaInicio, $fechaFin)),
-            'porRevisar' => Cache::remember("rpt:porrevisar:$h", $ttl, fn() => $this->getPorRevisarTejidoData($fechaInicio, $fechaFin)),
-            'saldos'     => Cache::remember("rpt:saldos:$h",     $ttl, fn() => $this->getSaldosTejidoData($fechaInicio, $fechaFin)),
-        ];
-
-        return response()->json([
-            'success' => true,
-            'data'    => $data,
-            'filtros' => ['fecha_inicio' => $fechaInicio, 'fecha_fin' => $fechaFin],
-        ], 200);
-
-    } catch (Throwable $e) {
-        Log::error('getAllReports - ERROR: ' . $e->getMessage());
-        return response()->json(['success' => false, 'message' => 'Error al obtener reportes consolidados', 'error' => $e->getMessage()], 500);
     }
-}
     private function getEmbarquesData($fechaInicio, $fechaFin)
     {
         $query = "
