@@ -40,7 +40,11 @@ class PedidosAgentesController extends Controller
         $fbDatabase = env('FB_DATABASE', '');
         preg_match('/\d{2}/', $fbDatabase, $matches);
         $empresa = $matches[0] ?? '03';
-        Log::info('empresa de pedidos', ['empresa' => $empresa]);
+        Log::info('empresa de pedidos', [
+            'empresa'     => $empresa,
+            'fb_database' => $fbDatabase,
+        ]);
+
         return $empresa;
     }
 
