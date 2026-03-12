@@ -168,18 +168,17 @@ class ReportesProduccionController extends Controller
                     'COMERCIALIZADORA FIBRASAN' AS EMPRESA,
                     'TELA' AS CLASIFICACION_PRODUCTO,
                     COALESCE(T.CODIGO || ' ' || AR.NOMBRE, I.CVE_ART) AS DESCRIPCION_PRODUCTO,
-                    TRIM(TRAILING FROM O.STR_OBS) AS COLOR,
                     COALESCE(COMP.CADCOMP || ' ' || HI.CODIGO, '-') AS COMPOSICION,
                     (SELECT FIRST 1 ACB2.DESCR
                     FROM ACABTIPO ACB2
                     WHERE ACB2.TIPO = AR.TIPOACAB
                     AND ACB2.ESTAMPADO = 0) AS COMPOSICION2,
-                    CAST(P.CANT AS NUMERIC(18,2)) AS KG,
+                    P.CANT AS KG,
                     P.UNI_VENTA AS UM,
                     CAST(P.PREC AS NUMERIC(18,2)) AS PRECIO_BRUTO,
                     CAST(P.CANT * P.PREC AS NUMERIC(18,2)) AS SUBTOTAL,
                     CAST(P.TOTIMP4 AS NUMERIC(18,2)) AS IVA,
-                    CAST(( (P.CANT * P.PREC) ) AS NUMERIC(18,2)) AS TOTAL
+                   P.CANT * P.PREC AS TOTAL
                 FROM FACTF03 F
                 INNER JOIN PAR_FACTF03   P    ON P.CVE_DOC  = F.CVE_DOC
                 INNER JOIN CLIE03        C    ON C.CLAVE    = F.CVE_CLPV
@@ -195,17 +194,19 @@ class ReportesProduccionController extends Controller
                     AND F.fecha_doc <= ?
                     AND P.CANT       > 0
                     AND I.LIN_PROD IN ('HILOS', 'PTPR')
-                    AND NOT EXISTS (
-                        SELECT 1
-                        FROM FACTD03 FD
-                        INNER JOIN PAR_FACTD03 PD ON PD.CVE_DOC = FD.CVE_DOC
-                        WHERE FD.CVE_DOC  = F.DOC_SIG
-                        AND FD.STATUS   = 'E'
-                        AND PD.CVE_ART  = P.CVE_ART
-                        AND PD.CANT     = P.CANT
-                    )
+                     AND F.TIP_DOC_SIG IS NULL
                 ORDER BY F.FECHA_DOC, F.FOLIO, P.NUM_PAR
         ";
+
+        //AND NOT EXISTS (
+        //     SELECT 1
+        //     FROM FACTD03 FD
+        //     INNER JOIN PAR_FACTD03 PD ON PD.CVE_DOC = FD.CVE_DOC
+        //     WHERE FD.CVE_DOC  = F.DOC_SIG
+        //     AND FD.STATUS   = 'E'
+        //     AND PD.CVE_ART  = P.CVE_ART
+        //     AND PD.CANT     = P.CANT
+        // )
 
         $sqlNotasVentaTotal = "
             SELECT
@@ -288,6 +289,15 @@ class ReportesProduccionController extends Controller
             ];
         }, $rows);
 
+        // ← AGREGA AQUÍ
+        $lbRows = array_filter($detalle, fn($i) => in_array(strtoupper(trim($i['um'] ?? '')), ['LB', 'LBS']));
+        Log::info('LB rows PTPR', [
+            'count'          => count($lbRows),
+            'cant_total_lb'  => array_sum(array_column(array_values($lbRows), 'cant')),
+            'cant_kg_eq'     => array_sum(array_column(array_values($lbRows), 'cant')) * 0.453592,
+            'muestra_um'     => array_unique(array_column(array_values($lbRows), 'um')), // ver cómo viene el string
+        ]);
+
         // ── Facturas únicas ───────────────────────────────────────────────────────
         $facturas = [];
         foreach ($rows as $r) {
@@ -309,31 +319,48 @@ class ReportesProduccionController extends Controller
         $totalGeneral  = array_sum(array_column($detalle, 'total'));
 
         // ── Totales por línea (PTPR / HILOS) ─────────────────────────────────────
+        $LB_TO_KG = 0.453592;
+
         $totalesPorLinea = [];
         foreach ($detalle as $item) {
             $linea = $item['linea_producto'] ?? 'SIN_LINEA';
+            $um    = strtoupper(trim($item['um'] ?? ''));
+            $cant  = (float) ($item['cant'] ?? 0);
 
             if (!isset($totalesPorLinea[$linea])) {
                 $totalesPorLinea[$linea] = [
-                    'cant'      => 0.0,
-                    'importe'   => 0.0,
-                    'impuestos' => 0.0,
-                    'total'     => 0.0,
+                    'cant'       => 0.0,   // suma cruda original (legacy, no tocar)
+                    'cant_kg'    => 0.0,   // registros con UM = KG/KGS
+                    'cant_lb'    => 0.0,   // registros con UM = LB/LBS
+                    'cant_kg_eq' => 0.0,   // todo convertido a KG
+                    'importe'    => 0.0,
+                    'impuestos'  => 0.0,
+                    'total'      => 0.0,
                 ];
             }
 
-            $totalesPorLinea[$linea]['cant']      += $item['cant'];
+            if (in_array($um, ['LB', 'LBS'])) {
+                $totalesPorLinea[$linea]['cant_lb']    += $cant;
+                $totalesPorLinea[$linea]['cant_kg_eq'] += $cant * $LB_TO_KG;
+            } else {
+                $totalesPorLinea[$linea]['cant_kg']    += $cant;
+                $totalesPorLinea[$linea]['cant_kg_eq'] += $cant;
+            }
+
+            $totalesPorLinea[$linea]['cant']      += $cant;
             $totalesPorLinea[$linea]['importe']   += $item['importe'];
             $totalesPorLinea[$linea]['impuestos'] += $item['impuestos'];
             $totalesPorLinea[$linea]['total']     += $item['total'];
         }
 
-        // Redondear para evitar floating point feo
         foreach ($totalesPorLinea as $linea => $vals) {
-            $totalesPorLinea[$linea]['cant']      = round($vals['cant'],      2);
-            $totalesPorLinea[$linea]['importe']   = round($vals['importe'],   2);
-            $totalesPorLinea[$linea]['impuestos'] = round($vals['impuestos'], 2);
-            $totalesPorLinea[$linea]['total']     = round($vals['total'],     2);
+            $totalesPorLinea[$linea]['cant']       = round($vals['cant'],       2);
+            $totalesPorLinea[$linea]['cant_kg']    = round($vals['cant_kg'],    2);
+            $totalesPorLinea[$linea]['cant_lb']    = round($vals['cant_lb'],    2);
+            $totalesPorLinea[$linea]['cant_kg_eq'] = round($vals['cant_kg_eq'], 2);
+            $totalesPorLinea[$linea]['importe']    = round($vals['importe'],    2);
+            $totalesPorLinea[$linea]['impuestos']  = round($vals['impuestos'],  2);
+            $totalesPorLinea[$linea]['total']      = round($vals['total'],      2);
         }
 
         // ── Notas de venta ────────────────────────────────────────────────────────
@@ -508,7 +535,7 @@ class ReportesProduccionController extends Controller
                 CAST(P.CANT AS NUMERIC(18,2)) AS KG,
                 P.UNI_VENTA AS UM,
                 CAST(P.PREC AS NUMERIC(18,2)) AS PRECIO_BRUTO,
-                CAST(P.CANT * P.PREC AS NUMERIC(18,2)) AS SUBTOTAL,
+                P.CANT * P.PREC AS SUBTOTAL,
                 CAST(P.TOTIMP4 AS NUMERIC(18,2)) AS IVA,
                 CAST(( (P.CANT * P.PREC)  ) AS NUMERIC(18,2)) AS TOTAL
             FROM FACTF03 F
