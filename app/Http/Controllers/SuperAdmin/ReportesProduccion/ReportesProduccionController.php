@@ -117,6 +117,368 @@ class ReportesProduccionController extends Controller
         }
     }
 
+    // private function getFacturadoData($fechaInicio, $fechaFin)
+    // {
+    //     // $fechaInicioISO    = substr($fechaInicio, 0, 10);
+    //     // $fechaFinISO       = substr($fechaFin, 0, 10);
+    //     // $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFinISO . ' +1 day'));
+
+
+    //     Log::info('getFacturadoData - fechas RAW', [
+    //         'fechaInicio_raw' => $fechaInicio,
+    //         'fechaFin_raw'    => $fechaFin,
+    //     ]);
+
+    //     $fechaInicioISO = \DateTime::createFromFormat('d.m.Y H:i:s', $fechaInicio)?->format('Y-m-d')
+    //         ?? substr($fechaInicio, 0, 10);
+    //     $fechaFinISO    = \DateTime::createFromFormat('d.m.Y H:i:s', $fechaFin)?->format('Y-m-d')
+    //         ?? substr($fechaFin, 0, 10);
+    //     $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFinISO . ' +1 day'));
+
+    //     Log::info('getFacturadoData - fechas CALCULADAS', [
+    //         'fechaInicioISO'    => $fechaInicioISO,
+    //         'fechaFinISO'       => $fechaFinISO,
+    //         'fechaFinExclusiva' => $fechaFinExclusiva,
+    //     ]);
+
+
+    //     $sql = "
+    //             SELECT
+    //                 F.FECHA_DOC AS FECHA,
+    //                 CASE EXTRACT(MONTH FROM F.FECHA_DOC)
+    //                     WHEN 1  THEN 'ENERO'
+    //                     WHEN 2  THEN 'FEBRERO'
+    //                     WHEN 3  THEN 'MARZO'
+    //                     WHEN 4  THEN 'ABRIL'
+    //                     WHEN 5  THEN 'MAYO'
+    //                     WHEN 6  THEN 'JUNIO'
+    //                     WHEN 7  THEN 'JULIO'
+    //                     WHEN 8  THEN 'AGOSTO'
+    //                     WHEN 9  THEN 'SEPTIEMBRE'
+    //                     WHEN 10 THEN 'OCTUBRE'
+    //                     WHEN 11 THEN 'NOVIEMBRE'
+    //                     WHEN 12 THEN 'DICIEMBRE'
+    //                 END AS MES,
+    //                 C.NOMBRE AS CLIENTE,
+    //                 CAST(F.FOLIO AS VARCHAR(20)) AS FACTURA,
+    //                 '-' AS REMISION,
+    //                 F.CVE_PEDI AS PEDIDO,
+    //                 I.LIN_PROD AS LINEA_PRODUCTO,
+    //                 'Z100' AS MODALIDAD,
+    //                 'COMERCIALIZADORA FIBRASAN' AS EMPRESA,
+    //                 'TELA' AS CLASIFICACION_PRODUCTO,
+    //                 COALESCE(T.CODIGO || ' ' || AR.NOMBRE, I.CVE_ART) AS DESCRIPCION_PRODUCTO,
+    //                 COALESCE(COMP.CADCOMP || ' ' || HI.CODIGO, '-') AS COMPOSICION,
+    //                 (SELECT FIRST 1 ACB2.DESCR
+    //                 FROM ACABTIPO ACB2
+    //                 WHERE ACB2.TIPO = AR.TIPOACAB
+    //                 AND ACB2.ESTAMPADO = 0) AS COMPOSICION2,
+    //                 P.CANT AS KG,
+    //                 P.UNI_VENTA AS UM,
+    //                 CAST(P.PREC AS NUMERIC(18,2)) AS PRECIO_BRUTO,
+    //                 CAST(P.CANT * P.PREC AS NUMERIC(18,2)) AS SUBTOTAL,
+    //                 CAST(P.TOTIMP4 AS NUMERIC(18,2)) AS IVA,
+    //                P.CANT * P.PREC AS TOTAL
+    //             FROM FACTF03 F
+    //             INNER JOIN PAR_FACTF03   P    ON P.CVE_DOC  = F.CVE_DOC
+    //             INNER JOIN CLIE03        C    ON C.CLAVE    = F.CVE_CLPV
+    //             INNER JOIN INVE03        I    ON I.CVE_ART  = P.CVE_ART
+    //             LEFT  JOIN ARTICULOS     AR   ON AR.CVE_ART = I.CVE_ART
+    //             LEFT  JOIN TEJIDO        T    ON T.ID       = AR.TEJ
+    //             LEFT  JOIN COMPOSICION   COMP ON COMP.ID    = AR.COMP
+    //             LEFT  JOIN HILATURA      HI   ON HI.ID      = AR.HILAT
+    //             LEFT  JOIN OBS_DOCF03    O    ON O.CVE_OBS  = P.CVE_OBS
+    //             WHERE
+    //                 F.STATUS        = 'E'
+    //                 AND F.fecha_doc >= ?
+    //                 AND F.fecha_doc <= ?
+    //                 AND P.CANT       > 0
+    //                 AND I.LIN_PROD IN ('HILOS', 'PTPR')
+    //                  AND F.TIP_DOC_SIG IS NULL
+    //             ORDER BY F.FECHA_DOC, F.FOLIO, P.NUM_PAR
+    //     ";
+
+    //     //AND NOT EXISTS (
+    //     //     SELECT 1
+    //     //     FROM FACTD03 FD
+    //     //     INNER JOIN PAR_FACTD03 PD ON PD.CVE_DOC = FD.CVE_DOC
+    //     //     WHERE FD.CVE_DOC  = F.DOC_SIG
+    //     //     AND FD.STATUS   = 'E'
+    //     //     AND PD.CVE_ART  = P.CVE_ART
+    //     //     AND PD.CANT     = P.CANT
+    //     // )
+
+    //     $sqlNotasVentaTotal = "
+    //         SELECT
+    //             F.CVE_DOC,
+    //             F.IMPORTE
+    //         FROM FACTV03 F
+    //         WHERE F.STATUS = 'E'
+    //         AND F.FECHA_DOC >= ?
+    //         AND F.FECHA_DOC < ?
+    //     ";
+
+    //     $sqlNotasVentaCant = "
+    //         SELECT
+    //             P.CANT,
+    //             P.UNI_VENTA,
+    //             F.CAN_TOT,
+    //             F.IMPORTE,
+    //             I.LIN_PROD AS LINEA_PRODUCTO
+    //         FROM FACTV03 F
+    //         INNER JOIN PAR_FACTV03 P ON F.CVE_DOC = P.CVE_DOC
+    //         INNER JOIN INVE03 I ON I.CVE_ART = P.CVE_ART
+    //         WHERE F.STATUS = 'E'
+    //         AND F.FECHA_DOC >= ?
+    //         AND F.FECHA_DOC < ?
+    //     ";
+
+    //     $sqlNotasVentaPorDia = "
+    //         SELECT
+    //             CAST(F.FECHA_DOC AS DATE)                     AS FECHA,
+    //             I.LIN_PROD                                    AS LINEA_PRODUCTO,
+    //             COUNT(DISTINCT F.CVE_DOC)                     AS REGISTROS,
+    //             CAST(SUM(F.IMPORTE) AS NUMERIC(18,2))         AS TOTAL_NV,
+    //             P.UNI_VENTA                                   AS UM,
+    //             CAST(SUM(P.CANT) AS NUMERIC(18,2))            AS CANT
+    //         FROM FACTV03 F
+    //         INNER JOIN PAR_FACTV03 P ON F.CVE_DOC = P.CVE_DOC
+    //         INNER JOIN INVE03      I ON I.CVE_ART = P.CVE_ART
+    //         WHERE F.STATUS = 'E'
+    //         AND F.FECHA_DOC >= ?
+    //         AND F.FECHA_DOC <= ?
+    //         GROUP BY CAST(F.FECHA_DOC AS DATE), I.LIN_PROD, P.UNI_VENTA
+    //         ORDER BY CAST(F.FECHA_DOC AS DATE) ASC
+    //     ";
+
+    //     $rows = DB::connection('firebird')->select($sql, [$fechaInicioISO, $fechaFinISO]);
+    //     $rowsNotasVentaTotal = DB::connection('firebird')->select(
+    //         $sqlNotasVentaTotal,
+    //         [$fechaInicioISO, $fechaFinExclusiva]
+    //     );
+
+    //     $rowsNotasVentaCant = DB::connection('firebird')->select(
+    //         $sqlNotasVentaCant,
+    //         [$fechaInicioISO, $fechaFinExclusiva]
+    //     );
+
+    //     // ── Mapeo del detalle ─────────────────────────────────────────────────────
+    //     $detalle = array_map(function ($r) {
+    //         return [
+    //             'fecha'                  => $r->FECHA                  ?? null,
+    //             'mes'                    => $r->MES                    ?? null,
+    //             'cliente'                => $r->CLIENTE                ?? null,
+    //             'factura'                => $r->FACTURA                ?? null,
+    //             'remision'               => $r->REMISION               ?? '-',
+    //             'pedido'                 => $r->PEDIDO                 ?? null,
+    //             'linea_producto'         => $r->LINEA_PRODUCTO         ?? null,  // ← AGREGADO
+    //             'modalidad'              => $r->MODALIDAD              ?? null,
+    //             'empresa'                => $r->EMPRESA                ?? null,
+    //             'clasificacion_producto' => $r->CLASIFICACION_PRODUCTO ?? null,
+    //             'descripcion_producto'   => $r->DESCRIPCION_PRODUCTO   ?? null,
+    //             'color'                  => $r->COLOR                  ?? null,
+    //             'composicion'            => $r->COMPOSICION            ?? null,
+    //             'composicion2'           => $r->COMPOSICION2           ?? null,
+    //             'precio_bruto'           => (float) ($r->PRECIO_BRUTO  ?? 0),
+    //             'iva'                    => (float) ($r->IVA            ?? 0),
+    //             'impuestos'              => (float) ($r->IVA            ?? 0),
+    //             'total'                  => (float) ($r->TOTAL          ?? 0),
+    //             'importe'                => (float) ($r->SUBTOTAL       ?? 0),
+    //             'um'                     => $r->UM                     ?? null,
+    //             'cant'                   => (float) ($r->KG             ?? 0),
+    //         ];
+    //     }, $rows);
+
+    //     // ← AGREGA AQUÍ
+    //     $lbRows = array_filter($detalle, fn($i) => in_array(strtoupper(trim($i['um'] ?? '')), ['LB', 'LBS']));
+    //     Log::info('LB rows PTPR', [
+    //         'count'          => count($lbRows),
+    //         'cant_total_lb'  => array_sum(array_column(array_values($lbRows), 'cant')),
+    //         'cant_kg_eq'     => array_sum(array_column(array_values($lbRows), 'cant')) * 0.453592,
+    //         'muestra_um'     => array_unique(array_column(array_values($lbRows), 'um')), // ver cómo viene el string
+    //     ]);
+
+    //     // ── Facturas únicas ───────────────────────────────────────────────────────
+    //     $facturas = [];
+    //     foreach ($rows as $r) {
+    //         $fac = $r->FACTURA ?? null;
+    //         if (!$fac) continue;
+    //         if (!isset($facturas[$fac])) {
+    //             $facturas[$fac] = [
+    //                 'importe' => (float) ($r->SUBTOTAL ?? 0),
+    //                 'iva'     => (float) ($r->IVA      ?? 0),
+    //                 'total'   => (float) ($r->TOTAL    ?? 0),
+    //             ];
+    //         }
+    //     }
+
+    //     // ── Totales generales ─────────────────────────────────────────────────────
+    //     $totalKg       = array_sum(array_column($detalle, 'cant'));
+    //     $totalSubtotal = array_sum(array_column($detalle, 'importe'));
+    //     $totalIva      = array_sum(array_column($detalle, 'iva'));
+    //     $totalGeneral  = array_sum(array_column($detalle, 'total'));
+
+    //     // ── Totales por línea (PTPR / HILOS) ─────────────────────────────────────
+    //     $LB_TO_KG = 0.453592;
+
+    //     $totalesPorLinea = [];
+    //     foreach ($detalle as $item) {
+    //         $linea = $item['linea_producto'] ?? 'SIN_LINEA';
+    //         $um    = strtoupper(trim($item['um'] ?? ''));
+    //         $cant  = (float) ($item['cant'] ?? 0);
+
+    //         if (!isset($totalesPorLinea[$linea])) {
+    //             $totalesPorLinea[$linea] = [
+    //                 'cant'       => 0.0,   // suma cruda original (legacy, no tocar)
+    //                 'cant_kg'    => 0.0,   // registros con UM = KG/KGS
+    //                 'cant_lb'    => 0.0,   // registros con UM = LB/LBS
+    //                 'cant_kg_eq' => 0.0,   // todo convertido a KG
+    //                 'importe'    => 0.0,
+    //                 'impuestos'  => 0.0,
+    //                 'total'      => 0.0,
+    //             ];
+    //         }
+
+    //         if (in_array($um, ['LB', 'LBS'])) {
+    //             $totalesPorLinea[$linea]['cant_lb']    += $cant;
+    //             $totalesPorLinea[$linea]['cant_kg_eq'] += $cant * $LB_TO_KG;
+    //         } else {
+    //             $totalesPorLinea[$linea]['cant_kg']    += $cant;
+    //             $totalesPorLinea[$linea]['cant_kg_eq'] += $cant;
+    //         }
+
+    //         $totalesPorLinea[$linea]['cant']      += $cant;
+    //         $totalesPorLinea[$linea]['importe']   += $item['importe'];
+    //         $totalesPorLinea[$linea]['impuestos'] += $item['impuestos'];
+    //         $totalesPorLinea[$linea]['total']     += $item['total'];
+    //     }
+
+    //     foreach ($totalesPorLinea as $linea => $vals) {
+    //         $totalesPorLinea[$linea]['cant']       = round($vals['cant'],       2);
+    //         $totalesPorLinea[$linea]['cant_kg']    = round($vals['cant_kg'],    2);
+    //         $totalesPorLinea[$linea]['cant_lb']    = round($vals['cant_lb'],    2);
+    //         $totalesPorLinea[$linea]['cant_kg_eq'] = round($vals['cant_kg_eq'], 2);
+    //         $totalesPorLinea[$linea]['importe']    = round($vals['importe'],    2);
+    //         $totalesPorLinea[$linea]['impuestos']  = round($vals['impuestos'],  2);
+    //         $totalesPorLinea[$linea]['total']      = round($vals['total'],      2);
+    //     }
+
+    //     // ── Notas de venta ────────────────────────────────────────────────────────
+    //     $totalNotasVenta = array_sum(
+    //         array_map(fn($r) => (float) ($r->IMPORTE ?? 0), $rowsNotasVentaTotal)
+    //     );
+
+    //     $rowsNVporDia = DB::connection('firebird')->select(
+    //         $sqlNotasVentaPorDia,
+    //         [$fechaInicioISO, $fechaFinISO]
+    //     );
+    //     $unidades       = [];   // totales por unidad de medida (sin cambio)
+    //     $notasPorLinea  = [];   // ← NUEVO: totales por línea PTPR / HILOS
+
+    //     foreach ($rowsNotasVentaCant as $r) {
+    //         $um    = $r->UNI_VENTA      ?? 'SIN_UM';
+    //         $linea = $r->LINEA_PRODUCTO ?? 'SIN_LINEA';
+    //         if ($linea === 'PTPR') {
+    //             $cant = (float) ($r->CANT ?? 0);     // peso real
+    //         } else {
+    //             $cant = (float) ($r->CAN_TOT ?? 0);  // piezas / total
+    //         }
+    //         $imp   = (float) ($r->IMPORTE ?? 0);
+
+    //         // — por unidad de medida (ya existía) —
+    //         if (!isset($unidades[$um])) {
+    //             $unidades[$um] = ['um' => $um, 'cant' => 0];
+    //         }
+    //         $unidades[$um]['cant'] += $cant;
+
+    //         // — por línea de producto (NUEVO) —
+    //         if (!isset($notasPorLinea[$linea])) {
+    //             $notasPorLinea[$linea] = [
+    //                 'cant'  => 0.0,
+    //                 'total' => 0.0,
+    //             ];
+    //         }
+    //         $notasPorLinea[$linea]['cant']  += $cant;
+    //         $notasPorLinea[$linea]['total'] += $imp;
+    //     }
+
+    //     // Redondear
+    //     foreach ($notasPorLinea as $linea => $vals) {
+    //         $notasPorLinea[$linea]['cant']  = round($vals['cant'],  2);
+    //         $notasPorLinea[$linea]['total'] = round($vals['total'], 2);
+    //     }
+
+    //     $notasVentaPorDia = [];
+    //     foreach ($rowsNVporDia as $r) {
+    //         $fecha = substr($r->FECHA ?? '', 0, 10);
+    //         $linea = $r->LINEA_PRODUCTO ?? 'SIN_LINEA';
+
+    //         if (!isset($notasVentaPorDia[$fecha])) {
+    //             $notasVentaPorDia[$fecha] = [
+    //                 'registros' => 0,
+    //                 'total_nv'  => 0.0,
+    //                 'unidades'  => [],
+    //                 'por_linea' => [],   // ← NUEVO
+    //             ];
+    //         }
+
+    //         $notasVentaPorDia[$fecha]['registros'] += (int)   ($r->REGISTROS ?? 0);
+    //         $notasVentaPorDia[$fecha]['total_nv']  += (float) ($r->TOTAL_NV  ?? 0);
+
+    //         $notasVentaPorDia[$fecha]['unidades'][] = [
+    //             'um'   => $r->UM   ?? 'N/A',
+    //             'cant' => (float) ($r->CANT ?? 0),
+    //         ];
+
+    //         // ← NUEVO: acumular por línea dentro del día
+    //         if (!isset($notasVentaPorDia[$fecha]['por_linea'][$linea])) {
+    //             $notasVentaPorDia[$fecha]['por_linea'][$linea] = [
+    //                 'cant'  => 0.0,
+    //                 'total' => 0.0,
+    //             ];
+    //         }
+    //         $notasVentaPorDia[$fecha]['por_linea'][$linea]['cant']  += (float) ($r->CANT     ?? 0);
+    //         $notasVentaPorDia[$fecha]['por_linea'][$linea]['total'] += (float) ($r->TOTAL_NV ?? 0);
+    //     }
+
+    //     // Redondear por_linea dentro de cada día
+    //     foreach ($notasVentaPorDia as $fecha => $data) {
+    //         foreach ($data['por_linea'] as $linea => $vals) {
+    //             $notasVentaPorDia[$fecha]['por_linea'][$linea]['cant']  = round($vals['cant'],  2);
+    //             $notasVentaPorDia[$fecha]['por_linea'][$linea]['total'] = round($vals['total'], 2);
+    //         }
+    //         $notasVentaPorDia[$fecha]['total_nv'] = round($data['total_nv'], 2);
+    //     }
+
+    //     $unidades = array_values($unidades);
+
+    //     return [
+    //         'totales' => [
+    //             'facturas'  => count($facturas),
+    //             'cant'      => round((float) $totalKg,       2),
+    //             'importe'   => round((float) $totalSubtotal, 2),
+    //             'impuestos' => round((float) $totalIva,      2),
+    //             'total'     => round((float) $totalGeneral,  2),
+    //         ],
+    //         'por_linea'           => $totalesPorLinea,      // ← PTPR y HILOS desglosados
+    //         'notas_venta' => [
+    //             'registros' => count($rowsNotasVentaTotal),
+    //             'total'     => $totalNotasVenta,
+    //             'unidades'  => $unidades,
+    //             'por_linea' => $notasPorLinea,
+    //         ],
+    //         'notas_venta_por_dia' => $notasVentaPorDia,
+    //         'detalle'             => $detalle,
+    //         'filtros' => [
+    //             'fecha_inicio'        => $fechaInicioISO,
+    //             'fecha_fin'           => $fechaFinISO,
+    //             'fecha_fin_exclusiva' => $fechaFinExclusiva,
+    //             'total_registros'     => count($rows),
+    //         ],
+    //     ];
+    // }
+
+
     private function getFacturadoData($fechaInicio, $fechaFin)
     {
         // $fechaInicioISO    = substr($fechaInicio, 0, 10);
@@ -251,6 +613,47 @@ class ReportesProduccionController extends Controller
             ORDER BY CAST(F.FECHA_DOC AS DATE) ASC
         ";
 
+
+        $sqlDevoluciones = "
+        SELECT
+            FD.FECHA_DOC                                    AS FECHA,
+            CASE EXTRACT(MONTH FROM FD.FECHA_DOC)
+                WHEN 1  THEN 'ENERO'    WHEN 2  THEN 'FEBRERO'
+                WHEN 3  THEN 'MARZO'    WHEN 4  THEN 'ABRIL'
+                WHEN 5  THEN 'MAYO'     WHEN 6  THEN 'JUNIO'
+                WHEN 7  THEN 'JULIO'    WHEN 8  THEN 'AGOSTO'
+                WHEN 9  THEN 'SEPTIEMBRE' WHEN 10 THEN 'OCTUBRE'
+                WHEN 11 THEN 'NOVIEMBRE'  WHEN 12 THEN 'DICIEMBRE'
+            END                                             AS MES,
+            C.NOMBRE                                        AS CLIENTE,
+            CAST(FD.FOLIO AS VARCHAR(20))                   AS NOTA_CREDITO,
+            CAST(F.FOLIO  AS VARCHAR(20))                   AS FACTURA_ORIGEN,
+            I.LIN_PROD                                      AS LINEA_PRODUCTO,
+            PD.CVE_ART                                      AS CVE_ART,
+            COALESCE(T.CODIGO || ' ' || AR.NOMBRE, I.CVE_ART) AS DESCRIPCION_PRODUCTO,
+            PD.CANT                                         AS CANT,
+            PD.UNI_VENTA                                    AS UM,
+            CAST(PD.PREC          AS NUMERIC(18,2))         AS PRECIO_BRUTO,
+            CAST(PD.CANT * PD.PREC AS NUMERIC(18,2))        AS SUBTOTAL,
+            CAST(PD.TOTIMP4       AS NUMERIC(18,2))         AS IVA,
+            PD.CANT * PD.PREC                               AS TOTAL
+        FROM FACTF03 F
+        INNER JOIN FACTD03       FD   ON FD.CVE_DOC  = F.DOC_SIG
+        INNER JOIN PAR_FACTD03   PD   ON PD.CVE_DOC  = FD.CVE_DOC
+        INNER JOIN CLIE03        C    ON C.CLAVE      = FD.CVE_CLPV
+        INNER JOIN INVE03        I    ON I.CVE_ART    = PD.CVE_ART
+        LEFT  JOIN ARTICULOS     AR   ON AR.CVE_ART   = I.CVE_ART
+        LEFT  JOIN TEJIDO        T    ON T.ID          = AR.TEJ
+       WHERE
+    FD.STATUS   = 'E'
+    AND F.STATUS = 'E'
+    AND F.FECHA_DOC >= ?
+    AND F.FECHA_DOC <= ?
+    AND PD.CANT       > 0
+    AND I.LIN_PROD IN ('HILOS', 'PTPR')
+        ORDER BY FD.FECHA_DOC, FD.FOLIO, PD.NUM_PAR
+     ";
+
         $rows = DB::connection('firebird')->select($sql, [$fechaInicioISO, $fechaFinISO]);
         $rowsNotasVentaTotal = DB::connection('firebird')->select(
             $sqlNotasVentaTotal,
@@ -261,6 +664,22 @@ class ReportesProduccionController extends Controller
             $sqlNotasVentaCant,
             [$fechaInicioISO, $fechaFinExclusiva]
         );
+
+
+        $rowsDevoluciones = DB::connection('firebird')->select(
+            $sqlDevoluciones,
+            [$fechaInicioISO, $fechaFinISO]
+        );
+
+        Log::info('devoluciones RAW', [
+    'count' => count($rowsDevoluciones),
+    'registros' => array_map(fn($r) => [
+        'nota'           => $r->NOTA_CREDITO   ?? null,
+        'factura_origen' => $r->FACTURA_ORIGEN ?? null,
+        'fecha_fd'       => $r->FECHA          ?? null,
+        'cant'           => $r->CANT           ?? null,
+    ], $rowsDevoluciones),
+]);
 
         // ── Mapeo del detalle ─────────────────────────────────────────────────────
         $detalle = array_map(function ($r) {
@@ -310,6 +729,46 @@ class ReportesProduccionController extends Controller
                     'total'   => (float) ($r->TOTAL    ?? 0),
                 ];
             }
+        }
+
+        // __notas de devolucion_____________________________________________________
+
+        $devoluciones = array_map(function ($r) {
+            return [
+                'fecha'               => $r->FECHA               ?? null,
+                'mes'                 => $r->MES                 ?? null,
+                'cliente'             => $r->CLIENTE             ?? null,
+                'nota_credito'        => $r->NOTA_CREDITO        ?? null,
+                'factura_origen'      => $r->FACTURA_ORIGEN      ?? null,
+                'linea_producto'      => $r->LINEA_PRODUCTO      ?? null,
+                'descripcion_producto' => $r->DESCRIPCION_PRODUCTO ?? null,
+                'cant'                => (float) ($r->CANT       ?? 0),
+                'um'                  => $r->UM                  ?? null,
+                'precio_bruto'        => (float) ($r->PRECIO_BRUTO ?? 0),
+                'importe'             => (float) ($r->SUBTOTAL   ?? 0),
+                'iva'                 => (float) ($r->IVA        ?? 0),
+                'total'               => (float) ($r->TOTAL      ?? 0),
+            ];
+        }, $rowsDevoluciones);
+
+        // Totales de devoluciones por línea
+        $devPorLinea = [];
+        $LB_TO_KG = 0.453592;
+
+        foreach ($devoluciones as $item) {
+            $linea = $item['linea_producto'] ?? 'SIN_LINEA';
+            $um    = strtoupper(trim($item['um'] ?? ''));
+            $cant  = $item['cant'];
+
+            if (!isset($devPorLinea[$linea])) {
+                $devPorLinea[$linea] = ['cant_kg_eq' => 0.0, 'importe' => 0.0, 'total' => 0.0];
+            }
+
+            $devPorLinea[$linea]['cant_kg_eq'] += in_array($um, ['LB', 'LBS'])
+                ? $cant * $LB_TO_KG
+                : $cant;
+            $devPorLinea[$linea]['importe']    += $item['importe'];
+            $devPorLinea[$linea]['total']      += $item['total'];
         }
 
         // ── Totales generales ─────────────────────────────────────────────────────
@@ -466,6 +925,18 @@ class ReportesProduccionController extends Controller
                 'total'     => $totalNotasVenta,
                 'unidades'  => $unidades,
                 'por_linea' => $notasPorLinea,
+            ],
+            'devoluciones' => [
+                'registros' => count($devoluciones),
+                'fecha_inicio' => $fechaInicioISO,
+                'fecha_fin'    => $fechaFinISO,
+                'cant'         => round(array_sum(array_column($devoluciones, 'cant')),    2),
+                'um' => array_values(array_unique(array_column($devoluciones, 'um'))), // ['KG', 'LB'] lo que sea que venga
+                'subtotal'     => round(array_sum(array_column($devoluciones, 'importe')), 2),
+                'iva'          => round(array_sum(array_column($devoluciones, 'iva')),     2),
+                'total'        => round(array_sum(array_column($devoluciones, 'total')),   2),
+                'por_linea'    => $devPorLinea,
+                'detalle'      => $devoluciones,
             ],
             'notas_venta_por_dia' => $notasVentaPorDia,
             'detalle'             => $detalle,
