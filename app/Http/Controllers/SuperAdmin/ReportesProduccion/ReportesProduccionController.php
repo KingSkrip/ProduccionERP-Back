@@ -556,9 +556,10 @@ class ReportesProduccionController extends Controller
                     AND F.fecha_doc <= ?
                     AND P.CANT       > 0
                     AND I.LIN_PROD IN ('HILOS', 'PTPR')
-                     AND F.TIP_DOC_SIG IS NULL
+                     
                 ORDER BY F.FECHA_DOC, F.FOLIO, P.NUM_PAR
         ";
+//AND F.TIP_DOC_SIG IS NULL
 
         //AND NOT EXISTS (
         //     SELECT 1
