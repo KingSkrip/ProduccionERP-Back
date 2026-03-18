@@ -148,6 +148,176 @@ class PedidosAgentesController extends Controller
         return $cache = $pedidos->values();
     }
 
+
+
+    /**
+     * Query directa reemplazando P_PEDIDOSENCMAIN
+     * Firebird pagina con FIRST/SKIP — solo trae los registros necesarios
+     */
+protected function getPedidosPaginadoDirecto(
+    int $limit,
+    int $offset,
+    ?int $cveVend = null,
+    bool $excluirBloqueados = false,
+    ?string $condicion = null
+): array {
+    $empresa     = $this->getEmpresa();
+    $whereAgente = $cveVend ? "AND P.AGENTE = '{$cveVend}'" : '';
+
+    // Siempre solo parciales — hardcodeado
+    $whereEstado = "AND P.PARCOCOMPL = 'P'";
+
+    $whereCondicion = '';
+    if ($condicion && $condicion !== 'todas') {
+        $condicionMap = ['Credito' => 1, 'Sin definir' => 0];
+        if (isset($condicionMap[$condicion])) {
+            $whereCondicion = "AND P.COND = {$condicionMap[$condicion]}";
+        }
+    }
+
+    $whereBloqueados = '';
+    if ($excluirBloqueados && !empty($this->clientesBloqueados)) {
+        $bloqueadosEscapados = array_map(
+            fn($n) => "'" . addslashes(strtoupper($n)) . "'",
+            $this->clientesBloqueados
+        );
+        $whereBloqueados = 'AND UPPER(TRIM(C.NOMBRE)) NOT IN (' . implode(',', $bloqueadosEscapados) . ')';
+    }
+
+    $filtrosComunes = "{$whereAgente} {$whereEstado} {$whereCondicion} {$whereBloqueados}";
+
+    $countSql = "SELECT COUNT(*) AS TOTAL
+                 FROM (
+                     SELECT P.CVE_CTE
+                     FROM PEDIDOSENC P
+                     LEFT JOIN CLIE{$empresa} C ON C.CLAVE = P.CVE_CTE
+                     WHERE P.ESTATUS IN (1, 2, 3)
+                       AND P.CVE_CTE IS NOT NULL
+                       AND TRIM(P.CVE_CTE) <> ''
+                       {$filtrosComunes}
+                     GROUP BY P.CVE_CTE
+                 )";
+
+    $countResult   = $this->fb()->select($countSql);
+    $totalClientes = (int) ($countResult[0]->TOTAL ?? 0);
+
+    if ($totalClientes === 0) {
+        return ['pedidos' => collect(), 'totalClientes' => 0];
+    }
+
+    $clientesSql = "SELECT FIRST {$limit} SKIP {$offset}
+                        P.CVE_CTE,
+                        MIN(C.NOMBRE) AS NOMBRE_CTE
+                    FROM PEDIDOSENC P
+                    LEFT JOIN CLIE{$empresa} C ON C.CLAVE = P.CVE_CTE
+                    WHERE P.ESTATUS IN (1, 2, 3)
+                      AND P.CVE_CTE IS NOT NULL
+                      AND TRIM(P.CVE_CTE) <> ''
+                      {$filtrosComunes}
+                    GROUP BY P.CVE_CTE
+                    ORDER BY MIN(C.NOMBRE) ASC";
+
+    $clientesPagina = collect($this->fb()->select($clientesSql))
+        ->pluck('CVE_CTE')
+        ->filter()
+        ->values()
+        ->toArray();
+
+    if (empty($clientesPagina)) {
+        return ['pedidos' => collect(), 'totalClientes' => $totalClientes];
+    }
+
+    $placeholders = implode(',', array_fill(0, count($clientesPagina), '?'));
+
+    $sql = "SELECT
+                P.ID, P.ANIO, P.PEDIDON, P.PEDIDO,
+                CASE COALESCE(P.VE,0) WHEN 0 THEN 'NACIONAL' WHEN 1 THEN 'EXPORTACION' END AS TIPO_VENTA,
+                P.ESTATUS AS NESTATUS,
+                CASE COALESCE(P.ESTATUS,0)
+                    WHEN 1 THEN 'ACTIVO' WHEN 2 THEN 'CON O.P.' WHEN 3 THEN 'PARCIAL'
+                    WHEN 4 THEN 'COMPLETADO' WHEN 99 THEN 'CANCELADO' ELSE 'SIN ESTATUS' END AS ESTATUS,
+                COALESCE(P.AUTORIZAVTAS,0) AS AUTORIZA,
+                CASE COALESCE(P.AUTORIZAVTAS,0)+COALESCE(P.AUTORIZACRED,0)+COALESCE(P.AUTORIZADIR,0)+COALESCE(P.AUTORIZAESP,0)
+                    WHEN 2 THEN 'AUTORIZADO' WHEN 3 THEN 'AUTORIZADO' WHEN 4 THEN 'AUTORIZADO'
+                    ELSE 'POR AUTORIZAR' END AS AUTORIZADO,
+                P.CVE_CTE,
+                COALESCE(C.NOMBRE,'') AS CLIENTE,
+                COALESCE(P.REFER_CTE,'') AS REFERENCIA,
+                P.TIPO AS TIPON,
+                CASE P.TIPO WHEN 0 THEN 'Z100' WHEN 1 THEN 'Z200' WHEN 2 THEN 'Z100/Z200' END AS TIPO,
+                COALESCE(P.CREDITO,0) AS CREDITON,
+                CASE COALESCE(P.CREDITO,0) WHEN 1 THEN 'SI' ELSE 'NO' END AS CREDITO,
+                COALESCE(P.CREDITODIAS,0) AS DIAS_CREDITO,
+                COALESCE(P.COND,0) AS CONDN,
+                CASE COALESCE(P.COND,0)
+                    WHEN 0 THEN 'Sin definir' WHEN 1 THEN 'Credito' WHEN 2 THEN 'Pago anticipado'
+                    WHEN 3 THEN 'Porc. Anticipo' WHEN 4 THEN 'Contraentrega'
+                    WHEN 5 THEN 'Fecha de pago' WHEN 6 THEN 'Monto de anticipo'
+                    ELSE 'Sin definir' END AS CONDICIONES,
+                P.AGENTE,
+                COALESCE(A.NOMBRE,'') AS NOMBRE_AGENTE,
+                P.FECHAELAB, P.FECHAENT, P.FECHAPAGO,
+                P.USUARIO,
+                COALESCE(U.NOMBRE,'') AS NOMBRE_USUARIO,
+                COALESCE(O.OBS,'') AS OBSERVACIONES,
+                P.TIPOPROD,
+                COALESCE(P.PAGANTENT,0) AS PAGANTENT,
+                COALESCE(P.AUTORIZACRED,0) AS AUTORIZACRED,
+                COALESCE(P.AUTORIZADIR,0) AS AUTORIZADIR,
+                COALESCE(P.AUTORIZAESP,0) AS AUTORIZAESP,
+                COALESCE(P.UUID,'') AS UUID,
+                COALESCE(P.SHOWHILAT,1) AS SHOWHILAT,
+                COALESCE(P.VE,0) AS VE,
+                CASE COALESCE(P.PARCOCOMPL,'')
+                    WHEN 'C' THEN 'Completo' WHEN 'P' THEN 'Parcial'
+                    ELSE 'Sin Def.' END AS PARC_O_COMPL
+            FROM PEDIDOSENC P
+            LEFT JOIN CLIE{$empresa} C ON C.CLAVE = P.CVE_CTE
+            LEFT JOIN VEND{$empresa} A ON A.CVE_VEND = P.AGENTE
+            LEFT JOIN PEDIDOSOBS O ON O.ID = P.PEDIDO
+            LEFT JOIN P_USUARIOS U ON U.CLAVE = P.USUARIO
+            WHERE P.CVE_CTE IN ({$placeholders})
+              AND P.ESTATUS IN (1, 2, 3)
+              AND P.PARCOCOMPL = 'P'
+              {$whereCondicion}
+            ORDER BY C.NOMBRE ASC, P.ID DESC";
+
+    $pedidos = collect($this->fb()->select($sql, $clientesPagina));
+
+    return ['pedidos' => $pedidos, 'totalClientes' => $totalClientes];
+}
+
+
+    protected function mapPedidoDirecto(object $item, float $kgTotal = 0.0): array
+    {
+        return [
+            'id'            => (int)   ($item->ID          ?? 0),
+            'anio'          => (int)   ($item->ANIO         ?? 0),
+            'cve_ped'       => $this->sanitize($item->PEDIDO        ?? ''),
+            'pedido_n'      => $this->sanitize($item->PEDIDON       ?? ''),
+            'cve_clie'      => $this->sanitize($item->CVE_CTE       ?? ''),
+            'nombre'        => $this->sanitize($item->CLIENTE       ?? ''),
+            'referencia'    => $this->sanitize($item->REFERENCIA    ?? ''),
+            'tipo_venta'    => $this->sanitize($item->TIPO_VENTA    ?? ''),
+            'estatus'       => $this->sanitize($item->ESTATUS       ?? ''),
+            'autorizado'    => $this->sanitize($item->AUTORIZADO    ?? ''),
+            'condicion'     => $this->sanitize($item->CONDICIONES   ?? ''),
+            'credito'       => $this->sanitize($item->CREDITO       ?? 'NO'),
+            'dias_credito'  => (int)   ($item->DIAS_CREDITO         ?? 0),
+            'agente'        => $this->sanitize($item->NOMBRE_AGENTE ?? ''),
+            'fecha_elab'    => $this->parseDate($item->FECHAELAB    ?? null),
+            'fecha_entrega' => $this->parseDate($item->FECHAENT     ?? null),
+            'fecha_pago'    => $this->parseDate($item->FECHAPAGO    ?? null),
+            'usuario'       => $this->sanitize($item->NOMBRE_USUARIO ?? ''),
+            'observaciones' => $this->sanitize($item->OBSERVACIONES ?? ''),
+            'status'        => $this->sanitize($item->PARC_O_COMPL  ?? ''),
+            'kg_total'      => $kgTotal,
+            'articulos'     => [],
+            'cardigans'     => [],
+            'ordenes_proc'  => [],
+        ];
+    }
+
     /* =======================================================
         📦 Artículos y cardigans usando ID (int) del SP
     ======================================================= */
@@ -209,7 +379,8 @@ class PedidosAgentesController extends Controller
     /* =======================================================
         🔧 mapPedido
     ======================================================= */
-    protected function mapPedido(object $item, array $articulos = [], array $cardigans = [], array $ordenes = []): array
+    protected function mapPedido(object $item, array $articulos = [], array $cardigans = [], array $ordenes = [], float $kgTotal = 0.0): array
+
     {
         return [
             'id'            => (int)   ($item->ID      ?? 0),
@@ -232,6 +403,8 @@ class PedidosAgentesController extends Controller
             'usuario'       => $this->sanitize($item->USUARIO            ?? ''),
             'observaciones' => $this->sanitize($item->OBSERVACIONES      ?? ''),
             'status'        => $this->sanitize($item->{'PARC. O COMPL.'} ?? ''),
+
+            'kg_total'      => $kgTotal,
             'articulos'     => array_map(fn($a) => (array) $a, $articulos),
             'cardigans'     => array_map(fn($c) => (array) $c, $cardigans),
             'ordenes_proc' => array_map(fn($o) => (array) $o, $ordenes),
@@ -251,45 +424,58 @@ class PedidosAgentesController extends Controller
     /* =======================================================
         📄 INDEX
     ======================================================= */
-    public function index(Request $request)
-    {
-        try {
-            $accesoTotal = $this->tieneAccesoTotal();
 
-            $pedidosSP = $this->getPedidosSP();
+public function index(Request $request)
+{
+    try {
+        $accesoTotal = $this->tieneAccesoTotal();
+        $page      = max(1, (int) $request->get('page', 1));
+        $perPage   = max(1, min(50, (int) $request->get('per_page', 5)));
+        $offset    = ($page - 1) * $perPage;
+        $condicion = $request->get('condicion', 'todas') ?: 'todas';
 
-            // Si NO tiene acceso total, filtrar solo por su agente
-            if (!$accesoTotal) {
-                $cveVend   = (int) $this->getAgenteClave();
-                $pedidosSP = $pedidosSP->filter(fn($item) => (int) ($item->AGENTE ?? 0) === $cveVend);
-            }
+        $cveVend           = $accesoTotal ? null : (int) $this->getAgenteClave();
+        $excluirBloqueados = $accesoTotal;
 
-            $pedidosSP = $pedidosSP
-                ->sortByDesc(fn($item) => $item->{'FECHA ELAB.'} ?? '')
-                ->values();
+        $resultado = $this->getPedidosPaginadoDirecto(
+            $perPage, $offset, $cveVend, $excluirBloqueados, $condicion
+        );
 
-            $ids      = $pedidosSP->pluck('ID')->filter()->map(fn($id) => (int) $id)->values()->toArray();
-            $extras   = $this->getPartidasPorIds($ids);
-            $stOrdens = $this->getStOrdenesPorIds($ids);
+        $pedidosPagina = $resultado['pedidos'];
+        $totalClientes = $resultado['totalClientes'];
+        $totalPages    = max(1, (int) ceil($totalClientes / $perPage));
 
-            $pedidos = $pedidosSP->map(function ($item) use ($extras, $stOrdens) {
-                $idStr     = (string) ($item->ID ?? '');
-                $articulos = $extras['articulos']->get($idStr, collect())->values()->toArray();
-                $cardigans = $extras['cardigans']->get($idStr, collect())->values()->toArray();
-                $ordenes   = $stOrdens->get($idStr, collect())->values()->toArray();
-                return $this->mapPedido($item, $articulos, $cardigans, $ordenes);
-            })->values();
+        $ids   = $pedidosPagina->pluck('ID')->filter()->map(fn($id) => (int) $id)->values()->toArray();
+        $kilos = $this->getKilosPorIds($ids);
 
-            return response()->json([
-                'success' => true,
-                'data'    => $pedidos,
-                'total'   => $pedidos->count(),
-            ]);
-        } catch (\Exception $e) {
-            Log::error('ERROR_INDEX_PEDIDOS', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
-            return response()->json(['success' => false, 'message' => 'Error al obtener pedidos', 'error' => $e->getMessage()], 500);
-        }
+        $pedidos = $pedidosPagina->map(function ($item) use ($kilos) {
+            $idStr   = (string) ($item->ID ?? '');
+            $kg      = $kilos->get($idStr);
+            $kgTotal = $kg
+                ? (float) ($kg->KG_ARTICULOS ?? 0) + (float) ($kg->KG_CARDIGANS ?? 0)
+                : 0.0;
+            return $this->mapPedidoDirecto($item, $kgTotal);
+        })->values();
+
+        return response()->json([
+            'success'    => true,
+            'data'       => $pedidos,
+            'total'      => $pedidos->count(),
+            'pagination' => [
+                'page'          => $page,
+                'per_page'      => $perPage,
+                'total_clients' => $totalClientes,
+                'total_pages'   => $totalPages,
+                'has_next'      => $page < $totalPages,
+                'has_prev'      => $page > 1,
+            ],
+        ]);
+    } catch (\Exception $e) {
+        Log::error('ERROR_INDEX_PEDIDOS', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+        return response()->json(['success' => false, 'message' => 'Error al obtener pedidos'], 500);
     }
+}
+
 
 
     // En index() — elimina las 2 queries pesadas, solo devuelve encabezados
@@ -321,33 +507,66 @@ class PedidosAgentesController extends Controller
     //     }
     // }
 
+
+    /**
+     * Solo suma de kg por pedido — mucho más ligero que getPartidasPorIds()
+     */
+    protected function getKilosPorIds(array $ids): \Illuminate\Support\Collection
+    {
+        if (empty($ids)) return collect();
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+
+        $resultados = $this->fb()->select(
+            "SELECT CVE_PED, SUM(CANTIDAD) AS KG_ARTICULOS, SUM(\"CANT. CARD.\") AS KG_CARDIGANS
+         FROM V_PED_PART
+         WHERE CVE_PED IN ({$placeholders})
+         GROUP BY CVE_PED",
+            $ids
+        );
+
+        return collect($resultados)->keyBy(fn($r) => (string) $r->CVE_PED);
+    }
+
     // NUEVO endpoint — solo se llama al expandir un pedido
     public function detalle(string $cvePed)
     {
         try {
+            $empresa     = $this->getEmpresa();
             $accesoTotal = $this->tieneAccesoTotal();
 
-            $resultado = $this->getPedidosSP()->first(function ($item) use ($cvePed, $accesoTotal) {
-                $match = $this->sanitize($item->PEDIDO ?? '') === $this->sanitize($cvePed);
-                if ($accesoTotal) return $match;
-                $cveVend = (int) $this->getAgenteClave();
-                return (int) ($item->AGENTE ?? 0) === $cveVend && $match;
-            });
+            // Verifica acceso buscando directamente en la tabla
+            $check = $this->fb()->select(
+                "SELECT FIRST 1 P.ID, P.AGENTE
+             FROM PEDIDOSENC P
+             WHERE P.PEDIDO = ?",
+                [$cvePed]
+            );
 
-            if (!$resultado) {
+            if (empty($check)) {
                 return response()->json(['success' => false, 'message' => 'Pedido no encontrado'], 404);
             }
 
-            $id     = (int) ($resultado->ID ?? 0);
-            $idStr  = (string) $id;
+            $pedido = $check[0];
+
+            if (!$accesoTotal) {
+                $cveVend = (int) $this->getAgenteClave();
+                if ((int) ($pedido->AGENTE ?? 0) !== $cveVend) {
+                    return response()->json(['success' => false, 'message' => 'Sin acceso'], 403);
+                }
+            }
+
+            $id    = (int) $pedido->ID;
+            $idStr = (string) $id;
+
             $extras   = $this->getPartidasPorIds([$id]);
             $stOrdens = $this->getStOrdenesPorIds([$id]);
 
             return response()->json([
-                'success'    => true,
-                'articulos'  => $extras['articulos']->get($idStr, collect())->values(),
-                'cardigans'  => $extras['cardigans']->get($idStr, collect())->values(),
-                'ordenes'    => $stOrdens->get($idStr, collect())->values(),
+                'success'   => true,
+                'articulos' => $extras['articulos']->get($idStr, collect())->values(),
+                'cardigans' => $extras['cardigans']->get($idStr, collect())->values(),
+                'ordenes'   => $stOrdens->get($idStr, collect())->values(),
             ]);
         } catch (\Exception $e) {
             Log::error('ERROR_DETALLE_PEDIDO', ['message' => $e->getMessage(), 'cve_ped' => $cvePed]);
