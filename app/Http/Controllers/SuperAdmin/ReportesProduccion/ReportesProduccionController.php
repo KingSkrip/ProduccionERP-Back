@@ -559,7 +559,7 @@ class ReportesProduccionController extends Controller
                      
                 ORDER BY F.FECHA_DOC, F.FOLIO, P.NUM_PAR
         ";
-//AND F.TIP_DOC_SIG IS NULL
+        //AND F.TIP_DOC_SIG IS NULL
 
         //AND NOT EXISTS (
         //     SELECT 1
@@ -673,14 +673,14 @@ class ReportesProduccionController extends Controller
         );
 
         Log::info('devoluciones RAW', [
-    'count' => count($rowsDevoluciones),
-    'registros' => array_map(fn($r) => [
-        'nota'           => $r->NOTA_CREDITO   ?? null,
-        'factura_origen' => $r->FACTURA_ORIGEN ?? null,
-        'fecha_fd'       => $r->FECHA          ?? null,
-        'cant'           => $r->CANT           ?? null,
-    ], $rowsDevoluciones),
-]);
+            'count' => count($rowsDevoluciones),
+            'registros' => array_map(fn($r) => [
+                'nota'           => $r->NOTA_CREDITO   ?? null,
+                'factura_origen' => $r->FACTURA_ORIGEN ?? null,
+                'fecha_fd'       => $r->FECHA          ?? null,
+                'cant'           => $r->CANT           ?? null,
+            ], $rowsDevoluciones),
+        ]);
 
         // ── Mapeo del detalle ─────────────────────────────────────────────────────
         $detalle = array_map(function ($r) {

@@ -410,7 +410,7 @@ class SyncFirebirdTbUsers extends Command
             return $id;
         } catch (\Exception $e) {
             Log::error('Error al registrar pivote', [
-                'fb_user_id' => $firebirdUserId,  // ✅ Cambiado log
+                'fb_user_id' => $firebirdUserId,
                 'tb_clave' => $firebirdTbClave,
                 'error' => $e->getMessage()
             ]);

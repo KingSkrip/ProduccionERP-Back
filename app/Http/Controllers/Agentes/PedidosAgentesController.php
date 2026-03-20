@@ -154,39 +154,39 @@ class PedidosAgentesController extends Controller
      * Query directa reemplazando P_PEDIDOSENCMAIN
      * Firebird pagina con FIRST/SKIP — solo trae los registros necesarios
      */
-protected function getPedidosPaginadoDirecto(
-    int $limit,
-    int $offset,
-    ?int $cveVend = null,
-    bool $excluirBloqueados = false,
-    ?string $condicion = null
-): array {
-    $empresa     = $this->getEmpresa();
-    $whereAgente = $cveVend ? "AND P.AGENTE = '{$cveVend}'" : '';
+    protected function getPedidosPaginadoDirecto(
+        int $limit,
+        int $offset,
+        ?int $cveVend = null,
+        bool $excluirBloqueados = false,
+        ?string $condicion = null
+    ): array {
+        $empresa     = $this->getEmpresa();
+        $whereAgente = $cveVend ? "AND P.AGENTE = '{$cveVend}'" : '';
 
-    // Siempre solo parciales — hardcodeado
-    $whereEstado = "AND P.PARCOCOMPL = 'P'";
+        // Siempre solo parciales — hardcodeado
+        $whereEstado = "AND P.PARCOCOMPL = 'P'";
 
-    $whereCondicion = '';
-    if ($condicion && $condicion !== 'todas') {
-        $condicionMap = ['Credito' => 1, 'Sin definir' => 0];
-        if (isset($condicionMap[$condicion])) {
-            $whereCondicion = "AND P.COND = {$condicionMap[$condicion]}";
+        $whereCondicion = '';
+        if ($condicion && $condicion !== 'todas') {
+            $condicionMap = ['Credito' => 1, 'Sin definir' => 0];
+            if (isset($condicionMap[$condicion])) {
+                $whereCondicion = "AND P.COND = {$condicionMap[$condicion]}";
+            }
         }
-    }
 
-    $whereBloqueados = '';
-    if ($excluirBloqueados && !empty($this->clientesBloqueados)) {
-        $bloqueadosEscapados = array_map(
-            fn($n) => "'" . addslashes(strtoupper($n)) . "'",
-            $this->clientesBloqueados
-        );
-        $whereBloqueados = 'AND UPPER(TRIM(C.NOMBRE)) NOT IN (' . implode(',', $bloqueadosEscapados) . ')';
-    }
+        $whereBloqueados = '';
+        if ($excluirBloqueados && !empty($this->clientesBloqueados)) {
+            $bloqueadosEscapados = array_map(
+                fn($n) => "'" . addslashes(strtoupper($n)) . "'",
+                $this->clientesBloqueados
+            );
+            $whereBloqueados = 'AND UPPER(TRIM(C.NOMBRE)) NOT IN (' . implode(',', $bloqueadosEscapados) . ')';
+        }
 
-    $filtrosComunes = "{$whereAgente} {$whereEstado} {$whereCondicion} {$whereBloqueados}";
+        $filtrosComunes = "{$whereAgente} {$whereEstado} {$whereCondicion} {$whereBloqueados}";
 
-    $countSql = "SELECT COUNT(*) AS TOTAL
+        $countSql = "SELECT COUNT(*) AS TOTAL
                  FROM (
                      SELECT P.CVE_CTE
                      FROM PEDIDOSENC P
@@ -198,14 +198,14 @@ protected function getPedidosPaginadoDirecto(
                      GROUP BY P.CVE_CTE
                  )";
 
-    $countResult   = $this->fb()->select($countSql);
-    $totalClientes = (int) ($countResult[0]->TOTAL ?? 0);
+        $countResult   = $this->fb()->select($countSql);
+        $totalClientes = (int) ($countResult[0]->TOTAL ?? 0);
 
-    if ($totalClientes === 0) {
-        return ['pedidos' => collect(), 'totalClientes' => 0];
-    }
+        if ($totalClientes === 0) {
+            return ['pedidos' => collect(), 'totalClientes' => 0];
+        }
 
-    $clientesSql = "SELECT FIRST {$limit} SKIP {$offset}
+        $clientesSql = "SELECT FIRST {$limit} SKIP {$offset}
                         P.CVE_CTE,
                         MIN(C.NOMBRE) AS NOMBRE_CTE
                     FROM PEDIDOSENC P
@@ -217,19 +217,19 @@ protected function getPedidosPaginadoDirecto(
                     GROUP BY P.CVE_CTE
                     ORDER BY MIN(C.NOMBRE) ASC";
 
-    $clientesPagina = collect($this->fb()->select($clientesSql))
-        ->pluck('CVE_CTE')
-        ->filter()
-        ->values()
-        ->toArray();
+        $clientesPagina = collect($this->fb()->select($clientesSql))
+            ->pluck('CVE_CTE')
+            ->filter()
+            ->values()
+            ->toArray();
 
-    if (empty($clientesPagina)) {
-        return ['pedidos' => collect(), 'totalClientes' => $totalClientes];
-    }
+        if (empty($clientesPagina)) {
+            return ['pedidos' => collect(), 'totalClientes' => $totalClientes];
+        }
 
-    $placeholders = implode(',', array_fill(0, count($clientesPagina), '?'));
+        $placeholders = implode(',', array_fill(0, count($clientesPagina), '?'));
 
-    $sql = "SELECT
+        $sql = "SELECT
                 P.ID, P.ANIO, P.PEDIDON, P.PEDIDO,
                 CASE COALESCE(P.VE,0) WHEN 0 THEN 'NACIONAL' WHEN 1 THEN 'EXPORTACION' END AS TIPO_VENTA,
                 P.ESTATUS AS NESTATUS,
@@ -282,10 +282,10 @@ protected function getPedidosPaginadoDirecto(
               {$whereCondicion}
             ORDER BY C.NOMBRE ASC, P.ID DESC";
 
-    $pedidos = collect($this->fb()->select($sql, $clientesPagina));
+        $pedidos = collect($this->fb()->select($sql, $clientesPagina));
 
-    return ['pedidos' => $pedidos, 'totalClientes' => $totalClientes];
-}
+        return ['pedidos' => $pedidos, 'totalClientes' => $totalClientes];
+    }
 
 
     protected function mapPedidoDirecto(object $item, float $kgTotal = 0.0): array
@@ -425,56 +425,60 @@ protected function getPedidosPaginadoDirecto(
         📄 INDEX
     ======================================================= */
 
-public function index(Request $request)
-{
-    try {
-        $accesoTotal = $this->tieneAccesoTotal();
-        $page      = max(1, (int) $request->get('page', 1));
-        $perPage   = max(1, min(50, (int) $request->get('per_page', 5)));
-        $offset    = ($page - 1) * $perPage;
-        $condicion = $request->get('condicion', 'todas') ?: 'todas';
+    public function index(Request $request)
+    {
+        try {
+            $accesoTotal = $this->tieneAccesoTotal();
+            $page      = max(1, (int) $request->get('page', 1));
+            $perPage   = max(1, min(50, (int) $request->get('per_page', 5)));
+            $offset    = ($page - 1) * $perPage;
+            $condicion = $request->get('condicion', 'todas') ?: 'todas';
 
-        $cveVend           = $accesoTotal ? null : (int) $this->getAgenteClave();
-        $excluirBloqueados = $accesoTotal;
+            $cveVend           = $accesoTotal ? null : (int) $this->getAgenteClave();
+            $excluirBloqueados = $accesoTotal;
 
-        $resultado = $this->getPedidosPaginadoDirecto(
-            $perPage, $offset, $cveVend, $excluirBloqueados, $condicion
-        );
+            $resultado = $this->getPedidosPaginadoDirecto(
+                $perPage,
+                $offset,
+                $cveVend,
+                $excluirBloqueados,
+                $condicion
+            );
 
-        $pedidosPagina = $resultado['pedidos'];
-        $totalClientes = $resultado['totalClientes'];
-        $totalPages    = max(1, (int) ceil($totalClientes / $perPage));
+            $pedidosPagina = $resultado['pedidos'];
+            $totalClientes = $resultado['totalClientes'];
+            $totalPages    = max(1, (int) ceil($totalClientes / $perPage));
 
-        $ids   = $pedidosPagina->pluck('ID')->filter()->map(fn($id) => (int) $id)->values()->toArray();
-        $kilos = $this->getKilosPorIds($ids);
+            $ids   = $pedidosPagina->pluck('ID')->filter()->map(fn($id) => (int) $id)->values()->toArray();
+            $kilos = $this->getKilosPorIds($ids);
 
-        $pedidos = $pedidosPagina->map(function ($item) use ($kilos) {
-            $idStr   = (string) ($item->ID ?? '');
-            $kg      = $kilos->get($idStr);
-            $kgTotal = $kg
-                ? (float) ($kg->KG_ARTICULOS ?? 0) + (float) ($kg->KG_CARDIGANS ?? 0)
-                : 0.0;
-            return $this->mapPedidoDirecto($item, $kgTotal);
-        })->values();
+            $pedidos = $pedidosPagina->map(function ($item) use ($kilos) {
+                $idStr   = (string) ($item->ID ?? '');
+                $kg      = $kilos->get($idStr);
+                $kgTotal = $kg
+                    ? (float) ($kg->KG_ARTICULOS ?? 0) + (float) ($kg->KG_CARDIGANS ?? 0)
+                    : 0.0;
+                return $this->mapPedidoDirecto($item, $kgTotal);
+            })->values();
 
-        return response()->json([
-            'success'    => true,
-            'data'       => $pedidos,
-            'total'      => $pedidos->count(),
-            'pagination' => [
-                'page'          => $page,
-                'per_page'      => $perPage,
-                'total_clients' => $totalClientes,
-                'total_pages'   => $totalPages,
-                'has_next'      => $page < $totalPages,
-                'has_prev'      => $page > 1,
-            ],
-        ]);
-    } catch (\Exception $e) {
-        Log::error('ERROR_INDEX_PEDIDOS', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
-        return response()->json(['success' => false, 'message' => 'Error al obtener pedidos'], 500);
+            return response()->json([
+                'success'    => true,
+                'data'       => $pedidos,
+                'total'      => $pedidos->count(),
+                'pagination' => [
+                    'page'          => $page,
+                    'per_page'      => $perPage,
+                    'total_clients' => $totalClientes,
+                    'total_pages'   => $totalPages,
+                    'has_next'      => $page < $totalPages,
+                    'has_prev'      => $page > 1,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('ERROR_INDEX_PEDIDOS', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return response()->json(['success' => false, 'message' => 'Error al obtener pedidos'], 500);
+        }
     }
-}
 
 
 
