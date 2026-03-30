@@ -646,14 +646,14 @@ class ReportesProduccionController extends Controller
         LEFT  JOIN ARTICULOS     AR   ON AR.CVE_ART   = I.CVE_ART
         LEFT  JOIN TEJIDO        T    ON T.ID          = AR.TEJ
        WHERE
-    FD.STATUS   = 'E'
-    AND F.STATUS = 'E'
-    AND F.FECHA_DOC >= ?
-    AND F.FECHA_DOC <= ?
-    AND PD.CANT       > 0
-    AND I.LIN_PROD IN ('HILOS', 'PTPR')
-        ORDER BY FD.FECHA_DOC, FD.FOLIO, PD.NUM_PAR
-     ";
+        FD.STATUS   = 'E'
+        AND F.STATUS = 'E'
+        AND F.FECHA_DOC >= ?
+        AND F.FECHA_DOC <= ?
+        AND PD.CANT       > 0
+        AND I.LIN_PROD IN ('HILOS', 'PTPR')
+            ORDER BY FD.FECHA_DOC, FD.FOLIO, PD.NUM_PAR
+        ";
 
         $rows = DB::connection('firebird')->select($sql, [$fechaInicioISO, $fechaFinISO]);
         $rowsNotasVentaTotal = DB::connection('firebird')->select(
@@ -950,244 +950,42 @@ class ReportesProduccionController extends Controller
         ];
     }
 
-    public function getFacturado(Request $request)
-    {
-        try {
-            $validator = Validator::make($request->all(), [
-                'fecha_inicio' => 'required|string',
-                'fecha_fin'    => 'required|string',
-            ]);
+public function getFacturado(Request $request)
+{
+    try {
+        $validator = Validator::make($request->all(), [
+            'fecha_inicio' => 'required|string',
+            'fecha_fin'    => 'required|string',
+        ]);
 
-            if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Parámetros inválidos',
-                    'errors'  => $validator->errors(),
-                ], 400);
-            }
-
-            $fechaInicio = DateTime::createFromFormat('d.m.Y H:i:s', $request->input('fecha_inicio'))?->format('Y-m-d')
-                ?? substr($request->input('fecha_inicio'), 0, 10);
-            $fechaFin = DateTime::createFromFormat('d.m.Y H:i:s', $request->input('fecha_fin'))?->format('Y-m-d')
-                ?? substr($request->input('fecha_fin'), 0, 10);
-            $fechaFinExclusiva = date('Y-m-d', strtotime($fechaFin . ' +1 day'));
-
-            $sql = "
-            SELECT
-                F.FECHA_DOC AS FECHA,
-                CASE EXTRACT(MONTH FROM F.FECHA_DOC)
-                    WHEN 1  THEN 'ENERO'
-                    WHEN 2  THEN 'FEBRERO'
-                    WHEN 3  THEN 'MARZO'
-                    WHEN 4  THEN 'ABRIL'
-                    WHEN 5  THEN 'MAYO'
-                    WHEN 6  THEN 'JUNIO'
-                    WHEN 7  THEN 'JULIO'
-                    WHEN 8  THEN 'AGOSTO'
-                    WHEN 9  THEN 'SEPTIEMBRE'
-                    WHEN 10 THEN 'OCTUBRE'
-                    WHEN 11 THEN 'NOVIEMBRE'
-                    WHEN 12 THEN 'DICIEMBRE'
-                END AS MES,
-                C.NOMBRE AS CLIENTE,
-                CAST(F.FOLIO AS VARCHAR(20)) AS FACTURA,
-                '-' AS REMISION,
-                F.CVE_PEDI AS PEDIDO,
-                I.LIN_PROD AS LINEA_PRODUCTO,
-                'Z100' AS MODALIDAD,
-                'COMERCIALIZADORA FIBRASAN' AS EMPRESA,
-                'TELA' AS CLASIFICACION_PRODUCTO,
-                COALESCE(T.CODIGO || ' ' || AR.NOMBRE, I.CVE_ART) AS DESCRIPCION_PRODUCTO,
-                TRIM(TRAILING FROM O.STR_OBS) AS COLOR,
-                COALESCE(COMP.CADCOMP || ' ' || HI.CODIGO, '-') AS COMPOSICION,
-                (SELECT FIRST 1 ACB2.DESCR
-                FROM ACABTIPO ACB2
-                WHERE ACB2.TIPO = AR.TIPOACAB
-                AND ACB2.ESTAMPADO = 0) AS COMPOSICION2,
-                CAST(P.CANT AS NUMERIC(18,2)) AS KG,
-                P.UNI_VENTA AS UM,
-                CAST(P.PREC AS NUMERIC(18,2)) AS PRECIO_BRUTO,
-                P.CANT * P.PREC AS SUBTOTAL,
-                CAST(P.TOTIMP4 AS NUMERIC(18,2)) AS IVA,
-                CAST(( (P.CANT * P.PREC)  ) AS NUMERIC(18,2)) AS TOTAL
-            FROM FACTF03 F
-            INNER JOIN PAR_FACTF03   P    ON P.CVE_DOC  = F.CVE_DOC
-            INNER JOIN CLIE03        C    ON C.CLAVE    = F.CVE_CLPV
-            INNER JOIN INVE03        I    ON I.CVE_ART  = P.CVE_ART
-            LEFT  JOIN ARTICULOS     AR   ON AR.CVE_ART = I.CVE_ART
-            LEFT  JOIN TEJIDO        T    ON T.ID       = AR.TEJ
-            LEFT  JOIN COMPOSICION   COMP ON COMP.ID    = AR.COMP
-            LEFT  JOIN HILATURA      HI   ON HI.ID      = AR.HILAT
-            LEFT  JOIN OBS_DOCF03    O    ON O.CVE_OBS  = P.CVE_OBS
-            WHERE
-                F.STATUS  = 'E'
-                AND F.fecha_doc >= ?
-                AND F.fecha_doc <= ?
-                AND P.CANT > 0
-                AND I.LIN_PROD IN ('HILOS', 'PTPR')
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM FACTD03 FD
-                    INNER JOIN PAR_FACTD03 PD ON PD.CVE_DOC = FD.CVE_DOC
-                    WHERE FD.CVE_DOC  = F.DOC_SIG
-                    AND FD.STATUS   = 'E'
-                    AND PD.CVE_ART  = P.CVE_ART
-                    AND PD.CANT     = P.CANT
-                )
-            ORDER BY F.FECHA_DOC, F.FOLIO, P.NUM_PAR
-        ";
-
-            $sqlNotasVenta = "
-            SELECT DISTINCT
-	    F.CAN_TOT,
-                P.UNI_VENTA,
-                F.IMPORTE,
-                I.LIN_PROD AS LINEA_PRODUCTO
-            FROM FACTV03 F
-            INNER JOIN PAR_FACTV03 P ON F.CVE_DOC = P.CVE_DOC
-            INNER JOIN INVE03      I ON I.CVE_ART = P.CVE_ART
-            WHERE F.STATUS = 'E'
-            AND F.FECHA_DOC >= ?
-            AND F.FECHA_DOC <= ?
-        ";
-
-            $rows           = DB::connection('firebird')->select($sql, [$fechaInicio, $fechaFinExclusiva]);
-            $rowsNotasVenta = DB::connection('firebird')->select($sqlNotasVenta, [$fechaInicio, $fechaFinExclusiva]);
-
-            // ── Mapeo del detalle ─────────────────────────────────────────────────
-            $detalle = array_map(function ($r) {
-                return [
-                    'fecha'                  => $r->FECHA                  ?? null,
-                    'mes'                    => $r->MES                    ?? null,
-                    'cliente'                => $r->CLIENTE                ?? null,
-                    'factura'                => $r->FACTURA                ?? null,
-                    'remision'               => $r->REMISION               ?? '-',
-                    'pedido'                 => $r->PEDIDO                 ?? null,
-                    'linea_producto'         => $r->LINEA_PRODUCTO         ?? null,  // ← AGREGADO
-                    'modalidad'              => $r->MODALIDAD              ?? null,
-                    'empresa'                => $r->EMPRESA                ?? null,
-                    'clasificacion_producto' => $r->CLASIFICACION_PRODUCTO ?? null,
-                    'descripcion_producto'   => $r->DESCRIPCION_PRODUCTO   ?? null,
-                    'color'                  => $r->COLOR                  ?? null,
-                    'composicion'            => $r->COMPOSICION            ?? null,
-                    'composicion2'           => $r->COMPOSICION2           ?? null,
-                    'cant'                   => (float) ($r->KG            ?? 0),
-                    'um'                     => $r->UM                     ?? null,
-                    'precio_bruto'           => (float) ($r->PRECIO_BRUTO  ?? 0),
-                    'importe'                => (float) ($r->SUBTOTAL       ?? 0),
-                    'impuestos'              => (float) ($r->IVA            ?? 0),
-                    'total'                  => (float) ($r->TOTAL          ?? 0),
-                ];
-            }, $rows);
-
-            // ── Totales generales ─────────────────────────────────────────────────
-            $totalImporte   = array_sum(array_column($detalle, 'importe'));
-            $totalImpuestos = array_sum(array_column($detalle, 'impuestos'));
-            $totalGeneral   = array_sum(array_column($detalle, 'total'));
-            $totalCant      = array_sum(array_column($detalle, 'cant'));
-            $facturasUnicas = count(array_unique(array_column($detalle, 'factura')));
-
-            // ── Totales por línea (PTPR / HILOS) ──────────────────────────────────
-            $totalesPorLinea = [];
-            foreach ($detalle as $item) {
-                $linea = $item['linea_producto'] ?? 'SIN_LINEA';
-
-                if (!isset($totalesPorLinea[$linea])) {
-                    $totalesPorLinea[$linea] = [
-                        'cant'      => 0.0,
-                        'importe'   => 0.0,
-                        'impuestos' => 0.0,
-                        'total'     => 0.0,
-                    ];
-                }
-
-                $totalesPorLinea[$linea]['cant']      += $item['cant'];
-                $totalesPorLinea[$linea]['importe']   += $item['importe'];
-                $totalesPorLinea[$linea]['impuestos'] += $item['impuestos'];
-                $totalesPorLinea[$linea]['total']     += $item['total'];
-            }
-
-            // Redondear para evitar floating point feo
-            foreach ($totalesPorLinea as $linea => $vals) {
-                $totalesPorLinea[$linea]['cant']      = round($vals['cant'],      2);
-                $totalesPorLinea[$linea]['importe']   = round($vals['importe'],   2);
-                $totalesPorLinea[$linea]['impuestos'] = round($vals['impuestos'], 2);
-                $totalesPorLinea[$linea]['total']     = round($vals['total'],     2);
-            }
-
-            // ── Notas de venta ────────────────────────────────────────────────────
-            $totalNotasVenta = array_sum(array_map(fn($r) => (float) ($r->IMPORTE ?? 0), $rowsNotasVenta));
-
-            $unidades       = [];   // totales por unidad de medida (sin cambio)
-            $notasPorLinea  = [];   // ← NUEVO: totales por línea PTPR / HILOS
-
-            foreach ($rowsNotasVenta as $r) {
-                $um    = $r->UNI_VENTA      ?? 'SIN_UM';
-                $linea = $r->LINEA_PRODUCTO ?? 'SIN_LINEA';
-                $cant  = (float) ($r->CAN_TOT   ?? 0);
-                $cant  = (float) ($r->CANT   ?? 0);
-                $imp   = (float) ($r->IMPORTE ?? 0);
-
-                // — por unidad de medida (ya existía) —
-                if (!isset($unidades[$um])) {
-                    $unidades[$um] = ['um' => $um, 'cant' => 0];
-                }
-                $unidades[$um]['cant'] += $cant;
-
-                // — por línea de producto (NUEVO) —
-                if (!isset($notasPorLinea[$linea])) {
-                    $notasPorLinea[$linea] = [
-                        'cant'  => 0.0,
-                        'total' => 0.0,
-                    ];
-                }
-                $notasPorLinea[$linea]['cant']  += $cant;
-                $notasPorLinea[$linea]['total'] += $imp;
-            }
-
-            // Redondear
-            foreach ($notasPorLinea as $linea => $vals) {
-                $notasPorLinea[$linea]['cant']  = round($vals['cant'],  2);
-                $notasPorLinea[$linea]['total'] = round($vals['total'], 2);
-            }
-
-            $unidades = array_values($unidades);
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'totales' => [
-                        'facturas'  => $facturasUnicas,
-                        'cant'      => round((float) $totalCant,      2),
-                        'importe'   => round((float) $totalImporte,   2),
-                        'impuestos' => round((float) $totalImpuestos, 2),
-                        'total'     => round((float) $totalGeneral,   2),
-                    ],
-                    'por_linea'   => $totalesPorLinea,       // ← PTPR y HILOS desglosados
-                    'notas_venta' => [
-                        'registros' => count($rowsNotasVenta),
-                        'total'     => $totalNotasVenta,
-                        'unidades'  => $unidades,
-                        'por_linea' => $notasPorLinea,
-                    ],
-                    'detalle' => $detalle,
-                ],
-                'filtros' => [
-                    'fecha_inicio'        => $fechaInicio,
-                    'fecha_fin'           => $fechaFin,
-                    'fecha_fin_exclusiva' => $fechaFinExclusiva,
-                    'total_registros'     => count($rows),
-                ],
-            ], 200);
-        } catch (\Throwable $e) {
+        if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error al obtener FACTURADO',
-                'error'   => $e->getMessage(),
-            ], 500);
+                'message' => 'Parámetros inválidos',
+                'errors'  => $validator->errors(),
+            ], 400);
         }
-    }
 
+        // 🔥 LLAMAS AL MÉTODO COMPLETO
+        $data = $this->getFacturadoData(
+            $request->input('fecha_inicio'),
+            $request->input('fecha_fin')
+        );
+
+        // 🔥 REGRESAS TODO TAL CUAL
+        return response()->json([
+            'success' => true,
+            'data'    => $data
+        ], 200);
+
+    } catch (\Throwable $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Error al obtener FACTURADO',
+            'error'   => $e->getMessage(),
+        ], 500);
+    }
+}
 
     /**
      * 🔥 Subtotales de FACTURADO agrupados por día

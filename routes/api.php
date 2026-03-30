@@ -143,7 +143,7 @@ Route::prefix('reportes-produccion')->group(function () {
     Route::get('/pendientes', [ReportesProduccionController::class, 'getPorRevisarTejido']);
     Route::get('/con-saldo', [ReportesProduccionController::class, 'getSaldosTejido']);
     Route::get('/entregado-embarques', [ReportesProduccionController::class, 'getEntregadoaEmbarques']);
-    Route::get('/facturado', [ReportesProduccionController::class, 'getFacturado']);
+Route::get('/facturado', [ReportesProduccionController::class, 'getFacturado']);
     Route::get('/tejido-resumen', [ReportesProduccionController::class, 'getTejido']);
     Route::get('/acabado', [ReportesProduccionController::class, 'getAcabadoReal']);
     Route::get('/departamento/{id}', [ReportesProduccionController::class, 'getByDepartment']);
