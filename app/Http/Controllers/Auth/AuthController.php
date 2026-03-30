@@ -127,6 +127,7 @@ class AuthController extends Controller
             $esEmpleado = $identity && $identity->firebird_tb_clave !== null;
             $esCliente = $identity && $identity->firebird_clie_clave !== null;
             $esVendedor = $identity && $identity->firebird_vend_clave !== null;
+            $esProveedor = $identity && $identity->firebird_prov_clave !== null;
 
             Log::info('🔍 USER_TYPE_DETECTION', [
                 'es_empleado' => $esEmpleado,
@@ -361,9 +362,49 @@ class AuthController extends Controller
                 }
             }
 
+            // =====================================================
+            // 📦 PROVEEDORES: Datos de PROV03
+            // =====================================================
+            $provRow  = null;
+            if ($esProveedor) {
+                $provClave = $identity->firebird_prov_clave ?? null;
+
+                Log::info('📦 PROVEEDOR_CONTEXT', [
+                    'prov_clave' => $provClave,
+                    'prov_tabla' => $identity->firebird_prov_tabla ?? null,
+                ]);
+
+                if ($provClave) {
+                    try {
+                        $connection = $this->getFirebirdProductionConnection();
+
+                        $provRow = $connection->selectOne(
+                            "SELECT * FROM PROV03 WHERE CLAVE = ?",
+                            [$provClave]
+                        );
+
+                        Log::info('📦 PROV03_LOOKUP', [
+                            'prov_clave'  => $provClave,
+                            'prov_found'  => (bool) $provRow,
+                            'prov_nombre' => $provRow->NOMBRE ?? null,
+                        ]);
+                    } catch (\Throwable $e) {
+                        Log::error('⚠️ PROVEEDOR_DATA_ERROR', [
+                            'prov_clave' => $provClave,
+                            'error'      => $e->getMessage(),
+                        ]);
+                    }
+                } else {
+                    Log::warning('⚠️ PROVEEDOR_SKIPPED_NO_PROV_CLAVE', [
+                        'firebird_id' => $userId,
+                        'identity_id' => $identity->id ?? null,
+                    ]);
+                }
+            }
             Log::info('✅ LOGIN_SUCCESS', [
                 'firebird_id' => $userId,
-                'tipo_usuario' => $esEmpleado ? 'EMPLEADO' : ($esCliente ? 'CLIENTE' : ($esVendedor ? 'VENDEDOR' : 'INDEFINIDO')), // 🆕
+                'tipo_usuario' =>
+                $esEmpleado ? 'EMPLEADO' : ($esCliente ? 'CLIENTE' : ($esVendedor ? 'VENDEDOR'  : ($esProveedor ? 'PROVEEDOR' : 'INDEFINIDO'))), // 🆕
                 'identity_id'  => $identity->id ?? null,
             ]);
 
@@ -379,13 +420,15 @@ class AuthController extends Controller
                     'roles'               => $roles,
                     'TB'                  => $tbRow,
                     'CLIE'                => $clieRow,
-                    'VEND'                => $vendRow,  // 🆕
+                    'VEND'                => $vendRow,
 
                     'firebird_user_id'    => $userId,
                     'firebird_user_clave' => $identity->firebird_tb_clave ?? null,
                     'firebird_clie_clave' => $identity->firebird_clie_clave ?? null,
-                    'firebird_vend_clave' => $identity->firebird_vend_clave ?? null,  // 🆕
-                    'tipo_usuario'        => $esEmpleado ? 'empleado' : ($esCliente ? 'cliente' : ($esVendedor ? 'vendedor' : null)),  // 🆕
+                    'firebird_vend_clave' => $identity->firebird_vend_clave ?? null,
+                    'PROV'                => $provRow,
+                    'firebird_prov_clave' => $identity->firebird_prov_clave ?? null,
+                    'tipo_usuario'        => $esEmpleado ? 'empleado' : ($esCliente ? 'cliente' : ($esVendedor ? 'vendedor' : ($esProveedor ? 'proveedor' :  null))),
                     'turnoActivo'         => $turnoActivo,
                 ])
             ], 200);
@@ -644,5 +687,29 @@ class AuthController extends Controller
             Log::error('Error en unlockSession: ' . $e->getMessage());
             return response()->json(['message' => 'Error al desbloquear sesión'], 500);
         }
+    }
+
+
+
+
+    private function getFirebirdProductionConnection(): \Illuminate\Database\Connection
+    {
+        config([
+            'database.connections.firebird_produccion' => [
+                'driver'            => 'firebird',
+                'host'              => env('FB_HOST'),
+                'port'              => env('FB_PORT'),
+                'database'          => env('FB_DATABASE'),
+                'username'          => env('FB_USERNAME'),
+                'password'          => env('FB_PASSWORD'),
+                'charset'           => env('FB_CHARSET', 'UTF8'),
+                'dialect'           => 3,
+                'quote_identifiers' => false,
+            ]
+        ]);
+
+        DB::purge('firebird_produccion');
+
+        return DB::connection('firebird_produccion');
     }
 }

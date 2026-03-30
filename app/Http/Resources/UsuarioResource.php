@@ -26,6 +26,9 @@ class UsuarioResource extends JsonResource
         $mf    = $this->ctx['faltas'] ?? null;
         $ac    = $this->ctx['acumuladosperiodos'] ?? null;
         $tb    = $this->ctx['TB'] ?? null;
+        $clie  = $this->ctx['CLIE'] ?? null;
+        $vend  = $this->ctx['VEND'] ?? null;
+        $prov  = $this->ctx['PROV'] ?? null;
         $turnoActivo = $this->ctx['turnoActivo'] ?? null;
 
 

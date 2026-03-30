@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AgendarCitasVisitantesController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Catalogos\CatalogosController;
 use App\Http\Controllers\Colaboradores\SoliVacacionesController;
@@ -301,7 +302,7 @@ Route::prefix('agentes/pedidos')->middleware('jwt.auth')->group(function () {
     Route::get('/{cvePed}/detalle', [PedidosAgentesController::class, 'detalle']);
 });
 
-
+Route::apiResource('citas', AgendarCitasVisitantesController::class);
 
 /**
  * SIEMPRE QUE SE AGREGE UNA NUEVA RUTA HAY QUE AGREGARLA A  

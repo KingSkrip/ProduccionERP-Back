@@ -22,7 +22,9 @@ class UserFirebirdIdentity extends Model
         'firebird_clie_clave',
         'firebird_clie_tabla',
         'firebird_vend_clave',
-        'firebird_vend_tabla'
+        'firebird_vend_tabla',
+        'firebird_prov_clave',
+        'firebird_prov_tabla'
     ];
 
     public function roles(): HasMany

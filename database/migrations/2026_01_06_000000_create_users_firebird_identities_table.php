@@ -29,6 +29,10 @@ return new class extends Migration
             $table->string('firebird_vend_clave')->nullable();
             $table->string('firebird_vend_tabla')->nullable();
 
+            // 👤 PROVEDOR Firebird (dinámico)
+            $table->string('firebird_prov_clave')->nullable();
+            $table->string('firebird_prov_tabla')->nullable();
+            
             // ⏱️ Auditoría mínima
             $table->timestamp('created_at')->nullable();
 

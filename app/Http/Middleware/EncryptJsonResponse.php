@@ -76,6 +76,10 @@ class EncryptJsonResponse
         'api/agentes/pedidos/*',
 
 
+         //CITAS
+        'api/citas',
+
+
 
     ];
 
