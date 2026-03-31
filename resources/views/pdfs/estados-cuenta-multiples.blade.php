@@ -445,10 +445,10 @@
 
             {{-- ── RESUMEN FINANCIERO ── --}}
             <div class="resumen-bar">
-                <div class="resumen-cell">
+                {{-- <div class="resumen-cell">
                     <div class="resumen-label">Cargos totales</div>
                     <div class="resumen-value color-blue">${{ number_format($totalCargos, 2) }}</div>
-                </div>
+                </div> --}}
                 <div class="resumen-cell">
                     <div class="resumen-label">Abonos totales</div>
                     <div class="resumen-value color-green">${{ number_format($totalAbonos, 2) }}</div>
@@ -481,7 +481,8 @@
                             <th>Fecha Aplic.</th>
                             <th>Vencimiento</th>
                             <th>Estado</th>
-                            <th class="r">Cargos</th>
+                            {{-- <th class="r">Cargos</th> --}}
+                            <th class="r"></th>
                             <th class="r">Abonos</th>
                             <th class="r">Saldo</th>
                         </tr>
@@ -513,7 +514,8 @@
                                         <span class="pill pill-pendiente">Pendiente</span>
                                     @endif
                                 </td>
-                                <td class="r">${{ number_format((float) $doc->CARGOS, 2) }}</td>
+                                {{-- <td class="r">${{ number_format((float) $doc->CARGOS, 2) }}</td> --}}
+                                <td class="r"></td>
                                 <td class="r">${{ number_format((float) $doc->ABONOS, 2) }}</td>
                                 <td class="r {{ $doc->SALDOS > 0 ? 'vencido' : '' }}">
                                     ${{ number_format((float) $doc->SALDOS, 2) }}
@@ -524,7 +526,8 @@
                     <tfoot>
                         <tr>
                             <td colspan="5">Totales &mdash; {{ $nombre }}</td>
-                            <td class="r blue">${{ number_format($totalCargos, 2) }}</td>
+                            {{-- <td class="r blue">${{ number_format($totalCargos, 2) }}</td> --}}
+                            <td class="r"></td>
                             <td class="r green">${{ number_format($totalAbonos, 2) }}</td>
                             <td class="r red">${{ number_format($totalSaldo, 2) }}</td>
                         </tr>
