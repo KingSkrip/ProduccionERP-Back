@@ -617,37 +617,122 @@ class PedidosAgentesController extends Controller
     /* =======================================================
         📊 RESUMEN
     ======================================================= */
+    // public function resumen()
+    // {
+    //     try {
+    //         $accesoTotal = $this->tieneAccesoTotal();
+
+    //         $datos = $this->getPedidosSP();
+
+    //         if (!$accesoTotal) {
+    //             $cveVend = (int) $this->getAgenteClave();
+    //             $datos   = $datos->filter(fn($item) => (int) ($item->AGENTE ?? 0) === $cveVend);
+    //         }
+
+    //         $hoy      = Carbon::now();
+    //         $vencidos = $datos->filter(function ($item) use ($hoy) {
+    //             $fecha = $item->{'FECHA ENT.'} ?? null;
+    //             if (empty($fecha)) return false;
+    //             try {
+    //                 return Carbon::parse($fecha)->lt($hoy);
+    //             } catch (\Exception $e) {
+    //                 return false;
+    //             }
+    //         });
+
+    //         return response()->json([
+    //             'success' => true,
+    //             'data'    => [
+    //                 'total_pedidos'    => $datos->count(),
+    //                 'pedidos_vencidos' => $vencidos->count(),
+    //                 'completos'        => $datos->filter(fn($i) => $this->sanitize($i->{'PARC. O COMPL.'} ?? '') === 'Completo')->count(),
+    //                 'parciales'        => $datos->filter(fn($i) => $this->sanitize($i->{'PARC. O COMPL.'} ?? '') === 'Parcial')->count(),
+    //                 'sin_def'          => $datos->filter(fn($i) => str_contains($this->sanitize($i->{'PARC. O COMPL.'} ?? ''), 'Sin'))->count(),
+    //             ],
+    //         ]);
+    //     } catch (\Exception $e) {
+    //         Log::error('ERROR_RESUMEN_PEDIDOS', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+    //         return response()->json(['success' => false, 'message' => 'Error al obtener resumen', 'error' => $e->getMessage()], 500);
+    //     }
+    // }
+
     public function resumen()
     {
         try {
             $accesoTotal = $this->tieneAccesoTotal();
+            $empresa     = $this->getEmpresa();
 
-            $datos = $this->getPedidosSP();
+            $cveVend           = $accesoTotal ? null : (int) $this->getAgenteClave();
+            $excluirBloqueados = $accesoTotal;
 
-            if (!$accesoTotal) {
-                $cveVend = (int) $this->getAgenteClave();
-                $datos   = $datos->filter(fn($item) => (int) ($item->AGENTE ?? 0) === $cveVend);
+            // ── Filtros reutilizables ──────────────────────────────────
+            $whereAgente = $cveVend ? "AND P.AGENTE = '{$cveVend}'" : '';
+
+            $whereBloqueados = '';
+            if ($excluirBloqueados && !empty($this->clientesBloqueados)) {
+                $bloqueadosEscapados = array_map(
+                    fn($n) => "'" . addslashes(strtoupper($n)) . "'",
+                    $this->clientesBloqueados
+                );
+                $whereBloqueados = 'AND UPPER(TRIM(C.NOMBRE)) NOT IN (' . implode(',', $bloqueadosEscapados) . ')';
             }
 
-            $hoy      = Carbon::now();
-            $vencidos = $datos->filter(function ($item) use ($hoy) {
-                $fecha = $item->{'FECHA ENT.'} ?? null;
-                if (empty($fecha)) return false;
-                try {
-                    return Carbon::parse($fecha)->lt($hoy);
-                } catch (\Exception $e) {
-                    return false;
-                }
-            });
+            // ── Conteos ───────────────────────────────────────────────
+            $sql = "SELECT
+                    COUNT(*)                                              AS TOTAL,
+                    SUM(CASE WHEN P.PARCOCOMPL = 'C' THEN 1 ELSE 0 END)  AS COMPLETOS,
+                    SUM(CASE WHEN P.PARCOCOMPL = 'P' THEN 1 ELSE 0 END)  AS PARCIALES,
+                    SUM(CASE WHEN (P.PARCOCOMPL IS NULL OR (P.PARCOCOMPL <> 'C' AND P.PARCOCOMPL <> 'P')) THEN 1 ELSE 0 END) AS SIN_DEF
+                FROM PEDIDOSENC P
+                LEFT JOIN CLIE{$empresa} C ON C.CLAVE = P.CVE_CTE
+                WHERE P.ESTATUS IN (1, 2, 3)
+                  AND P.CVE_CTE IS NOT NULL
+                  AND TRIM(P.CVE_CTE) <> ''
+                  {$whereAgente}
+                  {$whereBloqueados}";
+
+            $conteos = $this->fb()->select($sql);
+            $row     = $conteos[0] ?? null;
+
+            // ── Vencidos ──────────────────────────────────────────────
+            $hoy = Carbon::now()->format('Y-m-d');
+
+            $sqlVencidos = "SELECT COUNT(*) AS VENCIDOS
+                        FROM PEDIDOSENC P
+                        LEFT JOIN CLIE{$empresa} C ON C.CLAVE = P.CVE_CTE
+                        WHERE P.ESTATUS IN (1, 2, 3)
+                          AND P.CVE_CTE IS NOT NULL
+                          AND TRIM(P.CVE_CTE) <> ''
+                          AND P.FECHAENT < '{$hoy}'
+                          {$whereAgente}
+                          {$whereBloqueados}";
+
+            $vencidosResult = $this->fb()->select($sqlVencidos);
+            $vencidos       = (int) ($vencidosResult[0]->VENCIDOS ?? 0);
+
+            // ── Kg totales desde V_PED_PART ───────────────────────────
+            $sqlKg = "SELECT SUM(VP.CANTIDAD + VP.\"CANT. CARD.\") AS TOTAL_KG
+                  FROM V_PED_PART VP
+                  INNER JOIN PEDIDOSENC P ON P.ID = VP.CVE_PED
+                  LEFT JOIN CLIE{$empresa} C ON C.CLAVE = P.CVE_CTE
+                  WHERE P.ESTATUS IN (1, 2, 3)
+                    AND P.CVE_CTE IS NOT NULL
+                    AND TRIM(P.CVE_CTE) <> ''
+                    {$whereAgente}
+                    {$whereBloqueados}";
+
+            $kgResult = $this->fb()->select($sqlKg);
+            $totalKg  = (float) ($kgResult[0]->TOTAL_KG ?? 0);
 
             return response()->json([
                 'success' => true,
                 'data'    => [
-                    'total_pedidos'    => $datos->count(),
-                    'pedidos_vencidos' => $vencidos->count(),
-                    'completos'        => $datos->filter(fn($i) => $this->sanitize($i->{'PARC. O COMPL.'} ?? '') === 'Completo')->count(),
-                    'parciales'        => $datos->filter(fn($i) => $this->sanitize($i->{'PARC. O COMPL.'} ?? '') === 'Parcial')->count(),
-                    'sin_def'          => $datos->filter(fn($i) => str_contains($this->sanitize($i->{'PARC. O COMPL.'} ?? ''), 'Sin'))->count(),
+                    'total_pedidos'    => (int) ($row->TOTAL     ?? 0),
+                    'pedidos_vencidos' => $vencidos,
+                    'completos'        => (int) ($row->COMPLETOS ?? 0),
+                    'parciales'        => (int) ($row->PARCIALES ?? 0),
+                    'sin_def'          => (int) ($row->SIN_DEF   ?? 0),
+                    'total_kg'         => $totalKg,
                 ],
             ]);
         } catch (\Exception $e) {
@@ -655,6 +740,7 @@ class PedidosAgentesController extends Controller
             return response()->json(['success' => false, 'message' => 'Error al obtener resumen', 'error' => $e->getMessage()], 500);
         }
     }
+
 
     /* =======================================================
         📅 POR AÑO
