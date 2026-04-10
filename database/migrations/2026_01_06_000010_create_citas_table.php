@@ -27,7 +27,7 @@ return new class extends Migration
                 ->nullable();
 
             $table->text('notas')->nullable();
-
+            $table->string('con_vehiculo', 255)->nullable()->default('no');
             $table->boolean('recordatorio_30min')->default(false);
             $table->boolean('recordatorio_60min')->default(false);
 

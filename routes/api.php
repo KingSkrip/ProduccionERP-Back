@@ -143,7 +143,7 @@ Route::prefix('reportes-produccion')->group(function () {
     Route::get('/pendientes', [ReportesProduccionController::class, 'getPorRevisarTejido']);
     Route::get('/con-saldo', [ReportesProduccionController::class, 'getSaldosTejido']);
     Route::get('/entregado-embarques', [ReportesProduccionController::class, 'getEntregadoaEmbarques']);
-Route::get('/facturado', [ReportesProduccionController::class, 'getFacturado']);
+    Route::get('/facturado', [ReportesProduccionController::class, 'getFacturado']);
     Route::get('/tejido-resumen', [ReportesProduccionController::class, 'getTejido']);
     Route::get('/acabado', [ReportesProduccionController::class, 'getAcabadoReal']);
     Route::get('/departamento/{id}', [ReportesProduccionController::class, 'getByDepartment']);
@@ -303,7 +303,18 @@ Route::prefix('agentes/pedidos')->middleware('jwt.auth')->group(function () {
 });
 
 Route::apiResource('citas', AgendarCitasVisitantesController::class);
+Route::get('usuarios-permitidos', [AgendarCitasVisitantesController::class, 'UsuariosPermitidosParaProvedores']);
+Route::get('usuarios-permitidosAllUsers', [AgendarCitasVisitantesController::class, 'UsuariosPermitidosParaAllUsers']);
+// Route::post('/proveedor', [AgendarCitasVisitantesController::class, 'storeProveedor']);
 
+
+Route::prefix('citas')->group(function () {
+    Route::post('/proveedor', [AgendarCitasVisitantesController::class, 'storeProveedor']);
+
+    Route::get('index/proveedor',         [AgendarCitasVisitantesController::class, 'indexProveedor']);
+    Route::put('/proveedor/update',  [AgendarCitasVisitantesController::class, 'updateProveedor']);
+    Route::delete('/proveedor/destroy', [AgendarCitasVisitantesController::class, 'destroyProveedor']);
+});
 /**
  * SIEMPRE QUE SE AGREGE UNA NUEVA RUTA HAY QUE AGREGARLA A  
  * app/Http/Middleware/EncryptJsonResponse.php

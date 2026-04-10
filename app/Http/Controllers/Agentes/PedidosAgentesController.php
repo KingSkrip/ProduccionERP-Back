@@ -916,4 +916,18 @@ class PedidosAgentesController extends Controller
     {
         return response()->json(['success' => false, 'message' => 'No se permite eliminar pedidos'], 403);
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
 }

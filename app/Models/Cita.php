@@ -11,7 +11,7 @@ class Cita extends Model
     use HasFactory;
 
     protected $table = 'citas';
-    
+
     // Desactiva el manejo automático de timestamps
     public $timestamps = false;
 
@@ -25,8 +25,9 @@ class Cita extends Model
         'motivo',
         'estado',
         'notas',
-         'recordatorio_30min', // ✅
-    'recordatorio_60min', // ✅
+        'con_vehiculo',
+        'recordatorio_30min',
+        'recordatorio_60min',
         'created_at',
     ];
 
@@ -35,8 +36,8 @@ class Cita extends Model
         'hora_inicio' => 'datetime:H:i',
         'hora_fin'   => 'datetime:H:i',
         'created_at' => 'datetime',
-          'recordatorio_30min' => 'boolean',
-    'recordatorio_60min' => 'boolean',
+        'recordatorio_30min' => 'boolean',
+        'recordatorio_60min' => 'boolean',
     ];
 
     /* =========================
