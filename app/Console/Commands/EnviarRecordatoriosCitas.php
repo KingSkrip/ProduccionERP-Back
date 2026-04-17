@@ -49,24 +49,24 @@ class EnviarRecordatoriosCitas extends Command
     // ─────────────────────────────────────────────
     // Solo CONFIRMADAS para recordatorios de 30/60 min
     // ─────────────────────────────────────────────
-    private function getCitasConfirmadasEnRango(Carbon $objetivo, int $ventana, string $tipo)
-    {
-        $tz      = env('APP_TIMEZONE', 'America/Mexico_City');
-        $desde   = $objetivo->copy()->subMinutes($ventana)->format('H:i:s');
-        $hasta   = $objetivo->copy()->addMinutes($ventana)->format('H:i:s');
-        $hoy     = Carbon::now($tz)->toDateString();
-        $columna = $tipo === '30min' ? 'recordatorio_30min' : 'recordatorio_60min';
+private function getCitasConfirmadasEnRango(Carbon $objetivo, int $ventana, string $tipo)
+{
+    $tz      = env('APP_TIMEZONE', 'America/Mexico_City');
+    $desde   = $objetivo->copy()->subMinutes($ventana)->format('H:i:s');
+    $hasta   = $objetivo->copy()->addMinutes($ventana)->format('H:i:s');
+    $hoy     = Carbon::now($tz)->toDateString();
+    $columna = $tipo === '30min' ? 'recordatorio_30min' : 'recordatorio_60min';
 
-        $this->line("  🔍 [{$tipo}] {$hoy} entre {$desde} y {$hasta}");
+    $this->line("  🔍 [{$tipo}] {$hoy} entre {$desde} y {$hasta}");
 
-        return Cita::whereDate('fecha', $hoy)
-            ->whereTime('hora_inicio', '>=', $desde)
-            ->whereTime('hora_inicio', '<=', $hasta)
-            ->where('estado', 'confirmada')   // ← solo confirmadas
-            ->whereNotNull('id_user')
-            ->where($columna, false)
-            ->get();
-    }
+    return Cita::whereDate('fecha', $hoy)
+        ->whereTime('hora_inicio', '>=', $desde)
+        ->whereTime('hora_inicio', '<=', $hasta)
+        ->where('estado', 'confirmada')   // ← solo confirmadas
+        ->whereNotNull('id_user')
+        ->where($columna, false)
+        ->get();
+}
 
     // ─────────────────────────────────────────────
     // PENDIENTES: notificar el DÍA ANTERIOR
@@ -95,11 +95,7 @@ class EnviarRecordatoriosCitas extends Command
                 // ── Anfitrión: confirma o cancela ──
                 if ($telefonoAnfitrion) {
                     $msg = $this->notif->mensajePendienteParaAnfitrion(
-                        $nombreVisitante,
-                        $fecha,
-                        $horaIni,
-                        $horaFin,
-                        $cita
+                        $nombreVisitante, $fecha, $horaIni, $horaFin, $cita
                     );
                     $this->notif->enviarDirecto($telefonoAnfitrion, $msg);
                     $this->line("  📌 [día anterior] Anfitrión {$nombreAnfitrion} → {$telefonoAnfitrion}");
@@ -108,11 +104,7 @@ class EnviarRecordatoriosCitas extends Command
                 // ── Visitante/Proveedor: sigue sin confirmar ──
                 if ($telefonoVisitante) {
                     $msg = $this->notif->mensajePendienteParaQuienAgendo(
-                        $nombreAnfitrion,
-                        $fecha,
-                        $horaIni,
-                        $horaFin,
-                        $cita
+                        $nombreAnfitrion, $fecha, $horaIni, $horaFin, $cita
                     );
                     $this->notif->enviarDirecto($telefonoVisitante, $msg);
                     $this->line("  📌 [día anterior] Visitante {$nombreVisitante} → {$telefonoVisitante}");
@@ -132,6 +124,7 @@ class EnviarRecordatoriosCitas extends Command
                 $cita->update(['recordatorio_pendiente_dia_anterior' => true]);
 
                 Log::info('✅ RECORDATORIO_PENDIENTE_DIA_ANTERIOR', ['cita_id' => $cita->id]);
+
             } catch (\Throwable $e) {
                 Log::error('❌ RECORDATORIO_PENDIENTE_DIA_ANTERIOR_ERROR', [
                     'cita_id' => $cita->id,
@@ -206,6 +199,7 @@ class EnviarRecordatoriosCitas extends Command
                 $cita->update(['recordatorio_pendiente_mismo_dia' => true]);
 
                 Log::info('✅ RECORDATORIO_PENDIENTE_MISMO_DIA', ['cita_id' => $cita->id]);
+
             } catch (\Throwable $e) {
                 Log::error('❌ RECORDATORIO_PENDIENTE_MISMO_DIA_ERROR', [
                     'cita_id' => $cita->id,
@@ -274,6 +268,7 @@ class EnviarRecordatoriosCitas extends Command
                 $cita->update([$columna => true]);
 
                 Log::info("✅ RECORDATORIO_{$tipo}", ['cita_id' => $cita->id]);
+
             } catch (\Throwable $e) {
                 Log::error("❌ RECORDATORIO_ERROR", [
                     'cita_id' => $cita->id,
