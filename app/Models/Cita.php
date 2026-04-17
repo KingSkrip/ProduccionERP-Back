@@ -38,6 +38,8 @@ class Cita extends Model
         'created_at' => 'datetime',
         'recordatorio_30min' => 'boolean',
         'recordatorio_60min' => 'boolean',
+         'recordatorio_pendiente_dia_anterior' => 'boolean',
+        'recordatorio_pendiente_mismo_dia'   => 'boolean',
     ];
 
     /* =========================

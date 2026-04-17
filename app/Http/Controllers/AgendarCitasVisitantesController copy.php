@@ -18,7 +18,7 @@ use Throwable;
 use App\Jobs\EnviarMensajeWhatsappJob;
 use App\Services\CitaNotificacionService;
 
-class AgendarCitasVisitantesController extends Controller
+class AgendarCitasVisitantesControllercopy extends Controller
 {
     private string $jwtSecret;
     private UserService $userService;
@@ -228,6 +228,13 @@ class AgendarCitasVisitantesController extends Controller
             // ── WhatsApp a MÍ (anfitrión) ──
             try {
                 if ($telefonoAnfitrion) {
+                    $mensajeAnfitrion = "✅ Has agendado una cita con *{$nombreProv}* para el día *{$fecha}* de *{$horaIni}* a *{$horaFin}*."
+                        . ($request->motivo ? "\n\n📋 Motivo: {$request->motivo}" : '')
+                        . $notasTexto
+                        . $vehiculoTexto;
+                    $this->enviarMensajeAlUsuario($request, $mensajeAnfitrion, $telefonoAnfitrion);
+
+
                     $msgAnf = $this->notif->mensajeNuevaCitaPendiente($nombreProv, $fecha, $horaIni, $horaFin, $cita, true);
                     $this->notif->enviarConJob($telefonoAnfitrion, $msgAnf, self::$whatsappQueueIndex++);
                 }
@@ -241,8 +248,12 @@ class AgendarCitasVisitantesController extends Controller
             // ── WhatsApp al PROVEEDOR invitado ──
             try {
                 if ($telefonoProveedor) {
-                    $msgProv = $this->notif->mensajeNuevaCitaPendiente($nombreAnfitrion, $fecha, $horaIni, $horaFin, $cita, false);
-                    $this->notif->enviarConJob($telefonoProveedor, $msgProv, self::$whatsappQueueIndex++);
+                    $mensajeProveedor = "Hola, *{$nombreAnfitrion}* te ha invitado a una cita para el día *{$fecha}* de *{$horaIni}* a *{$horaFin}*."
+                        . ($request->motivo ? "\n\n📋 Motivo: {$request->motivo}" : '')
+                        . $notasTexto
+                        . $vehiculoTexto
+                        . ($request->con_vehiculo ? "\n\n⚠️ Recuerda solicitar autorización para el ingreso con automóvil." : '');
+                    $this->enviarMensajeAlUsuario($request, $mensajeProveedor, $telefonoProveedor);
                 }
             } catch (\Throwable $e) {
                 Log::error('❌ INVITAR_PROVEEDOR_WHATSAPP_PROVEEDOR_ERROR', [
@@ -1032,8 +1043,11 @@ class AgendarCitasVisitantesController extends Controller
             // ── WhatsApp al PROVEEDOR (quien agenda) ──
             try {
                 if ($telefonoProveedor) {
-                    $msgProv = $this->notif->mensajeNuevaCitaPendiente($nombreVisitante, $fecha, $horaIni, $horaFin, $cita, true);
-                    $this->notif->enviarConJob($telefonoProveedor, $msgProv, self::$whatsappQueueIndex++);
+                    $mensajeProveedor = "✅ Tu cita con *{$nombreVisitante}* ha sido registrada para el día *{$fecha}* de *{$horaIni}* a *{$horaFin}*."
+                        . ($request->motivo ? "\n\n📋 Motivo: {$request->motivo}" : '')
+                        . $notasTexto
+                        . ($request->con_vehiculo ? "\n🚗 Asistirás con vehículo." : '');
+                    $this->enviarMensajeAlUsuario($request, $mensajeProveedor, $telefonoProveedor);
                 }
             } catch (\Throwable $e) {
                 Log::error('❌ CITA_PROVEEDOR_WHATSAPP_PROVEEDOR_ERROR', [
@@ -1045,8 +1059,12 @@ class AgendarCitasVisitantesController extends Controller
             // ── WhatsApp al VISITANTE ──
             try {
                 if ($telefonoVisitante) {
-                    $msgAnf = $this->notif->mensajeNuevaCitaPendiente($nombreProveedor, $fecha, $horaIni, $horaFin, $cita, false);
-                    $this->notif->enviarConJob($telefonoVisitante, $msgAnf, self::$whatsappQueueIndex++);
+                    $mensajeVisitante = "Hola, *{$nombreProveedor}* ha agendado una cita contigo para el día *{$fecha}* de *{$horaIni}* a *{$horaFin}*."
+                        . ($request->motivo ? "\n\n📋 Motivo: {$request->motivo}" : '')
+                        . $notasTexto
+                        . $vehiculoTexto
+                        . "\n\n⚠️ Recuerda pedir autorización de dirección para el ingreso con automóvil";
+                    $this->enviarMensajeAlUsuario($request, $mensajeVisitante, $telefonoVisitante);
                 } else {
                     Log::warning('⚠️ VISITANTE_SIN_TELEFONO', ['identity_id' => $visitanteIdentity->id]);
                 }
