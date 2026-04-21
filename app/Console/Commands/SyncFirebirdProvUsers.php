@@ -514,7 +514,7 @@ class SyncFirebirdProvUsers extends Command
             DB::connection('mysql')
                 ->table('model_has_roles')
                 ->insert([
-                    'role_id'             => 7,
+                    'role_id'             => 8,
                     'subrol_id'           => null,
                     'firebird_identity_id' => $firebirdIdentityId,
                     'model_type'          => 'firebird_identity',
@@ -522,7 +522,7 @@ class SyncFirebirdProvUsers extends Command
                     'updated_at'          => Carbon::now(),
                 ]);
 
-            $this->info("🎭 Rol asignado: PROVEEDOR (role_id: 7)");
+            $this->info("🎭 Rol asignado: PROVEEDOR (role_id: 8)");
         } catch (\Exception $e) {
             Log::error('Error al asignar rol proveedor', [
                 'identity_id' => $firebirdIdentityId,
