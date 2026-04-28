@@ -40,4 +40,8 @@ class WorkorderAttachment extends Model
             ? Storage::disk('public')->url($this->path)
             : null;
     }
+
+
+
+
 }

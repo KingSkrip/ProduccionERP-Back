@@ -106,6 +106,7 @@ class TaskController extends Controller
                 'para_id' => ['nullable', 'integer', 'exists:users_firebird_identities,id'],
 
                 'status_id' => ['nullable', 'integer', 'exists:statuses,id'],
+                'priority_id' => ['nullable', 'integer', 'exists:priorities,id'],
                 'titulo'    => ['required', 'string', 'max:200'],
                 'descripcion' => ['nullable', 'string'],
 
@@ -147,7 +148,8 @@ class TaskController extends Controller
             $workorder = WorkOrder::create([
                 'de_id' => $firebirdIdentity?->id ?? $validated['de_id'],
                 'para_id' => $validated['para_id'] ?? null,
-                'status_id' => $validated['status_id'] ?? null,
+                'status_id' => 4 ?? null,
+                'priority_id' => $validated['priority_id'] ?? 3,
                 'type' => 'Task',
                 'titulo' => $validated['titulo'],
                 'descripcion' => $descripcionLimpia,

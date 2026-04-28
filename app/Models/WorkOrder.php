@@ -10,11 +10,14 @@ class WorkOrder extends Model
 {
     protected $connection = 'mysql';
     protected $table = 'workorders';
+    protected $appends = ['participants'];
 
     protected $fillable = [
         'de_id',
         'para_id',
         'status_id',
+        'priority_id',
+        'ticket_number',
         'type',
         'titulo',
         'descripcion',
@@ -68,4 +71,61 @@ class WorkOrder extends Model
             ->with(['user.firebirdUser', 'attachments'])
             ->orderBy('sent_at', 'asc');
     }
+
+    public function priority(): BelongsTo
+    {
+        return $this->belongsTo(Priority::class, 'priority_id');
+    }
+
+
+    protected static function booted(): void
+    {
+        static::created(function (WorkOrder $wo) {
+            $wo->ticket_number = 'TK-' . str_pad($wo->id, 5, '0', STR_PAD_LEFT);
+            $wo->saveQuietly();
+        });
+    }
+
+
+        public function getParticipantsAttribute()
+{
+    $users = collect();
+
+    // Emisor
+    if ($this->de && $this->de->firebirdUser) {
+        $users->push([
+            'id' => 'de-' . $this->de->id,
+            'name' => $this->de->firebirdUser->NOMBRE,
+            'photo_url' => $this->de->firebirdUser->FOTO ?? null,
+            'type' => 'emisor',
+        ]);
+    }
+
+    // Receptor principal
+    if ($this->para && $this->para->firebirdUser) {
+        $users->push([
+            'id' => 'para-' . $this->para->id,
+            'name' => $this->para->firebirdUser->NOMBRE,
+            'photo_url' => $this->para->firebirdUser->FOTO ?? null,
+            'type' => 'receptor',
+        ]);
+    }
+
+    // Participantes (receptores extras)
+    foreach ($this->taskParticipants as $p) {
+        if ($p->user && $p->user->firebirdUser) {
+            $users->push([
+                'id' => 'tp-' . $p->user_id,
+                'name' => $p->user->firebirdUser->NOMBRE,
+                'photo_url' => $p->user->firebirdUser->FOTO ?? null,
+                'type' => $p->role ?? 'participante',
+            ]);
+        }
+    }
+
+    // 🔥 eliminar duplicados por user_id
+    return $users
+        ->unique('id')
+        ->values();
+}
 }

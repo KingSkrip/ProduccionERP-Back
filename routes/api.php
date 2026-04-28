@@ -210,6 +210,9 @@ Route::middleware('jwt.auth')->group(function () {
     Route::get('/mailbox/important',    [MailboxController::class, 'important']);
     Route::get('/mailbox/starred',      [MailboxController::class, 'starred']);
 
+Route::patch('mailbox/workorder/{workorderId}/iniciar-ticket', [MailboxController::class, 'iniciarTicket']);
+Route::patch('mailbox/workorder/{workorderId}/finalizar-ticket', [MailboxController::class, 'finalizarTicket']);
+
     // ============================================
     // CREAR/GUARDAR
     // ============================================

@@ -209,65 +209,184 @@ class WhatsAppNotificationService
         }
     }
 
-    private function getParticipantPhone(UserFirebirdIdentity $identity): ?string
-    {
-        try {
-            Log::info('getParticipantPhone - Inicio', [
-                'identity_id' => $identity->id,
-                'firebird_user_clave' => $identity->firebird_user_clave,
-                'firebird_tb_clave' => $identity->firebird_tb_clave,
-                'firebird_tb_tabla' => $identity->firebird_tb_tabla,
-                'firebird_empresa' => $identity->firebird_empresa
-            ]);
+    // private function getParticipantPhone(UserFirebirdIdentity $identity): ?string
+    // {
+    //     try {
+    //         Log::info('getParticipantPhone - Inicio', [
+    //             'identity_id' => $identity->id,
+    //             'firebird_user_clave' => $identity->firebird_user_clave,
+    //             'firebird_tb_clave' => $identity->firebird_tb_clave,
+    //             'firebird_tb_tabla' => $identity->firebird_tb_tabla,
+    //             'firebird_empresa' => $identity->firebird_empresa
+    //         ]);
 
+    //         $tbData = $identity->getTbData();
+
+    //         if (!$tbData) {
+    //             Log::warning('getParticipantPhone - No se pudo obtener datos de TB', [
+    //                 'identity_id' => $identity->id,
+    //                 'tb_tabla' => $identity->firebird_tb_tabla,
+    //                 'tb_clave' => $identity->firebird_tb_clave,
+    //                 'empresa' => $identity->firebird_empresa
+    //             ]);
+    //             return null;
+    //         }
+
+    //         $phone = $tbData->TELEFONO
+    //             ?? $tbData->TELEFONO2
+    //             ?? $tbData->CELULAR
+    //             ?? null;
+
+    //         if (!$phone) {
+    //             $availableFields = get_object_vars($tbData);
+    //             Log::warning('getParticipantPhone - Sin teléfono en TB', [
+    //                 'identity_id' => $identity->id,
+    //                 'tb_data_fields' => array_keys($availableFields),
+    //                 'nombre' => $tbData->NOMBRE ?? 'N/A'
+    //             ]);
+    //             return null;
+    //         }
+
+    //         $formattedPhone = $this->formatPhoneNumber($phone);
+
+    //         Log::info('getParticipantPhone - Teléfono obtenido', [
+    //             'identity_id' => $identity->id,
+    //             'tb_tabla' => $identity->firebird_tb_tabla,
+    //             'phone_raw' => $phone,
+    //             'phone_formatted' => $formattedPhone
+    //         ]);
+
+    //         return $formattedPhone;
+    //     } catch (\Exception $e) {
+    //         Log::error('getParticipantPhone - Error', [
+    //             'identity_id' => $identity->id,
+    //             'error' => $e->getMessage(),
+    //             'file' => $e->getFile(),
+    //             'line' => $e->getLine(),
+    //             'trace' => $e->getTraceAsString()
+    //         ]);
+    //         return null;
+    //     }
+    // }
+
+    private function getParticipantPhone(UserFirebirdIdentity $identity): ?string
+{
+    try {
+        Log::info('getParticipantPhone - Inicio', [
+            'identity_id'          => $identity->id,
+            'firebird_tb_clave'    => $identity->firebird_tb_clave,
+            'firebird_clie_clave'  => $identity->firebird_clie_clave,
+            'firebird_vend_clave'  => $identity->firebird_vend_clave,
+            'firebird_prov_clave'  => $identity->firebird_prov_clave,
+        ]);
+
+        // ── 1. EMPLEADO (TB / NOI) ──────────────────────────────────
+        if ($identity->firebird_tb_clave !== null) {
             $tbData = $identity->getTbData();
 
-            if (!$tbData) {
-                Log::warning('getParticipantPhone - No se pudo obtener datos de TB', [
-                    'identity_id' => $identity->id,
-                    'tb_tabla' => $identity->firebird_tb_tabla,
-                    'tb_clave' => $identity->firebird_tb_clave,
-                    'empresa' => $identity->firebird_empresa
-                ]);
-                return null;
+            if ($tbData) {
+                $phone = $tbData->TELEFONO
+                    ?? $tbData->TELEFONO2
+                    ?? $tbData->TEL
+                    ?? $tbData->TEL_CELULAR
+                    ?? $tbData->CELULAR
+                    ?? $tbData->TEL_PARTICULAR
+                    ?? null;
+
+                if ($phone) {
+                    Log::info('getParticipantPhone - Teléfono obtenido (TB)', [
+                        'identity_id' => $identity->id,
+                        'phone_raw'   => $phone,
+                    ]);
+                    return $this->formatPhoneNumber($phone);
+                }
             }
 
-            $phone = $tbData->TELEFONO
-                ?? $tbData->TELEFONO2
-                ?? $tbData->CELULAR
-                ?? null;
-
-            if (!$phone) {
-                $availableFields = get_object_vars($tbData);
-                Log::warning('getParticipantPhone - Sin teléfono en TB', [
-                    'identity_id' => $identity->id,
-                    'tb_data_fields' => array_keys($availableFields),
-                    'nombre' => $tbData->NOMBRE ?? 'N/A'
-                ]);
-                return null;
-            }
-
-            $formattedPhone = $this->formatPhoneNumber($phone);
-
-            Log::info('getParticipantPhone - Teléfono obtenido', [
-                'identity_id' => $identity->id,
-                'tb_tabla' => $identity->firebird_tb_tabla,
-                'phone_raw' => $phone,
-                'phone_formatted' => $formattedPhone
-            ]);
-
-            return $formattedPhone;
-        } catch (\Exception $e) {
-            Log::error('getParticipantPhone - Error', [
-                'identity_id' => $identity->id,
-                'error' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
-            ]);
+            Log::warning('getParticipantPhone - Sin teléfono en TB', ['identity_id' => $identity->id]);
             return null;
         }
+
+        // ── 2. CLIENTE (CLIE03) ─────────────────────────────────────
+        if ($identity->firebird_clie_clave !== null) {
+            $conn = $this->getFirebirdConnection();
+            $row  = $conn->selectOne(
+                "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM CLIE03 WHERE CLAVE = ?",
+                [$identity->firebird_clie_clave]
+            );
+
+            $phone = $row?->TELEFONO ?? $row?->TEL ?? $row?->CELULAR ?? $row?->TEL_CELULAR ?? null;
+
+            if ($phone) {
+                Log::info('getParticipantPhone - Teléfono obtenido (CLIE03)', [
+                    'identity_id' => $identity->id,
+                    'phone_raw'   => $phone,
+                ]);
+                return $this->formatPhoneNumber($phone);
+            }
+
+            Log::warning('getParticipantPhone - Sin teléfono en CLIE03', ['identity_id' => $identity->id]);
+            return null;
+        }
+
+        // ── 3. VENDEDOR (VEND03) ────────────────────────────────────
+        if ($identity->firebird_vend_clave !== null) {
+            $conn = $this->getFirebirdConnection();
+            $row  = $conn->selectOne(
+                "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM VEND03 WHERE CVE_VEND = ?",
+                [$identity->firebird_vend_clave]
+            );
+
+            $phone = $row?->TELEFONO ?? $row?->TEL ?? $row?->CELULAR ?? $row?->TEL_CELULAR ?? null;
+
+            if ($phone) {
+                Log::info('getParticipantPhone - Teléfono obtenido (VEND03)', [
+                    'identity_id' => $identity->id,
+                    'phone_raw'   => $phone,
+                ]);
+                return $this->formatPhoneNumber($phone);
+            }
+
+            Log::warning('getParticipantPhone - Sin teléfono en VEND03', ['identity_id' => $identity->id]);
+            return null;
+        }
+
+        // ── 4. PROVEEDOR (PROV03) ───────────────────────────────────
+        if ($identity->firebird_prov_clave !== null) {
+            $conn = $this->getFirebirdConnection();
+            $row  = $conn->selectOne(
+                "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM PROV03 WHERE TRIM(CLAVE) = ?",
+                [trim((string) $identity->firebird_prov_clave)]
+            );
+
+            $phone = $row?->TELEFONO ?? $row?->TEL ?? $row?->CELULAR ?? $row?->TEL_CELULAR ?? null;
+
+            if ($phone) {
+                Log::info('getParticipantPhone - Teléfono obtenido (PROV03)', [
+                    'identity_id' => $identity->id,
+                    'phone_raw'   => $phone,
+                ]);
+                return $this->formatPhoneNumber($phone);
+            }
+
+            Log::warning('getParticipantPhone - Sin teléfono en PROV03', ['identity_id' => $identity->id]);
+            return null;
+        }
+
+        Log::warning('getParticipantPhone - Identity sin ninguna clave Firebird', [
+            'identity_id' => $identity->id,
+        ]);
+        return null;
+
+    } catch (\Exception $e) {
+        Log::error('getParticipantPhone - Error', [
+            'identity_id' => $identity->id,
+            'error'       => $e->getMessage(),
+            'file'        => $e->getFile(),
+            'line'        => $e->getLine(),
+        ]);
+        return null;
     }
+}
 
     private function formatPhoneNumber(string $phone): string
     {

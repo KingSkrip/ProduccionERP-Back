@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
             SubrolesTableSeeder::class,
             TurnosSeeder::class,
             ModelHasRoleSeeder::class,
+            PrioritySeeder::class,
             // DepartamentosTableSeeder::class,
             // TiposFaltasSeeder::class,
             // TipoAfectacionesSeeder::class,
