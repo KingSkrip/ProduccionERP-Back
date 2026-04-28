@@ -529,7 +529,7 @@ class WhatsAppNotificationService
 
         $link = config('app.frontend_url') . "/pages/mailbox/mensajes/{$pageNumber}/{$workorder->id}";
 
-        $message = "📧 *Nueva tarea asignada*\n\n";
+        $message = "📧 *Nueva ticket asignado*\n\n";
         $message .= "👤 *De:* {$senderName}\n";
         $message .= "📋 *Asunto:* {$workorder->titulo}\n";
 
@@ -552,7 +552,7 @@ class WhatsAppNotificationService
             $message .= "\n*Descripción:*\n{$preview}\n";
         }
 
-        $message .= "\n🔗 *Ver tarea completa:*\n{$link}";
+        $message .= "\n🔗 *Ver detalles del ticket:*\n{$link}";
 
         return $message;
     }
