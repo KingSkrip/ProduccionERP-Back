@@ -522,7 +522,7 @@ class MailboxController extends Controller
         $item->save();
 
         // 🔥 BROADCAST
-        broadcast(new MailboxItemUpdated($item, 'read'))->toOthers();
+        // broadcast(new MailboxItemUpdated($item, 'read'))->toOthers();
 
         return response()->json($item);
     }
@@ -542,7 +542,7 @@ class MailboxController extends Controller
         $item->save();
 
         // 🔥 BROADCAST
-        broadcast(new MailboxItemUpdated($item, 'starred'))->toOthers();
+        // broadcast(new MailboxItemUpdated($item, 'starred'))->toOthers();
 
         return response()->json($item);
     }
@@ -563,7 +563,7 @@ class MailboxController extends Controller
         $item->save();
 
         // 🔥 BROADCAST
-        broadcast(new MailboxItemUpdated($item, 'important'))->toOthers();
+        // broadcast(new MailboxItemUpdated($item, 'important'))->toOthers();
 
         return response()->json($item);
     }
@@ -592,7 +592,7 @@ class MailboxController extends Controller
         $item->save();
 
         // 🔥 BROADCAST
-        broadcast(new MailboxItemUpdated($item, 'moved'))->toOthers();
+        // broadcast(new MailboxItemUpdated($item, 'moved'))->toOthers();
 
         return response()->json($item);
     }
@@ -622,7 +622,7 @@ class MailboxController extends Controller
         );
 
         // 🔥 BROADCAST
-        broadcast(new MailboxItemUpdated($item, 'moved'))->toOthers();
+        // broadcast(new MailboxItemUpdated($item, 'moved'))->toOthers();
 
         return response()->json($item);
     }
@@ -654,7 +654,7 @@ class MailboxController extends Controller
         $item->save();
 
         // 🔥 BROADCAST
-        broadcast(new MailboxItemUpdated($item, 'read'))->toOthers();
+        // broadcast(new MailboxItemUpdated($item, 'read'))->toOthers();
 
         return response()->json($item);
     }
@@ -678,7 +678,7 @@ class MailboxController extends Controller
         $item->save();
 
         // 🔥 BROADCAST
-        broadcast(new MailboxItemUpdated($item, 'starred'))->toOthers();
+        // broadcast(new MailboxItemUpdated($item, 'starred'))->toOthers();
 
         return response()->json($item);
     }
@@ -702,7 +702,7 @@ class MailboxController extends Controller
         $item->save();
 
         // 🔥 BROADCAST
-        broadcast(new MailboxItemUpdated($item, 'important'))->toOthers();
+        // broadcast(new MailboxItemUpdated($item, 'important'))->toOthers();
 
         return response()->json($item);
     }
