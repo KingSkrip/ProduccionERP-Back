@@ -158,9 +158,12 @@ class MailboxController extends Controller
                 'workorder.de.firebirdUser',
                 'workorder.para.firebirdUser',
                 'workorder.status',
+                'workorder.priority',                              // ✅ agregado
                 'workorder.taskParticipants.user.firebirdUser',
-                'workorder.attachments',
+                'workorder.attachments' => fn($a) => $a->whereNull('reply_id'),
                 'workorder.mailboxItems' => fn($m) => $m->where('user_id', $identityId),
+                'workorder.replies.user.firebirdUser',             // ✅ agregado
+                'workorder.replies.attachments',                   // ✅ agregado
             ])
             ->orderByDesc('id');
 
@@ -297,7 +300,7 @@ class MailboxController extends Controller
                 $participantIdentityId = $participantIdentity->id;
                 Log::info("Convirtiendo participant: localUserId={$participantLocalUserId} -> identityId={$participantIdentityId}");
 
-                \App\Models\TaskParticipant::create([
+                TaskParticipant::create([
                     'workorder_id' => $wo->id,
                     'user_id'      => $participantIdentityId,
                     'role'         => $p['role'] ?? 'receptor',
@@ -353,6 +356,7 @@ class MailboxController extends Controller
             'de.firebirdUser',
             'para.firebirdUser',
             'status',
+            'priority',
             'taskParticipants.user.firebirdUser',
             'attachments',
             'mailboxItems' => fn($m) => $m->where('user_id', $identityId),
@@ -839,16 +843,16 @@ class MailboxController extends Controller
         }
 
         $workorder = WorkOrder::with([
-    'de.firebirdUser',
-    'para.firebirdUser',
-    'status',
-    'priority',
-    'taskParticipants.user.firebirdUser',
-    'attachments' => fn($q) => $q->whereNull('reply_id'),
-    'mailboxItems' => fn($m) => $m->where('user_id', $identityId),
-    'replies.user.firebirdUser',
-    'replies.attachments',
-])->findOrFail($id);
+            'de.firebirdUser',
+            'para.firebirdUser',
+            'status',
+            'priority',
+            'taskParticipants.user.firebirdUser',
+            'attachments' => fn($q) => $q->whereNull('reply_id'),
+            'mailboxItems' => fn($m) => $m->where('user_id', $identityId),
+            'replies.user.firebirdUser',
+            'replies.attachments',
+        ])->findOrFail($id);
 
         return response()->json($workorder);
     }

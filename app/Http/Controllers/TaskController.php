@@ -36,6 +36,7 @@ class TaskController extends Controller
                 'de.firebirdUser',
                 'para.firebirdUser',
                 'status',
+                  'priority',
                 'taskParticipants.user',
                 'taskParticipants.user.firebirdUser',
                 'taskParticipants.status',
