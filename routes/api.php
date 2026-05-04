@@ -210,8 +210,8 @@ Route::middleware('jwt.auth')->group(function () {
     Route::get('/mailbox/important',    [MailboxController::class, 'important']);
     Route::get('/mailbox/starred',      [MailboxController::class, 'starred']);
 
-Route::patch('mailbox/workorder/{workorderId}/iniciar-ticket', [MailboxController::class, 'iniciarTicket']);
-Route::patch('mailbox/workorder/{workorderId}/finalizar-ticket', [MailboxController::class, 'finalizarTicket']);
+    Route::patch('mailbox/workorder/{workorderId}/iniciar-ticket', [MailboxController::class, 'iniciarTicket']);
+    Route::patch('mailbox/workorder/{workorderId}/finalizar-ticket', [MailboxController::class, 'finalizarTicket']);
 
     // ============================================
     // CREAR/GUARDAR
@@ -318,6 +318,7 @@ Route::prefix('citas')->group(function () {
     Route::patch('/{id}/estado', [AgendarCitasVisitantesController::class, 'updateEstado']);
     Route::put('/proveedor/update',  [AgendarCitasVisitantesController::class, 'updateProveedor']);
     Route::delete('/proveedor/destroy', [AgendarCitasVisitantesController::class, 'destroyProveedor']);
+    Route::get('/admin/todas', [AgendarCitasVisitantesController::class, 'indexAdmin']);
 });
 /**
  * SIEMPRE QUE SE AGREGE UNA NUEVA RUTA HAY QUE AGREGARLA A  

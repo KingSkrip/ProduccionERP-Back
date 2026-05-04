@@ -17,6 +17,8 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 use App\Jobs\EnviarMensajeWhatsappJob;
 use App\Services\CitaNotificacionService;
+use Illuminate\Database\Connection;
+use App\Services\FirebirdConnectionService;
 
 class AgendarCitasVisitantesControllercopy extends Controller
 {
@@ -24,13 +26,17 @@ class AgendarCitasVisitantesControllercopy extends Controller
     private UserService $userService;
     private CitaNotificacionService $notif;
     private static int $whatsappQueueIndex = 0;
+       protected $firebird;
 
-    public function __construct()
+    public function __construct(FirebirdConnectionService $firebird)
     {
         $this->jwtSecret  = config('jwt.secret') ?? env('JWT_SECRET');
         $this->userService = new UserService();
+        $this->firebird = $firebird;
         $this->notif       = new CitaNotificacionService();
     }
+
+
 
     /* ── Helper: obtener identity del usuario autenticado ── */
     private function getIdentityFromToken(Request $request): ?UserFirebirdIdentity
@@ -84,15 +90,15 @@ class AgendarCitasVisitantesControllercopy extends Controller
                                 ->get($tbClave);
                             $nombreProveedor = $tbRow->NOMBRE ?? null;
                         } elseif (!empty($provIdentity->firebird_clie_clave)) {
-                            $conn = $this->getFirebirdProductionConnection();
+                            $conn = $this->firebird->getProductionConnection();
                             $row = $conn->selectOne("SELECT NOMBRE FROM CLIE03 WHERE CLAVE = ?", [$provIdentity->firebird_clie_clave]);
                             $nombreProveedor = $row?->NOMBRE ?? null;
                         } elseif ($provIdentity->firebird_vend_clave !== null) {
-                            $conn = $this->getFirebirdProductionConnection();
+                            $conn = $this->firebird->getProductionConnection();
                             $row = $conn->selectOne("SELECT NOMBRE FROM VEND03 WHERE CVE_VEND = ?", [$provIdentity->firebird_vend_clave]);
                             $nombreProveedor = $row?->NOMBRE ?? null;
                         } elseif ($provIdentity->firebird_prov_clave !== null) {
-                            $conn = $this->getFirebirdProductionConnection();
+                            $conn = $this->firebird->getProductionConnection();
                             Log::info('🔍 BUSCANDO_PROV03', [
                                 'prov_clave' => $provIdentity->firebird_prov_clave,
                                 'type'       => gettype($provIdentity->firebird_prov_clave),
@@ -956,15 +962,15 @@ class AgendarCitasVisitantesControllercopy extends Controller
                     ->keyBy(fn($row) => trim((string) $row->CLAVE))->get($tbClave);
                 $nombreProveedor = $tbRow->NOMBRE ?? 'Sin nombre';
             } elseif (!empty($identity->firebird_clie_clave)) {
-                $conn = $this->getFirebirdProductionConnection();
+                $conn = $this->firebird->getProductionConnection();
                 $row  = $conn->selectOne("SELECT NOMBRE FROM CLIE03 WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
                 $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
             } elseif ($identity->firebird_vend_clave !== null) {
-                $conn = $this->getFirebirdProductionConnection();
+             $conn = $this->firebird->getProductionConnection();
                 $row  = $conn->selectOne("SELECT NOMBRE FROM VEND03 WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
                 $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
             } elseif ($identity->firebird_prov_clave !== null) {
-                $conn = $this->getFirebirdProductionConnection();
+               $conn = $this->firebird->getProductionConnection();
                 $row  = $conn->selectOne("SELECT NOMBRE FROM PROV03 WHERE TRIM(CLAVE) = ?", [trim((string) $identity->firebird_prov_clave)]);
                 $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
             }
@@ -1145,7 +1151,7 @@ class AgendarCitasVisitantesControllercopy extends Controller
         // 🛒 CLIENTE: teléfono desde CLIE03
         if ($identity->firebird_clie_clave !== null) {
             try {
-                $connection = $this->getFirebirdProductionConnection();
+                $connection = $this->firebird->getProductionConnection();
                 $clieRow = $connection->selectOne(
                     "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM CLIE03 WHERE CLAVE = ?",
                     [$identity->firebird_clie_clave]
@@ -1171,7 +1177,7 @@ class AgendarCitasVisitantesControllercopy extends Controller
         // 🧑‍💼 VENDEDOR: teléfono desde VEND03
         if ($identity->firebird_vend_clave !== null) {
             try {
-                $connection = $this->getFirebirdProductionConnection();
+                $connection = $this->firebird->getProductionConnection();
                 $vendRow = $connection->selectOne(
                     "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM VEND03 WHERE CVE_VEND = ?",
                     [$identity->firebird_vend_clave]
@@ -1197,7 +1203,7 @@ class AgendarCitasVisitantesControllercopy extends Controller
         // 📦 PROVEEDOR: teléfono desde PROV03
         if ($identity->firebird_prov_clave !== null) {
             try {
-                $connection = $this->getFirebirdProductionConnection();
+                $connection = $this->firebird->getProductionConnection();
                 $provRow = $connection->selectOne(
                     "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM PROV03 WHERE CLAVE = ?",
                     [$identity->firebird_prov_clave]
@@ -1223,26 +1229,6 @@ class AgendarCitasVisitantesControllercopy extends Controller
         return null;
     }
 
-    private function getFirebirdProductionConnection(): \Illuminate\Database\Connection
-    {
-        config([
-            'database.connections.firebird_produccion' => [
-                'driver'            => 'firebird',
-                'host'              => env('FB_HOST'),
-                'port'              => env('FB_PORT'),
-                'database'          => env('FB_DATABASE'),
-                'username'          => env('FB_USERNAME'),
-                'password'          => env('FB_PASSWORD'),
-                'charset'           => env('FB_CHARSET', 'UTF8'),
-                'dialect'           => 3,
-                'quote_identifiers' => false,
-            ]
-        ]);
-
-        DB::purge('firebird_produccion');
-
-        return DB::connection('firebird_produccion');
-    }
 
     /* =========================
     | 👻 HELPERS
@@ -1390,17 +1376,17 @@ class AgendarCitasVisitantesControllercopy extends Controller
 
                 $nombreProveedor = $tbRow->NOMBRE ?? 'Sin nombre';
             } elseif (!empty($identity->firebird_clie_clave)) {
-                $conn = $this->getFirebirdProductionConnection();
+            $conn = $this->firebird->getProductionConnection();
                 $row  = $conn->selectOne("SELECT NOMBRE FROM CLIE03 WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
 
                 $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
             } elseif ($identity->firebird_vend_clave !== null) {
-                $conn = $this->getFirebirdProductionConnection();
+               $conn = $this->firebird->getProductionConnection();
                 $row  = $conn->selectOne("SELECT NOMBRE FROM VEND03 WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
 
                 $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
             } elseif ($identity->firebird_prov_clave !== null) {
-                $conn = $this->getFirebirdProductionConnection();
+               $conn = $this->firebird->getProductionConnection();
                 $row  = $conn->selectOne(
                     "SELECT NOMBRE FROM PROV03 WHERE TRIM(CLAVE) = ?",
                     [trim((string) $identity->firebird_prov_clave)]

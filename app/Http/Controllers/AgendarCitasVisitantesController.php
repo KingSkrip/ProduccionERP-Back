@@ -24,12 +24,14 @@ class AgendarCitasVisitantesController extends Controller
     private UserService $userService;
     private CitaNotificacionService $notif;
     private static int $whatsappQueueIndex = 0;
+    protected $firebird;
 
-    public function __construct()
+    public function __construct(FirebirdEmpresaManualService $firebird)
     {
         $this->jwtSecret  = config('jwt.secret') ?? env('JWT_SECRET');
         $this->userService = new UserService();
         $this->notif       = new CitaNotificacionService();
+        $this->firebird = $firebird;
     }
 
     /* ── Helper: obtener identity del usuario autenticado ── */
@@ -84,15 +86,15 @@ class AgendarCitasVisitantesController extends Controller
                                 ->get($tbClave);
                             $nombreProveedor = $tbRow->NOMBRE ?? null;
                         } elseif (!empty($provIdentity->firebird_clie_clave)) {
-                            $conn = $this->getFirebirdProductionConnection();
+                            $conn = $this->firebird->getProductionConnection();
                             $row = $conn->selectOne("SELECT NOMBRE FROM CLIE03 WHERE CLAVE = ?", [$provIdentity->firebird_clie_clave]);
                             $nombreProveedor = $row?->NOMBRE ?? null;
                         } elseif ($provIdentity->firebird_vend_clave !== null) {
-                            $conn = $this->getFirebirdProductionConnection();
+                            $conn = $this->firebird->getProductionConnection();
                             $row = $conn->selectOne("SELECT NOMBRE FROM VEND03 WHERE CVE_VEND = ?", [$provIdentity->firebird_vend_clave]);
                             $nombreProveedor = $row?->NOMBRE ?? null;
                         } elseif ($provIdentity->firebird_prov_clave !== null) {
-                            $conn = $this->getFirebirdProductionConnection();
+                            $conn = $this->firebird->getProductionConnection();
                             Log::info('🔍 BUSCANDO_PROV03', [
                                 'prov_clave' => $provIdentity->firebird_prov_clave,
                                 'type'       => gettype($provIdentity->firebird_prov_clave),
@@ -129,22 +131,25 @@ class AgendarCitasVisitantesController extends Controller
         }
 
         $request->validate([
-            'fecha'         => 'required|date',
-            'hora_inicio'   => 'required',
-            'hora_fin'      => 'required|after:hora_inicio',
-            'visitantes'    => 'required|array|min:1',
-            'visitantes.*'  => 'required|integer',
-            'motivo'        => 'nullable|string|max:255',
-            'estado'        => 'nullable|in:pendiente,confirmada,cancelada',
-            'notas'         => 'nullable|string',
-            'con_vehiculo'  => 'nullable|boolean',
+            'fecha'                    => 'required|date',
+            'hora_inicio'              => 'required',
+            'hora_fin'                 => 'required|after:hora_inicio',
+            'visitantes'               => 'nullable|array',
+            'visitantes.*'             => 'integer',
+            'nombre_visitante_externo' => 'nullable|string|max:255',
+            'motivo'                   => 'nullable|string|max:255',
+            'estado'                   => 'nullable|in:pendiente,confirmada,cancelada',
+            'notas'                    => 'nullable|string',
+            'con_vehiculo'             => 'nullable|boolean',
         ], [
-            'visitantes.required' => 'Debes seleccionar al menos un proveedor a invitar.',
-            'visitantes.min'      => 'Debes seleccionar al menos un proveedor a invitar.',
-            'hora_fin.after'      => 'La hora de fin debe ser mayor que la hora de inicio.',
-            'fecha.required'      => 'La fecha es obligatoria.',
+            'hora_fin.after'  => 'La hora de fin debe ser mayor que la hora de inicio.',
+            'fecha.required'  => 'La fecha es obligatoria.',
         ]);
 
+
+        $tieneRegistrados = !empty($request->visitantes);
+        $nombreExterno    = trim((string) ($request->nombre_visitante_externo ?? ''));
+        $tieneExterno     = strlen($nombreExterno) > 0;
         $idAnfitrion  = $identity->id;
         $citasCreadas = [];
         $errores      = [];
@@ -155,6 +160,13 @@ class AgendarCitasVisitantesController extends Controller
             ->where('hora_inicio', '<', $request->hora_fin)
             ->where('hora_fin', '>', $request->hora_inicio)
             ->exists();
+
+        if (!$tieneRegistrados && !$tieneExterno) {
+            return response()->json([
+                'message' => 'Debes seleccionar un visitante o escribir un nombre externo.',
+                'errores' => [],
+            ], 422);
+        }
 
         if ($cruceAnfitrion) {
             return response()->json([
@@ -172,37 +184,13 @@ class AgendarCitasVisitantesController extends Controller
             ?? $meData['user']['PROV']?->NOMBRE
             ?? 'Un colaborador';
 
-        foreach ($request->visitantes as $idProveedor) {
-            $proveedorIdentity = UserFirebirdIdentity::find($idProveedor);
 
-            if (!$proveedorIdentity) {
-                $errores[] = "Proveedor con id {$idProveedor} no encontrado.";
-                continue;
-            }
-
-            // ── Verificar cruce en la agenda del PROVEEDOR ──
-            $cruce = Cita::where('id_user', $proveedorIdentity->id)
-                ->where('fecha', $request->fecha)
-                ->where('hora_inicio', '<', $request->hora_fin)
-                ->where('hora_fin', '>', $request->hora_inicio)
-                ->first();
-
-            if ($cruce) {
-                $nombreProv   = $proveedorIdentity->firebirdUser->NOMBRE ?? "ID {$idProveedor}";
-                $horaIniCruce = Carbon::parse($cruce->hora_inicio)->format('g:i') . ' ' .
-                    (Carbon::parse($cruce->hora_inicio)->format('A') === 'AM' ? 'am' : 'pm');
-                $horaFinCruce = Carbon::parse($cruce->hora_fin)->format('g:i') . ' ' .
-                    (Carbon::parse($cruce->hora_fin)->format('A') === 'AM' ? 'am' : 'pm');
-                $errores[]    = "{$nombreProv} ya tiene una cita de {$horaIniCruce} a {$horaFinCruce}.";
-                continue;
-            }
-
-            $nombreProv = $proveedorIdentity->firebirdUser->NOMBRE ?? null;
-
+        // ── Visitante EXTERNO ──
+        if ($tieneExterno) {
             $cita = Cita::create([
                 'id_user'          => $idAnfitrion,
-                'id_visitante'     => $proveedorIdentity->id,
-                'nombre_visitante' => $nombreProv,
+                'id_visitante'     => null,
+                'nombre_visitante' => $nombreExterno,
                 'fecha'            => $request->fecha,
                 'hora_inicio'      => $request->hora_inicio,
                 'hora_fin'         => $request->hora_fin,
@@ -215,63 +203,132 @@ class AgendarCitasVisitantesController extends Controller
 
             $citasCreadas[] = $cita;
 
-            $telefonoProveedor = $this->obtenerTelefonoDeIdentity($proveedorIdentity);
-
             $fecha   = Carbon::parse($cita->fecha)->locale('es')->isoFormat('D [de] MMMM [de] YYYY');
             $horaIni = Carbon::parse($cita->hora_inicio)->format('g:i') . ' ' .
                 (Carbon::parse($cita->hora_inicio)->format('A') === 'AM' ? 'am' : 'pm');
             $horaFin = Carbon::parse($cita->hora_fin)->format('g:i') . ' ' .
                 (Carbon::parse($cita->hora_fin)->format('A') === 'AM' ? 'am' : 'pm');
-            $vehiculoTexto = $request->con_vehiculo ? "\n🚗 Asistirá en vehículo." : '';
-            $notasTexto    = $request->notas ? "\n\n📝 Notas adicionales: {$request->notas}" : '';
+            $notasTexto = $request->notas ? "\n\n📝 Notas: {$request->notas}" : '';
 
-            // ── WhatsApp a MÍ (anfitrión) ──
             try {
                 if ($telefonoAnfitrion) {
-                    $msgAnf = $this->notif->mensajeNuevaCitaPendiente($nombreProv, $fecha, $horaIni, $horaFin, $cita, true);
+                    $msgAnf = $this->notif->mensajeNuevaCitaPendiente($nombreExterno, $fecha, $horaIni, $horaFin, $cita, true);
                     $this->notif->enviarConJob($telefonoAnfitrion, $msgAnf, self::$whatsappQueueIndex++);
                 }
             } catch (\Throwable $e) {
-                Log::error('❌ INVITAR_PROVEEDOR_WHATSAPP_ANFITRION_ERROR', [
-                    'error'   => $e->getMessage(),
-                    'cita_id' => $cita->id,
-                ]);
+                Log::error('❌ EXTERNO_WHATSAPP_ERROR', ['error' => $e->getMessage()]);
             }
 
-            // ── WhatsApp al PROVEEDOR invitado ──
-            try {
-                if ($telefonoProveedor) {
-                    $msgProv = $this->notif->mensajeNuevaCitaPendiente($nombreAnfitrion, $fecha, $horaIni, $horaFin, $cita, false);
-                    $this->notif->enviarConJob($telefonoProveedor, $msgProv, self::$whatsappQueueIndex++);
-                }
-            } catch (\Throwable $e) {
-                Log::error('❌ INVITAR_PROVEEDOR_WHATSAPP_PROVEEDOR_ERROR', [
-                    'error'        => $e->getMessage(),
-                    'id_proveedor' => $idProveedor,
-                    'cita_id'      => $cita->id,
-                ]);
-            }
-
-            // ── WhatsApp al JEFE DE SEGURIDAD PATRIMONIAL ──
             $this->notificarJefeSegPatrimonial(
                 $request,
                 "🔔 Nueva cita registrada:\n"
-                    . "*{$nombreAnfitrion}* agendó una cita con el proveedor *{$nombreProv}*\n"
+                    . "*{$nombreAnfitrion}* agendó una cita con *{$nombreExterno}* (visitante externo)\n"
                     . "el *{$fecha}* de *{$horaIni}* a *{$horaFin}*."
-                    . ($request->con_vehiculo
-                        ? "\n🚗 Asistirá con vehículo."
-                        : "\n🚗 Asistirá sin vehículo."
-                    )
+                    . ($request->con_vehiculo ? "\n🚗 Asistirá con vehículo." : "\n🚗 Sin vehículo.")
                     . $notasTexto
             );
-
-            Log::info('📞 TELEFONOS_STORE', [
-                'cita_id'            => $cita->id,
-                'telefono_anfitrion' => $telefonoAnfitrion,
-                'telefono_proveedor' => $telefonoProveedor,
-            ]);
         }
+        if ($tieneRegistrados) {
+            foreach ($request->visitantes as $idProveedor) {
+                $proveedorIdentity = UserFirebirdIdentity::find($idProveedor);
 
+                if (!$proveedorIdentity) {
+                    $errores[] = "Proveedor con id {$idProveedor} no encontrado.";
+                    continue;
+                }
+
+                // ── Verificar cruce en la agenda del PROVEEDOR ──
+                $cruce = Cita::where('id_user', $proveedorIdentity->id)
+                    ->where('fecha', $request->fecha)
+                    ->where('hora_inicio', '<', $request->hora_fin)
+                    ->where('hora_fin', '>', $request->hora_inicio)
+                    ->first();
+
+                if ($cruce) {
+                    $nombreProv   = $proveedorIdentity->firebirdUser->NOMBRE ?? "ID {$idProveedor}";
+                    $horaIniCruce = Carbon::parse($cruce->hora_inicio)->format('g:i') . ' ' .
+                        (Carbon::parse($cruce->hora_inicio)->format('A') === 'AM' ? 'am' : 'pm');
+                    $horaFinCruce = Carbon::parse($cruce->hora_fin)->format('g:i') . ' ' .
+                        (Carbon::parse($cruce->hora_fin)->format('A') === 'AM' ? 'am' : 'pm');
+                    $errores[]    = "{$nombreProv} ya tiene una cita de {$horaIniCruce} a {$horaFinCruce}.";
+                    continue;
+                }
+
+                $nombreProv = $proveedorIdentity->firebirdUser->NOMBRE ?? null;
+
+                $cita = Cita::create([
+                    'id_user'          => $idAnfitrion,
+                    'id_visitante'     => $proveedorIdentity->id,
+                    'nombre_visitante' => $nombreProv,
+                    'fecha'            => $request->fecha,
+                    'hora_inicio'      => $request->hora_inicio,
+                    'hora_fin'         => $request->hora_fin,
+                    'motivo'           => $request->motivo,
+                    'estado'           => $request->estado ?? 'pendiente',
+                    'notas'            => $request->notas,
+                    'con_vehiculo'     => $request->con_vehiculo ?? false,
+                    'created_at'       => now(),
+                ]);
+
+                $citasCreadas[] = $cita;
+
+                $telefonoProveedor = $this->obtenerTelefonoDeIdentity($proveedorIdentity);
+
+                $fecha   = Carbon::parse($cita->fecha)->locale('es')->isoFormat('D [de] MMMM [de] YYYY');
+                $horaIni = Carbon::parse($cita->hora_inicio)->format('g:i') . ' ' .
+                    (Carbon::parse($cita->hora_inicio)->format('A') === 'AM' ? 'am' : 'pm');
+                $horaFin = Carbon::parse($cita->hora_fin)->format('g:i') . ' ' .
+                    (Carbon::parse($cita->hora_fin)->format('A') === 'AM' ? 'am' : 'pm');
+                $vehiculoTexto = $request->con_vehiculo ? "\n🚗 Asistirá en vehículo." : '';
+                $notasTexto    = $request->notas ? "\n\n📝 Notas adicionales: {$request->notas}" : '';
+
+                // ── WhatsApp a MÍ (anfitrión) ──
+                try {
+                    if ($telefonoAnfitrion) {
+                        $msgAnf = $this->notif->mensajeNuevaCitaPendiente($nombreProv, $fecha, $horaIni, $horaFin, $cita, true);
+                        $this->notif->enviarConJob($telefonoAnfitrion, $msgAnf, self::$whatsappQueueIndex++);
+                    }
+                } catch (\Throwable $e) {
+                    Log::error('❌ INVITAR_PROVEEDOR_WHATSAPP_ANFITRION_ERROR', [
+                        'error'   => $e->getMessage(),
+                        'cita_id' => $cita->id,
+                    ]);
+                }
+
+                // ── WhatsApp al PROVEEDOR invitado ──
+                try {
+                    if ($telefonoProveedor) {
+                        $msgProv = $this->notif->mensajeNuevaCitaPendiente($nombreAnfitrion, $fecha, $horaIni, $horaFin, $cita, false);
+                        $this->notif->enviarConJob($telefonoProveedor, $msgProv, self::$whatsappQueueIndex++);
+                    }
+                } catch (\Throwable $e) {
+                    Log::error('❌ INVITAR_PROVEEDOR_WHATSAPP_PROVEEDOR_ERROR', [
+                        'error'        => $e->getMessage(),
+                        'id_proveedor' => $idProveedor,
+                        'cita_id'      => $cita->id,
+                    ]);
+                }
+
+                // ── WhatsApp al JEFE DE SEGURIDAD PATRIMONIAL ──
+                $this->notificarJefeSegPatrimonial(
+                    $request,
+                    "🔔 Nueva cita registrada:\n"
+                        . "*{$nombreAnfitrion}* agendó una cita con el proveedor *{$nombreProv}*\n"
+                        . "el *{$fecha}* de *{$horaIni}* a *{$horaFin}*."
+                        . ($request->con_vehiculo
+                            ? "\n🚗 Asistirá con vehículo."
+                            : "\n🚗 Asistirá sin vehículo."
+                        )
+                        . $notasTexto
+                );
+
+                Log::info('📞 TELEFONOS_STORE', [
+                    'cita_id'            => $cita->id,
+                    'telefono_anfitrion' => $telefonoAnfitrion,
+                    'telefono_proveedor' => $telefonoProveedor,
+                ]);
+            }
+        }
         if (empty($citasCreadas)) {
             return response()->json([
                 'message' => 'No se pudo crear ninguna cita.',
@@ -945,15 +1002,15 @@ class AgendarCitasVisitantesController extends Controller
                     ->keyBy(fn($row) => trim((string) $row->CLAVE))->get($tbClave);
                 $nombreProveedor = $tbRow->NOMBRE ?? 'Sin nombre';
             } elseif (!empty($identity->firebird_clie_clave)) {
-                $conn = $this->getFirebirdProductionConnection();
+                $conn = $this->firebird->getProductionConnection();
                 $row  = $conn->selectOne("SELECT NOMBRE FROM CLIE03 WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
                 $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
             } elseif ($identity->firebird_vend_clave !== null) {
-                $conn = $this->getFirebirdProductionConnection();
+                $conn = $this->firebird->getProductionConnection();
                 $row  = $conn->selectOne("SELECT NOMBRE FROM VEND03 WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
                 $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
             } elseif ($identity->firebird_prov_clave !== null) {
-                $conn = $this->getFirebirdProductionConnection();
+                $conn = $this->firebird->getProductionConnection();
                 $row  = $conn->selectOne("SELECT NOMBRE FROM PROV03 WHERE TRIM(CLAVE) = ?", [trim((string) $identity->firebird_prov_clave)]);
                 $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
             }
@@ -1127,7 +1184,7 @@ class AgendarCitasVisitantesController extends Controller
         // 🛒 CLIENTE: teléfono desde CLIE03
         if ($identity->firebird_clie_clave !== null) {
             try {
-                $connection = $this->getFirebirdProductionConnection();
+                $connection = $this->firebird->getProductionConnection();
                 $clieRow = $connection->selectOne(
                     "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM CLIE03 WHERE CLAVE = ?",
                     [$identity->firebird_clie_clave]
@@ -1153,7 +1210,7 @@ class AgendarCitasVisitantesController extends Controller
         // 🧑‍💼 VENDEDOR: teléfono desde VEND03
         if ($identity->firebird_vend_clave !== null) {
             try {
-                $connection = $this->getFirebirdProductionConnection();
+                $connection = $this->firebird->getProductionConnection();
                 $vendRow = $connection->selectOne(
                     "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM VEND03 WHERE CVE_VEND = ?",
                     [$identity->firebird_vend_clave]
@@ -1179,7 +1236,7 @@ class AgendarCitasVisitantesController extends Controller
         // 📦 PROVEEDOR: teléfono desde PROV03
         if ($identity->firebird_prov_clave !== null) {
             try {
-                $connection = $this->getFirebirdProductionConnection();
+                $connection = $this->firebird->getProductionConnection();
                 $provRow = $connection->selectOne(
                     "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM PROV03 WHERE CLAVE = ?",
                     [$identity->firebird_prov_clave]
@@ -1205,26 +1262,7 @@ class AgendarCitasVisitantesController extends Controller
         return null;
     }
 
-    private function getFirebirdProductionConnection(): \Illuminate\Database\Connection
-    {
-        config([
-            'database.connections.firebird_produccion' => [
-                'driver'            => 'firebird',
-                'host'              => env('FB_HOST'),
-                'port'              => env('FB_PORT'),
-                'database'          => env('FB_DATABASE'),
-                'username'          => env('FB_USERNAME'),
-                'password'          => env('FB_PASSWORD'),
-                'charset'           => env('FB_CHARSET', 'UTF8'),
-                'dialect'           => 3,
-                'quote_identifiers' => false,
-            ]
-        ]);
 
-        DB::purge('firebird_produccion');
-
-        return DB::connection('firebird_produccion');
-    }
 
     /* =========================
     | 👻 HELPERS
@@ -1372,17 +1410,17 @@ class AgendarCitasVisitantesController extends Controller
 
                 $nombreProveedor = $tbRow->NOMBRE ?? 'Sin nombre';
             } elseif (!empty($identity->firebird_clie_clave)) {
-                $conn = $this->getFirebirdProductionConnection();
+                $conn = $this->firebird->getProductionConnection();
                 $row  = $conn->selectOne("SELECT NOMBRE FROM CLIE03 WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
 
                 $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
             } elseif ($identity->firebird_vend_clave !== null) {
-                $conn = $this->getFirebirdProductionConnection();
+                $conn = $this->firebird->getProductionConnection();
                 $row  = $conn->selectOne("SELECT NOMBRE FROM VEND03 WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
 
                 $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
             } elseif ($identity->firebird_prov_clave !== null) {
-                $conn = $this->getFirebirdProductionConnection();
+                $conn = $this->firebird->getProductionConnection();
                 $row  = $conn->selectOne(
                     "SELECT NOMBRE FROM PROV03 WHERE TRIM(CLAVE) = ?",
                     [trim((string) $identity->firebird_prov_clave)]
@@ -1495,4 +1533,60 @@ class AgendarCitasVisitantesController extends Controller
             'cita' => $cita->fresh()
         ]);
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+ public function indexAdmin(Request $request)
+{
+    $identity = $this->getIdentityFromToken($request);
+    if (!$identity) {
+        return response()->json(['message' => 'No autenticado'], 401);
+    }
+
+    $usuariosPermitidos = [252,235, 264, 256 ];
+    $rolesPermitidos = [1];
+    $subrolesPermitidos = [6, 15, 16];
+
+    // 🔹 Validar usuario permitido
+    $esUsuarioPermitido = in_array($identity->id, $usuariosPermitidos);
+
+    // 🔹 Validar rol
+    $tieneRol = ModelHasRole::where('firebird_identity_id', $identity->id)
+        ->whereIn('role_id', $rolesPermitidos)
+        ->exists();
+
+    // 🔹 Validar subrol
+    $tieneSubrol = ModelHasRole::where('firebird_identity_id', $identity->id)
+        ->whereIn('subrol_id', $subrolesPermitidos)
+        ->exists();
+
+    // 🔥 TODO junto
+    $tienePermiso = $esUsuarioPermitido && $tieneRol && $tieneSubrol;
+
+    if (!$tienePermiso) {
+        return response()->json(['message' => 'Sin permisos'], 403);
+    }
+
+    $citas = Cita::with(['usuario', 'visitante'])
+        ->orderBy('fecha', 'desc')
+        ->orderBy('hora_inicio', 'asc')
+        ->get();
+
+    $citas = $citas->map(function ($cita) {
+        $cita->es_externa = false;
+        return $cita;
+    });
+
+    return response()->json($citas);
+}
 }
