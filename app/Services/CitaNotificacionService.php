@@ -13,14 +13,12 @@ use App\Services\FirebirdConnectionService;
 
 class CitaNotificacionService
 {
+    protected FirebirdConnectionService $firebirdService;
 
-
-protected FirebirdConnectionService $firebirdService;
-
-public function __construct(FirebirdConnectionService $firebirdService)
-{
-    $this->firebirdService = $firebirdService;
-}
+    public function __construct(FirebirdConnectionService $firebirdService)
+    {
+        $this->firebirdService = $firebirdService;
+    }
 
     // ─────────────────────────────────────────────
     // MENSAJES — usados tanto en Controller como en Command
