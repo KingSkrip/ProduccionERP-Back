@@ -313,7 +313,6 @@ Route::get('usuarios-permitidosAllUsers', [AgendarCitasVisitantesController::cla
 
 Route::prefix('citas')->group(function () {
     Route::post('/proveedor', [AgendarCitasVisitantesController::class, 'storeProveedor']);
-
     Route::get('index/proveedor',         [AgendarCitasVisitantesController::class, 'indexProveedor']);
     Route::patch('/{id}/estado', [AgendarCitasVisitantesController::class, 'updateEstado']);
     Route::put('/proveedor/update',  [AgendarCitasVisitantesController::class, 'updateProveedor']);

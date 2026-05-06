@@ -8,4 +8,7 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Schedule::command('citas:recordatorios')->everyMinute()->appendOutputTo(storage_path('logs/cron.log'));
+Schedule::command('citas:recordatorios')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/cron.log'));

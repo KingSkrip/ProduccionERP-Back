@@ -151,11 +151,12 @@ class EnviarRecordatoriosCitas extends Command
     {
         $hoy = Carbon::now($tz)->toDateString();
 
-        $citas = Cita::whereDate('fecha', $hoy)
-            ->where('estado', 'pendiente')
-            ->whereNotNull('id_user')
-            ->where('recordatorio_pendiente_mismo_dia', false)
-            ->get();
+$citas = Cita::whereDate('fecha', $hoy)
+    ->where('estado', 'pendiente')
+    ->whereNotNull('id_user')
+    ->whereTime('hora_inicio', '>', $ahora->format('H:i:s'))
+    ->where('recordatorio_pendiente_mismo_dia', false)
+    ->get();
 
         $this->line("  📌 Pendientes mismo día ({$hoy}): {$citas->count()}");
 
