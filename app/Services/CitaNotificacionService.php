@@ -6,11 +6,22 @@ use App\Models\UserFirebirdIdentity;
 use App\Services\Whatsapp\UltraMSGService;
 use App\Jobs\EnviarMensajeWhatsappJob;
 use Carbon\Carbon;
+use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Services\FirebirdConnectionService;
 
 class CitaNotificacionService
 {
+
+
+protected FirebirdConnectionService $firebirdService;
+
+public function __construct(FirebirdConnectionService $firebirdService)
+{
+    $this->firebirdService = $firebirdService;
+}
+
     // ─────────────────────────────────────────────
     // MENSAJES — usados tanto en Controller como en Command
     // ─────────────────────────────────────────────
@@ -73,27 +84,27 @@ class CitaNotificacionService
             . "\n\n📌 Comunícate con *{$nombreAnfitrion}* para confirmar o cancelar.";
     }
 
-public function mensajeNuevaCitaPendiente(string $nombreContraparte, string $fecha, string $horaIni, string $horaFin, $cita, bool $soyElQueAgenda = false): string
-{
-    $motivo   = $cita->motivo ? "\n📋 Motivo: {$cita->motivo}" : '';
-    $vehiculo = $cita->con_vehiculo
-        ? "\n🚗 Asistirá con vehículo.\n⚠️ Recuerda solicitar autorización para el ingreso con automóvil."
-        : '';
-    $estadoReal = $cita->estado ?? 'pendiente';
-    if ($soyElQueAgenda) {
-        $sufijoPendiente = $estadoReal === 'pendiente'
-            ? "\n\n📌 La cita está *pendiente*. Recuerda confirmarla antes de la fecha establecida."
+    public function mensajeNuevaCitaPendiente(string $nombreContraparte, string $fecha, string $horaIni, string $horaFin, $cita, bool $soyElQueAgenda = false): string
+    {
+        $motivo   = $cita->motivo ? "\n📋 Motivo: {$cita->motivo}" : '';
+        $vehiculo = $cita->con_vehiculo
+            ? "\n🚗 Asistirá con vehículo.\n⚠️ Recuerda solicitar autorización para el ingreso con automóvil."
             : '';
-        return "✅ Tu cita con *{$nombreContraparte}* ha sido registrada para el *{$fecha}* de *{$horaIni}* a *{$horaFin}*."
+        $estadoReal = $cita->estado ?? 'pendiente';
+        if ($soyElQueAgenda) {
+            $sufijoPendiente = $estadoReal === 'pendiente'
+                ? "\n\n📌 La cita está *pendiente*. Recuerda confirmarla antes de la fecha establecida."
+                : '';
+            return "✅ Tu cita con *{$nombreContraparte}* ha sido registrada para el *{$fecha}* de *{$horaIni}* a *{$horaFin}*."
+                . $motivo
+                . $vehiculo
+                . $sufijoPendiente;
+        }
+        return "📅 *{$nombreContraparte}* ha agendado una cita contigo para el *{$fecha}* de *{$horaIni}* a *{$horaFin}*."
             . $motivo
             . $vehiculo
-            . $sufijoPendiente;
+            . "\n\n📌 Recuerda *confirmar o cancelar* esta cita a más tardar un día antes de la fecha establecida.";
     }
-    return "📅 *{$nombreContraparte}* ha agendado una cita contigo para el *{$fecha}* de *{$horaIni}* a *{$horaFin}*."
-        . $motivo
-        . $vehiculo
-        . "\n\n📌 Recuerda *confirmar o cancelar* esta cita a más tardar un día antes de la fecha establecida.";
-}
 
     // ─────────────────────────────────────────────
     // ENVÍO — con Job (para Controllers con Request)
@@ -149,7 +160,7 @@ public function mensajeNuevaCitaPendiente(string $nombreContraparte, string $fec
 
         if ($identity->firebird_clie_clave !== null) {
             try {
-                $row = $this->firebirdConn()->selectOne(
+                $row = $this->firebirdService->getProductionConnection()->selectOne(
                     "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM CLIE03 WHERE CLAVE = ?",
                     [$identity->firebird_clie_clave]
                 );
@@ -161,7 +172,7 @@ public function mensajeNuevaCitaPendiente(string $nombreContraparte, string $fec
 
         if ($identity->firebird_vend_clave !== null) {
             try {
-                $row = $this->firebirdConn()->selectOne(
+                $row = $this->firebirdService->getProductionConnection()->selectOne(
                     "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM VEND03 WHERE CVE_VEND = ?",
                     [$identity->firebird_vend_clave]
                 );
@@ -173,7 +184,7 @@ public function mensajeNuevaCitaPendiente(string $nombreContraparte, string $fec
 
         if ($identity->firebird_prov_clave !== null) {
             try {
-                $row = $this->firebirdConn()->selectOne(
+                $row = $this->firebirdService->getProductionConnection()->selectOne(
                     "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM PROV03 WHERE TRIM(CLAVE) = ?",
                     [trim((string) $identity->firebird_prov_clave)]
                 );
@@ -210,7 +221,7 @@ public function mensajeNuevaCitaPendiente(string $nombreContraparte, string $fec
 
         if ($identity->firebird_clie_clave !== null) {
             try {
-                $row = $this->firebirdConn()->selectOne("SELECT NOMBRE FROM CLIE03 WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
+                $row = $this->firebirdService->getProductionConnection()->selectOne("SELECT NOMBRE FROM CLIE03 WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
                 return $row?->NOMBRE ?? null;
             } catch (\Throwable $e) {
                 Log::error('NOMBRE CLIE03 error', ['error' => $e->getMessage()]);
@@ -219,7 +230,7 @@ public function mensajeNuevaCitaPendiente(string $nombreContraparte, string $fec
 
         if ($identity->firebird_vend_clave !== null) {
             try {
-                $row = $this->firebirdConn()->selectOne("SELECT NOMBRE FROM VEND03 WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
+                $row = $this->firebirdService->getProductionConnection()->selectOne("SELECT NOMBRE FROM VEND03 WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
                 return $row?->NOMBRE ?? null;
             } catch (\Throwable $e) {
                 Log::error('NOMBRE VEND03 error', ['error' => $e->getMessage()]);
@@ -228,7 +239,7 @@ public function mensajeNuevaCitaPendiente(string $nombreContraparte, string $fec
 
         if ($identity->firebird_prov_clave !== null) {
             try {
-                $row = $this->firebirdConn()->selectOne(
+                $row = $this->firebirdService->getProductionConnection()->selectOne(
                     "SELECT NOMBRE FROM PROV03 WHERE TRIM(CLAVE) = ?",
                     [trim((string) $identity->firebird_prov_clave)]
                 );
@@ -316,33 +327,10 @@ public function mensajeNuevaCitaPendiente(string $nombreContraparte, string $fec
     // FORMATO DE HORA
     // ─────────────────────────────────────────────
 
-public function formatHora($hora): string
-{
-    $c      = $hora instanceof \Carbon\Carbon ? $hora : Carbon::parse($hora);
-    $sufijo = $c->format('A') === 'AM' ? 'am' : 'pm';
-    return $c->format('g:i') . ' ' . $sufijo;
-}
-    // ─────────────────────────────────────────────
-    // CONEXIÓN FIREBIRD
-    // ─────────────────────────────────────────────
-
-    public function firebirdConn(): \Illuminate\Database\Connection
+    public function formatHora($hora): string
     {
-        config([
-            'database.connections.firebird_produccion' => [
-                'driver'            => 'firebird',
-                'host'              => env('FB_HOST'),
-                'port'              => env('FB_PORT'),
-                'database'          => env('FB_DATABASE'),
-                'username'          => env('FB_USERNAME'),
-                'password'          => env('FB_PASSWORD'),
-                'charset'           => env('FB_CHARSET', 'UTF8'),
-                'dialect'           => 3,
-                'quote_identifiers' => false,
-            ]
-        ]);
-
-        DB::purge('firebird_produccion');
-        return DB::connection('firebird_produccion');
+        $c      = $hora instanceof \Carbon\Carbon ? $hora : Carbon::parse($hora);
+        $sufijo = $c->format('A') === 'AM' ? 'am' : 'pm';
+        return $c->format('g:i') . ' ' . $sufijo;
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\FirebirdConnectionService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -11,8 +12,14 @@ use Exception;
 class SyncUsuariosAccess extends Command
 {
     protected $signature = 'firebird:sync-usuarios-sin-empresa';
-
     protected $description = 'Crea pivotes para usuarios de USUARIOS que NO están en la tabla pivote (usuarios de acceso sin empresa)';
+    protected FirebirdConnectionService $firebirdService;
+
+    public function __construct(FirebirdConnectionService $firebirdService)
+    {
+        parent::__construct();
+        $this->firebirdService = $firebirdService;
+    }
 
     public function handle()
     {
@@ -77,28 +84,6 @@ class SyncUsuariosAccess extends Command
         }
     }
 
-    /**
-     * 🔌 Conexión a Firebird PRODUCCIÓN (srvasp01old)
-     */
-    protected function getProduccionConnection()
-    {
-        config([
-            'database.connections.firebird_produccion' => [
-                'driver'   => 'firebird',
-                'host'     => env('FB_HOST'),
-                'port'     => env('FB_PORT'),
-                'database' => env('FB_DATABASE'), // srvasp01old
-                'username' => env('FB_USERNAME'),
-                'password' => env('FB_PASSWORD'),
-                'charset'  => env('FB_CHARSET', 'UTF8'),
-                'dialect'  => 3,
-                'quote_identifiers' => false,
-            ]
-        ]);
-
-        DB::purge('firebird_produccion');
-        return DB::connection('firebird_produccion');
-    }
 
     /**
      * 📋 Obtener usuarios de tabla USUARIOS (ahora con ID)
@@ -106,7 +91,7 @@ class SyncUsuariosAccess extends Command
     protected function getUsuariosFromProduccion()
     {
         return collect(
-            $this->getProduccionConnection()->select("SELECT ID, NOMBRE FROM USUARIOS")  // ✅ Cambiado CLAVE por ID
+            $this->firebirdService->getProductionConnection()->select("SELECT ID, NOMBRE FROM USUARIOS")
         );
     }
 

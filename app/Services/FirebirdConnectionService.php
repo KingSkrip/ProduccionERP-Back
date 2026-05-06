@@ -24,7 +24,6 @@ class FirebirdConnectionService
         ]);
 
         DB::purge('firebird_produccion');
-
         return DB::connection('firebird_produccion');
     }
 }

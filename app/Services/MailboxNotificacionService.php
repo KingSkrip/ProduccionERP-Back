@@ -8,11 +8,17 @@ use App\Services\FirebirdEmpresaManualService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Services\FirebirdConnectionService;
 
 class MailboxNotificacionService
 {
     private static int $queueIndex = 0;
-
+    protected FirebirdConnectionService $firebirdService;
+    
+    public function __construct(FirebirdConnectionService $firebirdService)
+    {
+        $this->firebirdService = $firebirdService;
+    }
     // ─────────────────────────────────────────────
     // MENSAJES
     // ─────────────────────────────────────────────
@@ -108,7 +114,7 @@ class MailboxNotificacionService
         // CLIENTE → CLIE03
         if ($identity->firebird_clie_clave !== null) {
             try {
-                $row = $this->firebirdConn()->selectOne(
+                $row = $this->firebirdService->getProductionConnection()->selectOne(
                     "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM CLIE03 WHERE CLAVE = ?",
                     [$identity->firebird_clie_clave]
                 );
@@ -121,7 +127,7 @@ class MailboxNotificacionService
         // VENDEDOR → VEND03
         if ($identity->firebird_vend_clave !== null) {
             try {
-                $row = $this->firebirdConn()->selectOne(
+                $row = $this->firebirdService->getProductionConnection()->selectOne(
                     "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM VEND03 WHERE CVE_VEND = ?",
                     [$identity->firebird_vend_clave]
                 );
@@ -134,7 +140,7 @@ class MailboxNotificacionService
         // PROVEEDOR → PROV03
         if ($identity->firebird_prov_clave !== null) {
             try {
-                $row = $this->firebirdConn()->selectOne(
+                $row = $this->firebirdService->getProductionConnection()->selectOne(
                     "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM PROV03 WHERE TRIM(CLAVE) = ?",
                     [trim((string) $identity->firebird_prov_clave)]
                 );
@@ -302,23 +308,4 @@ class MailboxNotificacionService
     // CONEXIÓN FIREBIRD
     // ─────────────────────────────────────────────
 
-    public function firebirdConn(): \Illuminate\Database\Connection
-    {
-        config([
-            'database.connections.firebird_produccion' => [
-                'driver'            => 'firebird',
-                'host'              => env('FB_HOST'),
-                'port'              => env('FB_PORT'),
-                'database'          => env('FB_DATABASE'),
-                'username'          => env('FB_USERNAME'),
-                'password'          => env('FB_PASSWORD'),
-                'charset'           => env('FB_CHARSET', 'UTF8'),
-                'dialect'           => 3,
-                'quote_identifiers' => false,
-            ]
-        ]);
-
-        DB::purge('firebird_produccion');
-        return DB::connection('firebird_produccion');
-    }
 }

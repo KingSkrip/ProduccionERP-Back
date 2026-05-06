@@ -10,14 +10,17 @@ use App\Services\FirebirdEmpresaManualService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Services\FirebirdConnectionService;
 
 class UserService
 {
     private string $jwtSecret;
+    protected FirebirdConnectionService $firebirdService;
 
-    public function __construct()
+    public function __construct(FirebirdConnectionService $firebirdService)
     {
         $this->jwtSecret = config('jwt.secret') ?? env('JWT_SECRET');
+        $this->firebirdService = $firebirdService;
     }
 
     public function getIdentityFromToken(Request $request): ?UserFirebirdIdentity
@@ -94,7 +97,7 @@ class UserService
         // =====================================================
         if ($esCliente && $identity->firebird_clie_clave) {
             try {
-                $clieRow = $this->getFirebirdProductionConnection()
+                $clieRow = $this->firebirdService->getProductionConnection()
                     ->selectOne("SELECT * FROM CLIE03 WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
             } catch (\Throwable $e) {
                 Log::error('UserService::me CLIE03 error', ['error' => $e->getMessage()]);
@@ -106,7 +109,7 @@ class UserService
         // =====================================================
         if ($esVendedor && $identity->firebird_vend_clave) {
             try {
-                $vendRow = $this->getFirebirdProductionConnection()
+                $vendRow = $this->firebirdService->getProductionConnection()
                     ->selectOne("SELECT * FROM VEND03 WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
             } catch (\Throwable $e) {
                 Log::error('UserService::me VEND03 error', ['error' => $e->getMessage()]);
@@ -118,7 +121,7 @@ class UserService
         // =====================================================
         if ($esProveedor && $identity->firebird_prov_clave) {
             try {
-                $provRow = $this->getFirebirdProductionConnection()
+                $provRow = $this->firebirdService->getProductionConnection()
                     ->selectOne("SELECT * FROM PROV03 WHERE CLAVE = ?", [$identity->firebird_prov_clave]);
             } catch (\Throwable $e) {
                 Log::error('UserService::me PROV03 error', ['error' => $e->getMessage()]);
@@ -129,40 +132,18 @@ class UserService
             'user' => [
                 'name'               => $usuario->NOMBRE ?? null,
                 'tipo_usuario'       => $esEmpleado  ? 'empleado'
-                                      : ($esCliente  ? 'cliente'
-                                      : ($esVendedor ? 'vendedor'
-                                      : ($esProveedor? 'proveedor' : null))),
+                    : ($esCliente  ? 'cliente'
+                        : ($esVendedor ? 'vendedor'
+                            : ($esProveedor ? 'proveedor' : null))),
                 'TB'                 => $tbRow,
                 'CLIE'               => $clieRow,
                 'VEND'               => $vendRow,
                 'PROV'               => $provRow,
                 'firebird_tb_clave'  => $identity->firebird_tb_clave   ?? null,
-                'firebird_clie_clave'=> $identity->firebird_clie_clave ?? null,
-                'firebird_vend_clave'=> $identity->firebird_vend_clave ?? null,
+                'firebird_clie_clave' => $identity->firebird_clie_clave ?? null,
+                'firebird_vend_clave' => $identity->firebird_vend_clave ?? null,
                 'firebird_user_id'   => (int) $usuario->ID,
             ]
         ];
-    }
-
-    // ── Misma conexión que usa DataDashboardController ──
-    private function getFirebirdProductionConnection(): \Illuminate\Database\Connection
-    {
-        config([
-            'database.connections.firebird_produccion' => [
-                'driver'            => 'firebird',
-                'host'              => env('FB_HOST'),
-                'port'              => env('FB_PORT'),
-                'database'          => env('FB_DATABASE'),
-                'username'          => env('FB_USERNAME'),
-                'password'          => env('FB_PASSWORD'),
-                'charset'           => env('FB_CHARSET', 'UTF8'),
-                'dialect'           => 3,
-                'quote_identifiers' => false,
-            ]
-        ]);
-
-        DB::purge('firebird_produccion');
-
-        return DB::connection('firebird_produccion');
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\FirebirdConnectionService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -11,8 +12,14 @@ use Carbon\Carbon;
 class SyncFirebirdVendUsers extends Command
 {
     protected $signature = 'firebird:sync-vend-users {--vincular-existentes : Vincular usuarios existentes sin pivote} {--asignar-roles : Asignar roles faltantes a identidades sin rol}';
-
     protected $description = 'Sincroniza VEND03 (vendedores) con USUARIOS Firebird y pivote MySQL';
+    protected FirebirdConnectionService $firebirdService;
+
+    public function __construct(FirebirdConnectionService $firebirdService)
+    {
+        parent::__construct();
+        $this->firebirdService = $firebirdService;
+    }
 
     public function handle()
     {
@@ -268,28 +275,6 @@ class SyncFirebirdVendUsers extends Command
         $this->info("⚠️  No encontrados en USUARIOS: {$noEncontrados}");
     }
 
-    /**
-     * 🔌 Conexión a Firebird PRODUCCIÓN
-     */
-    protected function getProduccionConnection()
-    {
-        config([
-            'database.connections.firebird_produccion' => [
-                'driver'            => 'firebird',
-                'host'              => env('FB_HOST'),
-                'port'              => env('FB_PORT'),
-                'database'          => env('FB_DATABASE'),
-                'username'          => env('FB_USERNAME'),
-                'password'          => env('FB_PASSWORD'),
-                'charset'           => env('FB_CHARSET', 'UTF8'),
-                'dialect'           => 3,
-                'quote_identifiers' => false,
-            ]
-        ]);
-
-        DB::purge('firebird_produccion');
-        return DB::connection('firebird_produccion');
-    }
 
     /**
      * 📋 Obtener vendedores de VEND03
@@ -297,7 +282,7 @@ class SyncFirebirdVendUsers extends Command
     protected function getVendedoresFromVend03()
     {
         return collect(
-            $this->getProduccionConnection()->select("SELECT CVE_VEND, NOMBRE, CORREOE FROM VEND03")
+            $this->firebirdService->getProductionConnection()->select("SELECT CVE_VEND, NOMBRE, CORREOE FROM VEND03")
         );
     }
 
@@ -307,7 +292,7 @@ class SyncFirebirdVendUsers extends Command
     protected function getUsuariosFromProduccion()
     {
         return collect(
-            $this->getProduccionConnection()->select("SELECT ID, NOMBRE, CORREO FROM USUARIOS")
+            $this->firebirdService->getProductionConnection()->select("SELECT ID, NOMBRE, CORREO FROM USUARIOS")
         );
     }
 

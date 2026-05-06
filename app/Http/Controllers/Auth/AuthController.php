@@ -21,16 +21,19 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use App\Services\FirebirdConnectionService;
 
 class AuthController extends Controller
 {
     private $jwtSecret;
     private $jwtAlgorithm = 'HS256';
-    private $jwtExpiration = 86400; // 24 horas
+    private $jwtExpiration = 86400;
+    protected FirebirdConnectionService $firebirdService;
 
-    public function __construct()
+    public function __construct(FirebirdConnectionService $firebirdService)
     {
         $this->jwtSecret = config('jwt.secret');
+        $this->firebirdService = $firebirdService;
     }
 
     /**
@@ -161,10 +164,8 @@ class AuthController extends Controller
                 return response()->json(['message' => 'Error de configuración interna'], 500);
             }
 
-            // Encode forzando HS256
             $token = JWT::encode($payload, $key, 'HS256');
-
-            // 🔥 Inicializar variables de respuesta
+            $connection = $this->firebirdService->getProductionConnection();
             $departamentos = collect();
             $slRow = null;
             $vcRow = null;
@@ -263,25 +264,6 @@ class AuthController extends Controller
 
                 if ($clieClave) {
                     try {
-                        // 🔌 Conectar a srvasp01old para obtener datos de CLIE03
-                        config([
-                            'database.connections.firebird_produccion' => [
-                                'driver'   => 'firebird',
-                                'host'     => env('FB_HOST'),
-                                'port'     => env('FB_PORT'),
-                                'database' => env('FB_DATABASE'), // srvasp01old
-                                'username' => env('FB_USERNAME'),
-                                'password' => env('FB_PASSWORD'),
-                                'charset'  => env('FB_CHARSET', 'UTF8'),
-                                'dialect'  => 3,
-                                'quote_identifiers' => false,
-                            ]
-                        ]);
-
-                        DB::purge('firebird_produccion');
-                        $connection = DB::connection('firebird_produccion');
-
-                        // 📋 Obtener datos del cliente de CLIE03
                         $clieRow = $connection->selectOne(
                             "SELECT * FROM CLIE03 WHERE CLAVE = ?",
                             [$clieClave]
@@ -321,23 +303,6 @@ class AuthController extends Controller
 
                 if ($vendClave) {
                     try {
-                        config([
-                            'database.connections.firebird_produccion' => [
-                                'driver'            => 'firebird',
-                                'host'              => env('FB_HOST'),
-                                'port'              => env('FB_PORT'),
-                                'database'          => env('FB_DATABASE'),
-                                'username'          => env('FB_USERNAME'),
-                                'password'          => env('FB_PASSWORD'),
-                                'charset'           => env('FB_CHARSET', 'UTF8'),
-                                'dialect'           => 3,
-                                'quote_identifiers' => false,
-                            ]
-                        ]);
-
-                        DB::purge('firebird_produccion');
-                        $connection = DB::connection('firebird_produccion');
-
                         $vendRow = $connection->selectOne(
                             "SELECT * FROM VEND03 WHERE CVE_VEND = ?",
                             [$vendClave]
@@ -376,8 +341,6 @@ class AuthController extends Controller
 
                 if ($provClave) {
                     try {
-                        $connection = $this->getFirebirdProductionConnection();
-
                         $provRow = $connection->selectOne(
                             "SELECT * FROM PROV03 WHERE CLAVE = ?",
                             [$provClave]
@@ -687,29 +650,5 @@ class AuthController extends Controller
             Log::error('Error en unlockSession: ' . $e->getMessage());
             return response()->json(['message' => 'Error al desbloquear sesión'], 500);
         }
-    }
-
-
-
-
-    private function getFirebirdProductionConnection(): \Illuminate\Database\Connection
-    {
-        config([
-            'database.connections.firebird_produccion' => [
-                'driver'            => 'firebird',
-                'host'              => env('FB_HOST'),
-                'port'              => env('FB_PORT'),
-                'database'          => env('FB_DATABASE'),
-                'username'          => env('FB_USERNAME'),
-                'password'          => env('FB_PASSWORD'),
-                'charset'           => env('FB_CHARSET', 'UTF8'),
-                'dialect'           => 3,
-                'quote_identifiers' => false,
-            ]
-        ]);
-
-        DB::purge('firebird_produccion');
-
-        return DB::connection('firebird_produccion');
     }
 }

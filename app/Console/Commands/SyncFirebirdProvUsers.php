@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\FirebirdConnectionService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -16,10 +17,13 @@ class SyncFirebirdProvUsers extends Command
         {--export-passwords= : Exportar contraseñas generadas a archivo CSV (ej: /tmp/passwords.csv)}';
 
     protected $description = 'Sincroniza PROV03 (proveedores) con USUARIOS Firebird y pivote MySQL';
-
-    /** @var array Contraseñas generadas en esta ejecución para exportar */
     protected array $passwordsGeneradas = [];
-
+    protected FirebirdConnectionService $firebirdService;
+    public function __construct(FirebirdConnectionService $firebirdService)
+    {
+        parent::__construct();
+        $this->firebirdService = $firebirdService;
+    }
     public function handle()
     {
         $this->info("🔥 Iniciando sincronización de proveedores PROV03");
@@ -346,40 +350,17 @@ class SyncFirebirdProvUsers extends Command
         $this->info("⚠️  No encontrados en USUARIOS:      {$noEncontrados}");
     }
 
-    // =========================================================
-    // 🔌 CONEXIÓN FIREBIRD PRODUCCIÓN
-    // =========================================================
-    protected function getProduccionConnection()
-    {
-        config([
-            'database.connections.firebird_produccion' => [
-                'driver'            => 'firebird',
-                'host'              => env('FB_HOST'),
-                'port'              => env('FB_PORT'),
-                'database'          => env('FB_DATABASE'),
-                'username'          => env('FB_USERNAME'),
-                'password'          => env('FB_PASSWORD'),
-                'charset'           => env('FB_CHARSET', 'UTF8'),
-                'dialect'           => 3,
-                'quote_identifiers' => false,
-            ],
-        ]);
-
-        DB::purge('firebird_produccion');
-        return DB::connection('firebird_produccion');
-    }
-
     protected function getProveedoresFromProv03()
     {
         return collect(
-            $this->getProduccionConnection()->select("SELECT CLAVE, NOMBRE, EMAILPRED FROM PROV03")
+            $this->firebirdService->getProductionConnection()->select("SELECT CLAVE, NOMBRE, EMAILPRED FROM PROV03")
         );
     }
 
     protected function getUsuariosFromProduccion()
     {
         return collect(
-            $this->getProduccionConnection()->select("SELECT ID, NOMBRE, CORREO FROM USUARIOS")
+            $this->firebirdService->getProductionConnection()->select("SELECT ID, NOMBRE, CORREO FROM USUARIOS")
         );
     }
 

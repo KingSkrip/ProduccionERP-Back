@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\FirebirdComandEmpresaService;
+use App\Services\FirebirdConnectionService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -12,8 +13,14 @@ use Carbon\Carbon;
 class SyncFirebirdTbUsers extends Command
 {
     protected $signature = 'firebird:sync-tb-users {empresa : Número de empresa (01, 02, 03, etc.)} {--vincular-existentes : Vincular usuarios existentes sin pivote}';
-
     protected $description = 'Sincroniza TB (empleados activos) con USUARIOS Firebird y pivote MySQL';
+    protected FirebirdConnectionService $firebirdService;
+
+    public function __construct(FirebirdConnectionService $firebirdService)
+    {
+        parent::__construct();
+        $this->firebirdService = $firebirdService;
+    }
 
     public function handle()
     {
@@ -253,28 +260,6 @@ class SyncFirebirdTbUsers extends Command
         $this->info("⚠️  No encontrados en USUARIOS: {$noEncontrados}");
     }
 
-    /**
-     * 🔌 Conexión a Firebird PRODUCCIÓN (srvasp01old) para USUARIOS
-     */
-    protected function getProduccionConnection()
-    {
-        config([
-            'database.connections.firebird_produccion' => [
-                'driver'   => 'firebird',
-                'host'     => env('FB_HOST'),
-                'port'     => env('FB_PORT'),
-                'database' => env('FB_DATABASE'), // srvasp01old
-                'username' => env('FB_USERNAME'),
-                'password' => env('FB_PASSWORD'),
-                'charset'  => env('FB_CHARSET', 'UTF8'),
-                'dialect'  => 3,
-                'quote_identifiers' => false,
-            ]
-        ]);
-
-        DB::purge('firebird_produccion');
-        return DB::connection('firebird_produccion');
-    }
 
     /**
      * 📋 Obtener usuarios de tabla USUARIOS (en srvasp01old)
@@ -282,7 +267,7 @@ class SyncFirebirdTbUsers extends Command
     protected function getUsuariosFromProduccion()
     {
         return collect(
-            $this->getProduccionConnection()->select("SELECT * FROM USUARIOS")
+            $this->firebirdService->getProductionConnection()->select("SELECT * FROM USUARIOS")
         );
     }
 

@@ -7,6 +7,7 @@ use App\Http\Resources\UsuarioResource;
 use App\Models\Firebird;
 use App\Models\Firebird\Users;
 use App\Models\UserFirebirdIdentity;
+use App\Services\FirebirdConnectionService;
 use App\Services\FirebirdEmpresaManualService;
 use App\Services\FirebirdEmpresaService;
 use Exception;
@@ -24,12 +25,13 @@ use UnexpectedValueException;
 class DataDashboardController extends Controller
 {
     private $jwtSecret;
-
     private $jwtAlgorithm = 'HS256';
+    protected FirebirdConnectionService $firebirdService;
 
-    public function __construct()
+    public function __construct(FirebirdConnectionService $firebirdService)
     {
         $this->jwtSecret = config('jwt.secret');
+        $this->firebirdService = $firebirdService;
     }
 
     public function me(Request $request)
@@ -275,7 +277,7 @@ class DataDashboardController extends Controller
                 if ($clieClave) {
                     try {
                         // 🔌 Conectar a srvasp01old para obtener datos de CLIE03
-                        $connection = $this->getFirebirdProductionConnection();
+                        $connection = $this->firebirdService->getProductionConnection();
 
                         // 📋 Obtener datos del cliente de CLIE03
                         $clieRow = $connection->selectOne(
@@ -319,7 +321,7 @@ class DataDashboardController extends Controller
 
                 if ($vendClave) {
                     try {
-                        $connection = $this->getFirebirdProductionConnection();
+                        $connection = $this->firebirdService->getProductionConnection();
                         $vendRow = $connection->selectOne(
                             "SELECT * FROM VEND03 WHERE CVE_VEND = ?",
                             [$vendClave]
@@ -360,7 +362,7 @@ class DataDashboardController extends Controller
 
                 if ($provClave) {
                     try {
-                        $connection = $this->getFirebirdProductionConnection();
+                        $connection = $this->firebirdService->getProductionConnection();
                         $provRow = $connection->selectOne(
                             "SELECT * FROM PROV03 WHERE CLAVE = ?",
                             [$provClave]
@@ -459,26 +461,5 @@ class DataDashboardController extends Controller
 
             return response()->json(['message' => 'Error al actualizar status'], 500);
         }
-    }
-
-    private function getFirebirdProductionConnection(): \Illuminate\Database\Connection
-    {
-        config([
-            'database.connections.firebird_produccion' => [
-                'driver'            => 'firebird',
-                'host'              => env('FB_HOST'),
-                'port'              => env('FB_PORT'),
-                'database'          => env('FB_DATABASE'),
-                'username'          => env('FB_USERNAME'),
-                'password'          => env('FB_PASSWORD'),
-                'charset'           => env('FB_CHARSET', 'UTF8'),
-                'dialect'           => 3,
-                'quote_identifiers' => false,
-            ]
-        ]);
-
-        DB::purge('firebird_produccion');
-
-        return DB::connection('firebird_produccion');
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\FirebirdComandEmpresaService;
+use App\Services\FirebirdConnectionService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -12,8 +13,14 @@ use Carbon\Carbon;
 class SyncFirebirdClieUsers extends Command
 {
     protected $signature = 'firebird:sync-clie-users {--vincular-existentes : Vincular usuarios existentes sin pivote} {--asignar-roles : Asignar roles faltantes a identidades sin rol}';
-
     protected $description = 'Sincroniza CLIE03 (clientes) con USUARIOS Firebird y pivote MySQL';
+    protected FirebirdConnectionService $firebirdService;
+
+    public function __construct(FirebirdConnectionService $firebirdService)
+{
+    parent::__construct();
+    $this->firebirdService = $firebirdService;
+}
 
     public function handle()
     {
@@ -285,35 +292,12 @@ class SyncFirebirdClieUsers extends Command
     }
 
     /**
-     * 🔌 Conexión a Firebird PRODUCCIÓN (srvasp01old)
-     */
-    protected function getProduccionConnection()
-    {
-        config([
-            'database.connections.firebird_produccion' => [
-                'driver'   => 'firebird',
-                'host'     => env('FB_HOST'),
-                'port'     => env('FB_PORT'),
-                'database' => env('FB_DATABASE'), // srvasp01old
-                'username' => env('FB_USERNAME'),
-                'password' => env('FB_PASSWORD'),
-                'charset'  => env('FB_CHARSET', 'UTF8'),
-                'dialect'  => 3,
-                'quote_identifiers' => false,
-            ]
-        ]);
-
-        DB::purge('firebird_produccion');
-        return DB::connection('firebird_produccion');
-    }
-
-    /**
      * 📋 Obtener clientes de CLIE03
      */
     protected function getClientesFromClie03()
     {
         return collect(
-            $this->getProduccionConnection()->select("SELECT CLAVE, NOMBRE, EMAILPRED FROM CLIE03")
+            $this->firebirdService->getProductionConnection()->select("SELECT CLAVE, NOMBRE, EMAILPRED FROM CLIE03")
         );
     }
 
@@ -323,7 +307,7 @@ class SyncFirebirdClieUsers extends Command
     protected function getUsuariosFromProduccion()
     {
         return collect(
-            $this->getProduccionConnection()->select("SELECT ID, NOMBRE, CORREO FROM USUARIOS")
+            $this->firebirdService->getProductionConnection()->select("SELECT ID, NOMBRE, CORREO FROM USUARIOS")
         );
     }
 
@@ -360,7 +344,7 @@ class SyncFirebirdClieUsers extends Command
     protected function crearUsuarioFirebird(string $nombre, string $correo, string $passwordPlain): ?int
     {
         try {
-            $connection = $this->getProduccionConnection();
+            $connection = $this->firebirdService->getProductionConnection();
 
             // 🔑 Obtener siguiente CLAVE
             $maxClave = $connection->selectOne("SELECT MAX(CLAVE) as MAX_CLAVE FROM USUARIOS");
