@@ -3,29 +3,40 @@
 namespace App\Http\Controllers\Clientes;
 
 use App\Http\Controllers\Controller;
+use App\Services\FirebirdConnectionService;
+use App\Services\FirebirdEmpresaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Mail;
 
 class PedidosController extends Controller
 {
-    protected function fb()
-    {
-        return DB::connection('firebird');
+
+    protected FirebirdEmpresaService $empresaService;
+    protected FirebirdConnectionService $firebirdService;
+protected $fb;
+
+    public function __construct(
+        FirebirdEmpresaService $empresaService,
+        FirebirdConnectionService $firebirdService
+    ) {
+        $this->empresaService = $empresaService;
+        $this->firebirdService = $firebirdService;
     }
 
-    protected function getEmpresa(): string
-    {
-        $fbDatabase = env('FB_DATABASE', '');
-        preg_match('/\d{2}/', $fbDatabase, $matches);
-        $empresa = $matches[0] ?? '01';
-        Log::info('empresa de pedidos', ['empresa' => $empresa]);
-        return $empresa;
+    protected function fb()
+{
+    if (!$this->fb) {
+        $this->fb = $this->fb();
     }
+
+    return $this->fb;
+}
 
     protected function getClienteClave(): string
     {
@@ -51,9 +62,9 @@ class PedidosController extends Controller
     /* =======================================================
         🛒 SP - todos los pedidos de la empresa
     ======================================================= */
-    protected function getPedidosSP(): \Illuminate\Support\Collection
+    protected function getPedidosSP(): Collection
     {
-        $empresa = $this->getEmpresa();
+        $empresa = $this->empresaService->getEmpresa();
         return collect($this->fb()->select("SELECT * FROM P_PEDIDOSENCMAIN(?)", [$empresa]));
     }
 
@@ -67,9 +78,7 @@ class PedidosController extends Controller
             'articulos' => collect(),
             'cardigans' => collect(),
         ];
-
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
-
         $articulos = $this->fb()->select(
             "SELECT CVE_PED, ARTICULO, SUM(CANTIDAD) AS CANTIDAD
              FROM V_PED_PART

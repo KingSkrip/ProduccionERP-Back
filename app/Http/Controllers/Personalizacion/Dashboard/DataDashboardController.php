@@ -9,7 +9,7 @@ use App\Models\Firebird\Users;
 use App\Models\UserFirebirdIdentity;
 use App\Services\FirebirdConnectionService;
 use App\Services\FirebirdEmpresaManualService;
-use App\Services\FirebirdEmpresaService;
+
 use Exception;
 use Firebase\JWT\BeforeValidException;
 use Firebase\JWT\ExpiredException;

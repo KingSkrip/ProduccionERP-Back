@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\SuperAdmin\AutorizacionPedidos;
 
 use App\Http\Controllers\Controller;
+use App\Services\FirebirdConnectionService;
+use App\Services\FirebirdEmpresaService;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -10,83 +12,99 @@ use Illuminate\Support\Facades\Log;
 
 class AutorizacionPedidosController extends Controller
 {
+
+    protected FirebirdEmpresaService $empresaService;
+    protected FirebirdConnectionService $firebirdService;
+    protected $fb;
+
+    public function __construct(
+        FirebirdEmpresaService $empresaService,
+        FirebirdConnectionService $firebirdService
+    ) {
+        $this->empresaService = $empresaService;
+        $this->firebirdService = $firebirdService;
+    }
+
+    protected function fb()
+    {
+        if (!$this->fb) {
+            $this->fb = $this->firebirdService->getProductionConnection();
+        }
+
+        return $this->fb;
+    }
+
     /**
      * Display a listing of the resource.
      */
     public function index()
     {
         try {
-            $fbDatabase = env('FB_DATABASE');
-            preg_match('/\d{2}/', $fbDatabase, $matches);
-            $empresa = $matches[0] ?? '01';
-            Log::info('empresa de pedidos', ['empresa' => $empresa]);
+            $empresa = $this->empresaService->getEmpresa();
 
-            // 1️⃣ Pedidos (SP)
-            $pedidos = DB::connection('firebird')->select('
-                SELECT *
-                FROM P_PEDIDOSENCMAIN(?)
-                WHERE COALESCE(AUTORIZACRED, 0) = 0
-                AND COALESCE(NESTATUS, 0) <> 99
-                ORDER BY "FECHA ELAB." DESC
-            ', [$empresa]);
+            // 1️⃣ Pedidos
+            $pedidos = $this->fb()->select('
+            SELECT *
+            FROM P_PEDIDOSENCMAIN(?)
+            WHERE COALESCE(AUTORIZACRED, 0) = 0
+              AND COALESCE(NESTATUS, 0) <> 99
+            ORDER BY "FECHA ELAB." DESC
+        ', [$empresa]);
 
-            // Si no hay pedidos
             if (empty($pedidos)) {
                 return response()->json([
                     'success' => true,
                     'data' => [],
-                ], 200);
+                ]);
             }
 
-            // 2️⃣ IDs de pedidos
+            // 2️⃣ IDs
             $pedidoIds = array_map(fn($p) => (int) $p->ID, $pedidos);
 
-            // 3️⃣ Artículos (una sola query)
-            $articulos = DB::connection('firebird')->select('
+            $placeholders = implode(',', array_fill(0, count($pedidoIds), '?'));
+
+            // 3️⃣ Artículos
+            $articulos = $this->fb()->select("
             SELECT CVE_PED, ARTICULO, SUM(CANTIDAD) AS CANTIDAD
             FROM V_PED_PART
-            WHERE CVE_PED IN (' . implode(',', $pedidoIds) . ')
+            WHERE CVE_PED IN ($placeholders)
             GROUP BY CVE_PED, ARTICULO
-        ');
+        ", $pedidoIds);
 
-            // 4️⃣ Cardigan (una sola query)
-            $cardigans = DB::connection('firebird')->select('
+            // 4️⃣ Cardigans
+            $cardigans = $this->fb()->select("
             SELECT CVE_PED,
-                   "CARDIGAN DESCR." AS DESCRIPCION,
-                   SUM("CANT. CARD.") AS CANTIDAD
+                   \"CARDIGAN DESCR.\" AS DESCRIPCION,
+                   SUM(\"CANT. CARD.\") AS CANTIDAD
             FROM V_PED_PART
-            WHERE CVE_PED IN (' . implode(',', $pedidoIds) . ')
-              AND "CANT. CARD." > 0
-            GROUP BY CVE_PED, "CARDIGAN DESCR."
-        ');
+            WHERE CVE_PED IN ($placeholders)
+              AND \"CANT. CARD.\" > 0
+            GROUP BY CVE_PED, \"CARDIGAN DESCR.\"
+        ", $pedidoIds);
 
-            // 5️⃣ Indexar artículos por pedido
-            $articulosPorPedido = [];
-            foreach ($articulos as $a) {
-                $articulosPorPedido[$a->CVE_PED][] = $a;
-            }
+            // 5️⃣ Agrupar
+            $articulosPorPedido = collect($articulos)->groupBy('CVE_PED');
+            $cardiganPorPedido  = collect($cardigans)->groupBy('CVE_PED');
 
-            // 6️⃣ Indexar cardigan por pedido
-            $cardiganPorPedido = [];
-            foreach ($cardigans as $c) {
-                $cardiganPorPedido[$c->CVE_PED][] = $c;
-            }
-
-            // 7️⃣ Asignar a cada pedido
+            // 6️⃣ Asignar
             foreach ($pedidos as $pedido) {
                 $pedido->articulos = $articulosPorPedido[$pedido->ID] ?? [];
-                $pedido->cardigan = $cardiganPorPedido[$pedido->ID] ?? [];
+                $pedido->cardigan  = $cardiganPorPedido[$pedido->ID] ?? [];
             }
 
-            // 8️⃣ Response
             return response()->json([
                 'success' => true,
                 'data' => $pedidos,
-            ], 200);
+            ]);
         } catch (\Exception $e) {
+            Log::error('ERROR_AUTORIZACION_INDEX', [
+                'message' => $e->getMessage(),
+                'trace'   => $e->getTraceAsString()
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Error al consultar pedidos con partidas',
+                'message' => 'Error al consultar pedidos',
                 'error' => $e->getMessage(),
             ], 500);
         }
@@ -155,21 +173,18 @@ class AutorizacionPedidosController extends Controller
     public function update(Request $request, $id)
     {
         try {
-            // 1️⃣ Buscar pedido en Firebird
-            $pedido = DB::connection('firebird')
+            $pedido = $this->fb()
                 ->table('PEDIDOSENC')
                 ->where('ID', $id)
                 ->first();
 
-            // 2️⃣ Validar existencia
-            if (! $pedido) {
+            if (!$pedido) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Pedido no encontrado',
                 ], 404);
             }
 
-            // 3️⃣ Validar si ya está autorizado
             if ((int) $pedido->AUTORIZACRED === 1) {
                 return response()->json([
                     'success' => false,
@@ -177,22 +192,25 @@ class AutorizacionPedidosController extends Controller
                 ], 409);
             }
 
-            // 4️⃣ Autorizar crédito (UPDATE Firebird)
-            DB::connection('firebird')
+            $this->fb()
                 ->table('PEDIDOSENC')
                 ->where('ID', $id)
                 ->update([
                     'AUTORIZACRED' => 1,
-                    'FECHAAUTC' => now()->format('Y-m-d H:i:s'),
-                    'USAUTC' => auth()->user()->id,
+                    'FECHAAUTC'    => now()->format('Y-m-d H:i:s'),
+                    'USAUTC'       => auth()->user()->id,
                 ]);
 
-            // 5️⃣ Respuesta OK
             return response()->json([
                 'success' => true,
                 'message' => 'Pedido autorizado correctamente',
-            ], 200);
+            ]);
         } catch (Exception $e) {
+            Log::error('ERROR_AUTORIZAR_PEDIDO', [
+                'message' => $e->getMessage(),
+                'id'      => $id
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error al autorizar el pedido',

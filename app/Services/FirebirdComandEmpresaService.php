@@ -6,20 +6,20 @@ use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
+use App\Services\FirebirdEmpresaService;
+use App\Services\FirebirdConnectionService;
 
 class FirebirdComandEmpresaService
 {
-    protected string $empresa;
 
-    // public function __construct()
-    // {
-    //     $fbDatabase = env('FB_DATABASE'); // srvasp01old
-    //     preg_match('/\d{2}/', $fbDatabase, $matches);
-    //     $this->empresa = $matches[0] ?? '00';
-    // }
+    protected FirebirdEmpresaService $empresaService;
+    protected FirebirdConnectionService $connectionService;
+    protected $fb;
 
-    public function __construct(?string $empresaManual = null)
-    {
+    public function __construct(
+        FirebirdEmpresaService $empresaService,
+        FirebirdConnectionService $connectionService
+    ) {
         /*
     |--------------------------------------------------------------------------
     | 🏢 EMPRESA MANUAL (TEMPORAL)
@@ -29,59 +29,19 @@ class FirebirdComandEmpresaService
     |
     | Cuando ya no se ocupe manual:
     | - elimina este bloque
-    | - vuelve a activar la detección por FB_DATABASE
+    | - vuelve a activar la detección por 
     */
-
-        if ($empresaManual) {
-            $this->empresa = str_pad($empresaManual, 2, '0', STR_PAD_LEFT);
-            return;
-        }
-
-        // 🔁 FALLBACK AUTOMÁTICO (POR SI NO PASAS NADA)
-        $fbDatabase = env('FB_DATABASE'); // srvasp01old
-        preg_match('/\d{2}/', $fbDatabase, $matches);
-        $this->empresa = $matches[0] ?? '00';
+        $this->empresaService = $empresaService;
+        $this->connectionService = $connectionService;
     }
 
 
-    /* ==========================================================
-     | 🔌 Conexión dinámica
-     ========================================================== */
-    public function getConnection()
+    protected function fb()
     {
-        $databaseName = "SRVNOI{$this->empresa}";
-
-        Log::info('🔥 Firebird dinámica', [
-            'empresa' => $this->empresa,
-            'database' => $databaseName,
-            'host' => env('FB_HOST'),
-            'port' => env('FB_PORT'),
-            'user' => env('FB_USERNAME'),
-        ]);
-
-        config([
-            'database.connections.firebird_dinamica' => [
-                'driver'   => 'firebird',
-                'host'     => env('FB_HOST'),
-                'port'     => env('FB_PORT'),
-                'database' => $databaseName,
-                'username' => env('FB_USERNAME'),
-                'password' => env('FB_PASSWORD'),
-                'charset'  => env('FB_CHARSET', 'UTF8'),
-                'dialect'  => 3,
-                'quote_identifiers' => false,
-            ]
-        ]);
-
-        DB::purge('firebird_dinamica');
-
-        $connection = DB::connection('firebird_dinamica');
-
-        Log::info('✅ Conectado a Firebird', [
-            'database' => $connection->getConfig('database'),
-        ]);
-
-        return $connection;
+        if (!$this->fb) {
+            $this->fb = $this->connectionService->getProductionConnection();
+        }
+        return $this->fb;
     }
 
     /* ==========================================================
@@ -90,11 +50,10 @@ class FirebirdComandEmpresaService
     public function getMasterTable(string $baseTable)
     {
         $this->validateTableName($baseTable);
-
-        $table = strtoupper($baseTable) . $this->empresa;
-
+        $empresa = $this->empresaService->getEmpresa();
+        $table = strtoupper($baseTable) . $empresa;
         return collect(
-            $this->getConnection()->select("SELECT * FROM {$table}")
+            $this->fb()->select("SELECT * FROM {$table}")
         );
     }
 
@@ -125,32 +84,27 @@ class FirebirdComandEmpresaService
 
 
     public function getOperationalTable(string $prefix, ?string $date = null, int $maxWeeksBack = 8): array
-{
-    $this->validateTableName($prefix);
-
-    $date = $date ? Carbon::parse($date) : Carbon::today();
-
-    for ($i = 0; $i <= $maxWeeksBack; $i++) {
-        $daysSinceSunday = ($date->dayOfWeek - Carbon::SUNDAY + 7) % 7;
-        $lastSunday = $date->copy()->subDays($daysSinceSunday);
-
-        $formattedDate = $lastSunday->format('dmy');
-        $table = strtoupper($prefix) . $formattedDate . $this->empresa;
-
-        try {
-            $this->getConnection()->select("SELECT FIRST 1 * FROM {$table}");
-            // ✅ Tabla encontrada, devolvemos también el nombre de la tabla
-            return [
-                'data' => collect($this->getConnection()->select("SELECT * FROM {$table}")),
-                'table' => $table
-            ];
-        } catch (\Exception $e) {
-            $date->subDays(7);
+    {
+        $this->validateTableName($prefix);
+        $empresa = $this->empresaService->getEmpresa();
+        $date = $date ? Carbon::parse($date) : Carbon::today();
+        for ($i = 0; $i <= $maxWeeksBack; $i++) {
+            $daysSinceSunday = ($date->dayOfWeek - Carbon::SUNDAY + 7) % 7;
+            $lastSunday = $date->copy()->subDays($daysSinceSunday);
+            $formattedDate = $lastSunday->format('dmy');
+            $table = strtoupper($prefix) . $formattedDate . $empresa;
+            try {
+                $this->fb()->select("SELECT FIRST 1 * FROM {$table}");
+                return [
+                    'data' => collect($this->fb()->select("SELECT * FROM {$table}")),
+                    'table' => $table
+                ];
+            } catch (\Exception $e) {
+                $date->subDays(7);
+            }
         }
+        return ['data' => collect(), 'table' => null];
     }
-
-    return ['data' => collect(), 'table' => null];
-}
 
 
 
@@ -161,9 +115,8 @@ class FirebirdComandEmpresaService
     public function getFixedTable(string $table)
     {
         $this->validateTableName($table);
-
         return collect(
-            $this->getConnection()->select(
+            $this->fb()->select(
                 "SELECT * FROM " . strtoupper($table)
             )
         );

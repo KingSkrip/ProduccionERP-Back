@@ -112,7 +112,6 @@ class AuthController extends Controller
                 'identity_tb_tabla' => $identity->firebird_tb_tabla ?? null,
                 'identity_clie_tabla' => $identity->firebird_clie_tabla ?? null,
                 'firebird_vend_clave' => null,
-                'firebird_vend_clave' => null,
             ]);
 
             $roles = collect();

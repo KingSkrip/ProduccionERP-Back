@@ -17,10 +17,10 @@ class SyncFirebirdClieUsers extends Command
     protected FirebirdConnectionService $firebirdService;
 
     public function __construct(FirebirdConnectionService $firebirdService)
-{
-    parent::__construct();
-    $this->firebirdService = $firebirdService;
-}
+    {
+        parent::__construct();
+        $this->firebirdService = $firebirdService;
+    }
 
     public function handle()
     {

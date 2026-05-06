@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Agentes;
 
 use App\Http\Controllers\Controller;
+use App\Services\FirebirdEmpresaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -14,8 +15,9 @@ use Illuminate\Support\Facades\Mail;
 
 class PedidosAgentesController extends Controller
 {
+    protected FirebirdEmpresaService $empresaService;
     protected ?bool $accesoTotalCache = null;
-    protected mixed $agenteClaveCacheValue = null;
+    protected ?string $empresa = null;
     protected array $clientesBloqueados = [
         'SFA CAPITAL',
         'ALLIANCE INTERACTIVE TECHNOLOGIES',
@@ -30,22 +32,14 @@ class PedidosAgentesController extends Controller
         'ZURIZEN',
     ];
 
+    public function __construct(FirebirdEmpresaService $empresaService)
+    {
+        $this->empresaService = $empresaService;
+    }
+
     protected function fb()
     {
         return DB::connection('firebird');
-    }
-
-    protected function getEmpresa(): string
-    {
-        $fbDatabase = env('FB_DATABASE', '');
-        preg_match('/\d{2}/', $fbDatabase, $matches);
-        $empresa = $matches[0] ?? '03';
-        Log::info('empresa de pedidos', [
-            'empresa'     => $empresa,
-            'fb_database' => $fbDatabase,
-        ]);
-
-        return $empresa;
     }
 
     /* =======================================================
@@ -130,7 +124,7 @@ class PedidosAgentesController extends Controller
     ======================================================= */
     protected function getPedidosSP(): Collection
     {
-        $empresa = $this->getEmpresa();
+        $empresa = $this->empresaService->getEmpresa();
         static $cache = null;
         if ($cache !== null) return $cache;
 
@@ -161,7 +155,7 @@ class PedidosAgentesController extends Controller
         bool $excluirBloqueados = false,
         ?string $condicion = null
     ): array {
-        $empresa     = $this->getEmpresa();
+        $empresa     = $this->empresaService->getEmpresa();
         $whereAgente = $cveVend ? "AND P.AGENTE = '{$cveVend}'" : '';
 
         // Siempre solo parciales — hardcodeado
@@ -536,7 +530,7 @@ class PedidosAgentesController extends Controller
     public function detalle(string $cvePed)
     {
         try {
-            $empresa     = $this->getEmpresa();
+            $empresa     = $this->empresaService->getEmpresa();
             $accesoTotal = $this->tieneAccesoTotal();
 
             // Verifica acceso buscando directamente en la tabla
@@ -660,7 +654,7 @@ class PedidosAgentesController extends Controller
     {
         try {
             $accesoTotal = $this->tieneAccesoTotal();
-            $empresa     = $this->getEmpresa();
+            $empresa     = $this->empresaService->getEmpresa();
 
             $cveVend           = $accesoTotal ? null : (int) $this->getAgenteClave();
             $excluirBloqueados = $accesoTotal;
@@ -916,18 +910,4 @@ class PedidosAgentesController extends Controller
     {
         return response()->json(['success' => false, 'message' => 'No se permite eliminar pedidos'], 403);
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-    
 }
