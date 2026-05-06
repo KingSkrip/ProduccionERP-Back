@@ -150,13 +150,14 @@ class EnviarRecordatoriosCitas extends Command
     private function procesarPendientesMismoDia(Carbon $ahora, string $tz): void
     {
         $hoy = Carbon::now($tz)->toDateString();
+        $limiteHora = Carbon::now($tz)->addHour()->format('H:i:s'); // cita debe ser en +1hr mínimo
 
-$citas = Cita::whereDate('fecha', $hoy)
-    ->where('estado', 'pendiente')
-    ->whereNotNull('id_user')
-    ->whereTime('hora_inicio', '>', $ahora->format('H:i:s'))
-    ->where('recordatorio_pendiente_mismo_dia', false)
-    ->get();
+        $citas = Cita::whereDate('fecha', $hoy)
+            ->where('estado', 'pendiente')
+            ->whereNotNull('id_user')
+            ->whereTime('hora_inicio', '>=', $limiteHora) // ← si la cita es a las 5pm, última notif a las 4pm
+            ->where('recordatorio_pendiente_mismo_dia', false)
+            ->get();
 
         $this->line("  📌 Pendientes mismo día ({$hoy}): {$citas->count()}");
 

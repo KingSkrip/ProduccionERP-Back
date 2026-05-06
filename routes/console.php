@@ -12,3 +12,9 @@ Schedule::command('citas:recordatorios')
     ->everyMinute()
     ->withoutOverlapping()
     ->appendOutputTo(storage_path('logs/cron.log'));
+
+
+    // Schedule::command('citas:recordatorios')
+    // ->everyThirtyMinutes()
+    // ->withoutOverlapping()
+    // ->appendOutputTo(storage_path('logs/cron.log'));

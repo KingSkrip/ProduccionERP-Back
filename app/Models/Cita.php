@@ -28,6 +28,8 @@ class Cita extends Model
         'con_vehiculo',
         'recordatorio_30min',
         'recordatorio_60min',
+        'recordatorio_pendiente_dia_anterior', // ← faltaba
+        'recordatorio_pendiente_mismo_dia',    // ← faltaba
         'created_at',
     ];
 
