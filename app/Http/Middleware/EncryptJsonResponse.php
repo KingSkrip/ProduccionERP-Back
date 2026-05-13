@@ -81,6 +81,12 @@ class EncryptJsonResponse
         'api/citas/*',
 
 
+        // JUNTAS
+        'api/juntas',
+        'api/juntas/*',
+
+
+
 
     ];
 

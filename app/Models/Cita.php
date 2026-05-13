@@ -18,6 +18,7 @@ class Cita extends Model
     protected $fillable = [
         'id_user',
         'id_visitante',
+        'cita_type_id',
         'nombre_visitante',
         'fecha',
         'hora_inicio',
@@ -26,10 +27,12 @@ class Cita extends Model
         'estado',
         'notas',
         'con_vehiculo',
+        'sala',
+        'asistencia',
         'recordatorio_30min',
         'recordatorio_60min',
-        'recordatorio_pendiente_dia_anterior', // ← faltaba
-        'recordatorio_pendiente_mismo_dia',    // ← faltaba
+        'recordatorio_pendiente_dia_anterior', 
+        'recordatorio_pendiente_mismo_dia',
         'created_at',
     ];
 
@@ -40,7 +43,7 @@ class Cita extends Model
         'created_at' => 'datetime',
         'recordatorio_30min' => 'boolean',
         'recordatorio_60min' => 'boolean',
-         'recordatorio_pendiente_dia_anterior' => 'boolean',
+        'recordatorio_pendiente_dia_anterior' => 'boolean',
         'recordatorio_pendiente_mismo_dia'   => 'boolean',
     ];
 
@@ -89,5 +92,10 @@ class Cita extends Model
     public function rangoHoras()
     {
         return $this->hora_inicio . ' - ' . $this->hora_fin;
+    }
+
+    public function tipo()
+    {
+        return $this->belongsTo(CitaType::class, 'cita_type_id');
     }
 }

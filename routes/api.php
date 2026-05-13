@@ -1,6 +1,7 @@
 <?php
 
-use App\Http\Controllers\AgendarCitasVisitantesController;
+use App\Http\Controllers\Agenda\AgendaController;
+use App\Http\Controllers\Agenda\AgendarJuntasController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Catalogos\CatalogosController;
 use App\Http\Controllers\Colaboradores\SoliVacacionesController;
@@ -195,6 +196,7 @@ Route::prefix('tasks')->middleware('jwt.auth')->group(function () {
 
 Route::middleware('jwt.auth')->group(function () {
     Route::get('users/all', [AllUsersController::class, 'index']);
+    Route::get('users/all-juntas', [AllUsersController::class, 'indexJuntas']);
 
     // ============================================
     // LISTADOS (GET) - Estos estaban faltando
@@ -305,19 +307,34 @@ Route::prefix('agentes/pedidos')->middleware('jwt.auth')->group(function () {
     Route::get('/{cvePed}/detalle', [PedidosAgentesController::class, 'detalle']);
 });
 
-Route::apiResource('citas', AgendarCitasVisitantesController::class);
-Route::get('usuarios-permitidos', [AgendarCitasVisitantesController::class, 'UsuariosPermitidosParaProvedores']);
-Route::get('usuarios-permitidosAllUsers', [AgendarCitasVisitantesController::class, 'UsuariosPermitidosParaAllUsers']);
-// Route::post('/proveedor', [AgendarCitasVisitantesController::class, 'storeProveedor']);
+Route::apiResource('citas', AgendaController::class);
+Route::get('usuarios-permitidos', [AgendaController::class, 'UsuariosPermitidosParaProvedores']);
+Route::get('usuarios-permitidosAllUsers', [AgendaController::class, 'UsuariosPermitidosParaAllUsers']);
+// Route::post('/proveedor', [AgendaController::class, 'storeProveedor']);
 
 
 Route::prefix('citas')->group(function () {
-    Route::post('/proveedor', [AgendarCitasVisitantesController::class, 'storeProveedor']);
-    Route::get('index/proveedor',         [AgendarCitasVisitantesController::class, 'indexProveedor']);
-    Route::patch('/{id}/estado', [AgendarCitasVisitantesController::class, 'updateEstado']);
-    Route::put('/proveedor/update',  [AgendarCitasVisitantesController::class, 'updateProveedor']);
-    Route::delete('/proveedor/destroy', [AgendarCitasVisitantesController::class, 'destroyProveedor']);
-    Route::get('/admin/todas', [AgendarCitasVisitantesController::class, 'indexAdmin']);
+    Route::post('/proveedor', [AgendaController::class, 'storeProveedor']);
+    Route::get('index/proveedor',         [AgendaController::class, 'indexProveedor']);
+    Route::patch('/{id}/estado', [AgendaController::class, 'updateEstado']);
+    Route::put('/proveedor/update',  [AgendaController::class, 'updateProveedor']);
+    Route::delete('/proveedor/destroy', [AgendaController::class, 'destroyProveedor']);
+    Route::get('/admin/todas', [AgendaController::class, 'indexAdmin']);
+});
+
+// Juntas
+Route::prefix('juntas')->group(function () {
+    // ── Rutas con segmento fijo PRIMERO ──
+    Route::get('/',                       [AgendaController::class, 'indexJunta']);
+    Route::post('/',                      [AgendaController::class, 'storeJunta']);
+
+    // ── Rutas con sub-segmento fijo ANTES que /{id} suelto ──
+    Route::patch('/{id}/estado',          [AgendaController::class, 'updateEstadoJunta']);
+    Route::patch('/{id}/asistencia', [AgendaController::class, 'updateAsistencia']);
+
+    // ── Rutas genéricas con solo {id} AL FINAL ──
+    Route::put('/{id}',                   [AgendaController::class, 'updateJunta']);
+    Route::delete('/{id}',               [AgendaController::class, 'destroyJunta']);
 });
 /**
  * SIEMPRE QUE SE AGREGE UNA NUEVA RUTA HAY QUE AGREGARLA A  

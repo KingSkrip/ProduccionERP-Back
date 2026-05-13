@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 use App\Jobs\EnviarMensajeWhatsappJob;
-use App\Services\CitaNotificacionService;
+use App\Services\Agenda\CitaNotificacionService;
 use Illuminate\Database\Connection;
 use App\Services\FirebirdConnectionService;
 

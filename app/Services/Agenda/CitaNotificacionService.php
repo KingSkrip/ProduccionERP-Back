@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services;
+namespace App\Services\Agenda;
 
 use App\Models\UserFirebirdIdentity;
 use App\Services\Whatsapp\UltraMSGService;

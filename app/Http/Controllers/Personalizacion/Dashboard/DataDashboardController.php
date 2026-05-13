@@ -117,7 +117,6 @@ class DataDashboardController extends Controller
                 'identity_tb_tabla' => $identity->firebird_tb_tabla ?? null,
                 'identity_clie_tabla' => $identity->firebird_clie_tabla ?? null,
                 'firebird_vend_clave' => null,
-                'firebird_vend_clave' => null,
                 'identity_empresa' => $identity->firebird_empresa ?? null,
             ]);
 
@@ -135,7 +134,6 @@ class DataDashboardController extends Controller
                     'identity_empresa' => $identityLegacy->firebird_empresa ?? null,
                     'identity_tb_tabla' => $identityLegacy->firebird_tb_tabla ?? null,
                     'identity_clie_tabla' => $identityLegacy->firebird_clie_tabla ?? null,
-                    'firebird_vend_clave' => null,
                     'firebird_vend_clave' => null,
                 ]);
 

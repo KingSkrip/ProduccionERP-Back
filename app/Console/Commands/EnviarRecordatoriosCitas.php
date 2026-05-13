@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Cita;
 use App\Models\UserFirebirdIdentity;
-use App\Services\CitaNotificacionService;
+use App\Services\Agenda\CitaNotificacionService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;

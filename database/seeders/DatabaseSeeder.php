@@ -15,6 +15,7 @@ class DatabaseSeeder extends Seeder
             TurnosSeeder::class,
             ModelHasRoleSeeder::class,
             PrioritySeeder::class,
+            CitasTypesSeeder::class,
             // DepartamentosTableSeeder::class,
             // TiposFaltasSeeder::class,
             // TipoAfectacionesSeeder::class,

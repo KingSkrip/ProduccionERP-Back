@@ -43,13 +43,10 @@ class MailboxNotificacionService
             . "El día {$fecha} a las {$hora}\n\n";
     }
 
-
-
     public function mensajeTicketFinalizado(string $nombreQuienFinalizo, string $tituloWorkorder): string
     {
         $fecha = Carbon::now()->locale('es')->isoFormat('D [de] MMMM [de] YYYY');
         $hora  = Carbon::now()->format('g:i') . ' ' . (Carbon::now()->format('A') === 'AM' ? 'am' : 'pm');
-
         return "*Ticket finalizado*\n\n"
             . "*{$nombreQuienFinalizo}* ha finalizado el ticket: *{$tituloWorkorder}*\n\n"
             . "El día {$fecha} a las {$hora}\n\n";

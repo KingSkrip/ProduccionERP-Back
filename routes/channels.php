@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\UserFirebirdIdentity;
+use App\Models\WorkOrder;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Log;
 
@@ -29,14 +30,14 @@ Broadcast::routes(['middleware' => ['api', App\Http\Middleware\JwtAuth::class]])
 
 // 🔥 OPCIONAL: Canal de presencia para ver quién está online
 Broadcast::channel('workorder.{workorderId}', function ($user, $workorderId) {
-    $firebirdIdentity = \App\Models\UserFirebirdIdentity::where('firebird_user_clave', $user->id)->first();
+    $firebirdIdentity = UserFirebirdIdentity::where('firebird_user_clave', $user->id)->first();
 
     if (!$firebirdIdentity) {
         return false;
     }
 
     // Verificar si el usuario tiene acceso a este workorder
-    $workorder = \App\Models\WorkOrder::find($workorderId);
+    $workorder = WorkOrder::find($workorderId);
 
     if (!$workorder) {
         return false;

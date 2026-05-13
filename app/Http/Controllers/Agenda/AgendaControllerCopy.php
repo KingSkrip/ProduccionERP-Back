@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Agenda;
 
+use App\Http\Controllers\Controller;
 use App\Models\Cita;
 use App\Models\ModelHasRole;
 use App\Models\UserFirebirdIdentity;
@@ -16,9 +17,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 use App\Jobs\EnviarMensajeWhatsappJob;
-use App\Services\CitaNotificacionService;
+use App\Services\Agenda\CitaNotificacionService;
 
-class AgendarCitasVisitantesController extends Controller
+class AgendaControllerCopy extends Controller
 {
     private string $jwtSecret;
     private UserService $userService;
@@ -26,12 +27,15 @@ class AgendarCitasVisitantesController extends Controller
     private static int $whatsappQueueIndex = 0;
     protected $firebird;
 
-    public function __construct(FirebirdEmpresaManualService $firebird)
-    {
-        $this->jwtSecret  = config('jwt.secret') ?? env('JWT_SECRET');
-        $this->userService = new UserService();
-        $this->notif       = new CitaNotificacionService();
-        $this->firebird = $firebird;
+    public function __construct(
+        FirebirdEmpresaManualService $firebird,
+        UserService $userService,
+        CitaNotificacionService $notif
+    ) {
+        $this->jwtSecret   = config('jwt.secret') ?? env('JWT_SECRET');
+        $this->userService = $userService;
+        $this->notif       = $notif;
+        $this->firebird    = $firebird;
     }
 
     /* ── Helper: obtener identity del usuario autenticado ── */
@@ -73,42 +77,28 @@ class AgendarCitasVisitantesController extends Controller
 
             if ($cita->es_externa) {
                 try {
-                    $provIdentity = UserFirebirdIdentity::find($cita->id_user);
-                    $nombreProveedor = null;
+                    $organizadorIdentity = UserFirebirdIdentity::find($cita->id_user);
+                    $nombre = null;
 
-                    if ($provIdentity) {
-                        if ($provIdentity->firebird_tb_clave !== null) {
-                            $empresaNoi = $provIdentity->firebird_empresa ?? '04';
-                            $tbClave = trim((string) $provIdentity->firebird_tb_clave);
-                            $firebirdNoi = new FirebirdEmpresaManualService($empresaNoi, 'SRVNOI');
-                            $tbRow = $firebirdNoi->getOperationalTable('TB')
-                                ->keyBy(fn($row) => trim((string) $row->CLAVE))
-                                ->get($tbClave);
-                            $nombreProveedor = $tbRow->NOMBRE ?? null;
-                        } elseif (!empty($provIdentity->firebird_clie_clave)) {
-                            $conn = $this->firebird->getProductionConnection();
-                            $row = $conn->selectOne("SELECT NOMBRE FROM CLIE03 WHERE CLAVE = ?", [$provIdentity->firebird_clie_clave]);
-                            $nombreProveedor = $row?->NOMBRE ?? null;
-                        } elseif ($provIdentity->firebird_vend_clave !== null) {
-                            $conn = $this->firebird->getProductionConnection();
-                            $row = $conn->selectOne("SELECT NOMBRE FROM VEND03 WHERE CVE_VEND = ?", [$provIdentity->firebird_vend_clave]);
-                            $nombreProveedor = $row?->NOMBRE ?? null;
-                        } elseif ($provIdentity->firebird_prov_clave !== null) {
-                            $conn = $this->firebird->getProductionConnection();
-                            Log::info('🔍 BUSCANDO_PROV03', [
-                                'prov_clave' => $provIdentity->firebird_prov_clave,
-                                'type'       => gettype($provIdentity->firebird_prov_clave),
-                            ]);
-                            $row = $conn->selectOne("SELECT NOMBRE FROM PROV03 WHERE TRIM(CLAVE) = ?", [trim((string) $provIdentity->firebird_prov_clave)]);
-                            Log::info('📦 PROV03_RESULT', ['row' => $row]);
-                            $nombreProveedor = $row?->NOMBRE ?? null;
+                    if ($organizadorIdentity) {
+                        // Primero intentar obtenerNombrePorIdentity
+                        $nombre = $this->notif->obtenerNombrePorIdentity($organizadorIdentity);
+
+                        // Fallback: directo del firebirdUser
+                        if (!$nombre) {
+                            $nombre = $organizadorIdentity->firebirdUser->NOMBRE ?? null;
                         }
                     }
 
-                    $cita->nombre_proveedor = $nombreProveedor;
+                    if ($cita->cita_type_id === 2) {
+                        $cita->nombre_organizador = $nombre;
+                    } else {
+                        $cita->nombre_proveedor = $nombre;
+                    }
                 } catch (\Throwable $e) {
-                    Log::error('❌ NOMBRE_PROVEEDOR_ERROR', ['error' => $e->getMessage()]);
-                    $cita->nombre_proveedor = null;
+                    Log::error('❌ NOMBRE_ORGANIZADOR_ERROR', ['error' => $e->getMessage()]);
+                    $cita->nombre_proveedor   = null;
+                    $cita->nombre_organizador = null;
                 }
             }
 
@@ -188,6 +178,7 @@ class AgendarCitasVisitantesController extends Controller
         // ── Visitante EXTERNO ──
         if ($tieneExterno) {
             $cita = Cita::create([
+                'cita_type_id'    => 1,
                 'id_user'          => $idAnfitrion,
                 'id_visitante'     => null,
                 'nombre_visitante' => $nombreExterno,
@@ -257,6 +248,7 @@ class AgendarCitasVisitantesController extends Controller
                 $nombreProv = $proveedorIdentity->firebirdUser->NOMBRE ?? null;
 
                 $cita = Cita::create([
+                    'cita_type_id'    => 1,
                     'id_user'          => $idAnfitrion,
                     'id_visitante'     => $proveedorIdentity->id,
                     'nombre_visitante' => $nombreProv,
@@ -801,6 +793,7 @@ class AgendarCitasVisitantesController extends Controller
 
             // ── Recrear la cita ──
             $cita = Cita::create([
+                'cita_type_id'     => 1,
                 'id_user'          => $idProveedor,
                 'id_visitante'     => $visitanteIdentity->id,
                 'nombre_visitante' => $visitanteIdentity->firebirdUser->NOMBRE ?? null,
@@ -992,31 +985,7 @@ class AgendarCitasVisitantesController extends Controller
         $errores = [];
 
         // ── Obtener nombre directo desde Firebird usando identity ──
-        $nombreProveedor = 'Sin nombre';
-        try {
-            if ($identity->firebird_tb_clave !== null) {
-                $empresaNoi  = $identity->firebird_empresa ?? '04';
-                $tbClave     = trim((string) $identity->firebird_tb_clave);
-                $firebirdNoi = new FirebirdEmpresaManualService($empresaNoi, 'SRVNOI');
-                $tbRow       = $firebirdNoi->getOperationalTable('TB')
-                    ->keyBy(fn($row) => trim((string) $row->CLAVE))->get($tbClave);
-                $nombreProveedor = $tbRow->NOMBRE ?? 'Sin nombre';
-            } elseif (!empty($identity->firebird_clie_clave)) {
-                $conn = $this->firebird->getProductionConnection();
-                $row  = $conn->selectOne("SELECT NOMBRE FROM CLIE03 WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
-                $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
-            } elseif ($identity->firebird_vend_clave !== null) {
-                $conn = $this->firebird->getProductionConnection();
-                $row  = $conn->selectOne("SELECT NOMBRE FROM VEND03 WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
-                $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
-            } elseif ($identity->firebird_prov_clave !== null) {
-                $conn = $this->firebird->getProductionConnection();
-                $row  = $conn->selectOne("SELECT NOMBRE FROM PROV03 WHERE TRIM(CLAVE) = ?", [trim((string) $identity->firebird_prov_clave)]);
-                $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
-            }
-        } catch (\Throwable $e) {
-            Log::error('❌ NOMBRE_PROVEEDOR_STORE_ERROR', ['error' => $e->getMessage()]);
-        }
+        $nombreProveedor = $this->notif->obtenerNombrePorIdentity($identity) ?? 'Sin nombre';
 
         $meData            = $this->userService->me($request);
         $telefonoProveedor = $this->obtenerTelefonoUsuario($meData['user']);
@@ -1060,6 +1029,7 @@ class AgendarCitasVisitantesController extends Controller
             }
 
             $cita = Cita::create([
+                'cita_type_id'     => 1,
                 'id_user'          => $idProveedor,
                 'id_visitante'     => $visitanteIdentity->id,
                 'nombre_visitante' => $visitanteIdentity->firebirdUser->NOMBRE ?? null,
@@ -1546,47 +1516,47 @@ class AgendarCitasVisitantesController extends Controller
 
 
 
- public function indexAdmin(Request $request)
-{
-    $identity = $this->getIdentityFromToken($request);
-    if (!$identity) {
-        return response()->json(['message' => 'No autenticado'], 401);
+    public function indexAdmin(Request $request)
+    {
+        $identity = $this->getIdentityFromToken($request);
+        if (!$identity) {
+            return response()->json(['message' => 'No autenticado'], 401);
+        }
+
+        $usuariosPermitidos = [252, 235, 264, 256];
+        $rolesPermitidos = [1];
+        $subrolesPermitidos = [6, 15, 16];
+
+        // 🔹 Validar usuario permitido
+        $esUsuarioPermitido = in_array($identity->id, $usuariosPermitidos);
+
+        // 🔹 Validar rol
+        $tieneRol = ModelHasRole::where('firebird_identity_id', $identity->id)
+            ->whereIn('role_id', $rolesPermitidos)
+            ->exists();
+
+        // 🔹 Validar subrol
+        $tieneSubrol = ModelHasRole::where('firebird_identity_id', $identity->id)
+            ->whereIn('subrol_id', $subrolesPermitidos)
+            ->exists();
+
+        // 🔥 TODO junto
+        $tienePermiso = $esUsuarioPermitido && $tieneRol && $tieneSubrol;
+
+        if (!$tienePermiso) {
+            return response()->json(['message' => 'Sin permisos'], 403);
+        }
+
+        $citas = Cita::with(['usuario', 'visitante'])
+            ->orderBy('fecha', 'desc')
+            ->orderBy('hora_inicio', 'asc')
+            ->get();
+
+        $citas = $citas->map(function ($cita) {
+            $cita->es_externa = false;
+            return $cita;
+        });
+
+        return response()->json($citas);
     }
-
-    $usuariosPermitidos = [252,235, 264, 256 ];
-    $rolesPermitidos = [1];
-    $subrolesPermitidos = [6, 15, 16];
-
-    // 🔹 Validar usuario permitido
-    $esUsuarioPermitido = in_array($identity->id, $usuariosPermitidos);
-
-    // 🔹 Validar rol
-    $tieneRol = ModelHasRole::where('firebird_identity_id', $identity->id)
-        ->whereIn('role_id', $rolesPermitidos)
-        ->exists();
-
-    // 🔹 Validar subrol
-    $tieneSubrol = ModelHasRole::where('firebird_identity_id', $identity->id)
-        ->whereIn('subrol_id', $subrolesPermitidos)
-        ->exists();
-
-    // 🔥 TODO junto
-    $tienePermiso = $esUsuarioPermitido && $tieneRol && $tieneSubrol;
-
-    if (!$tienePermiso) {
-        return response()->json(['message' => 'Sin permisos'], 403);
-    }
-
-    $citas = Cita::with(['usuario', 'visitante'])
-        ->orderBy('fecha', 'desc')
-        ->orderBy('hora_inicio', 'asc')
-        ->get();
-
-    $citas = $citas->map(function ($cita) {
-        $cita->es_externa = false;
-        return $cita;
-    });
-
-    return response()->json($citas);
-}
 }
