@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Agenda\AgendaController;
+use App\Http\Controllers\Scanner\ScannerEmbarquesController;
 use App\Http\Controllers\Agenda\AgendarJuntasController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Catalogos\CatalogosController;
@@ -22,8 +23,6 @@ use App\Http\Controllers\Clientes\PedidosController;
 
 use App\Http\Controllers\Agentes\EstadosCuentaAgentesController;
 use App\Http\Controllers\Agentes\PedidosAgentesController;
-
-
 use App\Http\Controllers\TaskController;
 use Illuminate\Support\Facades\Route;
 
@@ -52,7 +51,6 @@ Route::prefix('dash')->group(function () {
     Route::get('me', [DataDashboardController::class, 'me']);
     Route::post('update-status', [DataDashboardController::class, 'updateStatus']);
 });
-
 
 //EDITAR PERFIL PERSONAL
 
@@ -161,29 +159,6 @@ Route::prefix('reportes-produccion')->group(function () {
 });
 
 
-// Route::prefix('reportes-produccion')->group(function () {
-//     Route::get('/', [ReportesProduccionController::class, 'index']);
-//     Route::get('/summary', [ReportesProduccionController::class, 'getSummary']);
-//     Route::get('/estampados', [ReportesProduccionController::class, 'getEstampado']);
-
-//     Route::get('/tintoreria', [ReportesProduccionController::class, 'getTintoreria']);
-//   // 🆕
-//     Route::get('/tejido', [ReportesProduccionController::class, 'getProduccionTejido']);
-//     Route::get('/tejido-resumen', [ReportesProduccionController::class, 'getTejido']);
-//           // 🆕
-//     Route::get('/revisado', [ReportesProduccionController::class, 'getRevisadoTejido']);
-//     Route::get('/pendientes', [ReportesProduccionController::class, 'getPorRevisarTejido']);
-//     Route::get('/con-saldo', [ReportesProduccionController::class, 'getSaldosTejido']);
-//     Route::get('/entregado-embarques', [ReportesProduccionController::class, 'getEntregadoaEmbarques']);
-//     Route::get('/facturado', [ReportesProduccionController::class, 'getFacturado']);
-
-//     Route::get('/acabado', [ReportesProduccionController::class, 'getAcabadoReal']);
-//            // 🆕
-//     Route::get('/departamento/{id}', [ReportesProduccionController::class, 'getByDepartment']);
-//     Route::get('all', [ReportesProduccionController::class, 'getAllReports']);
-// });
-
-
 Route::prefix('tasks')->middleware('jwt.auth')->group(function () {
     Route::get('/', [TaskController::class, 'index']);              // listar
     Route::post('/store', [TaskController::class, 'store']);        // crear
@@ -246,13 +221,6 @@ Route::middleware('jwt.auth')->group(function () {
     Route::put('perfil/password', [PerfilController::class, 'updatePassword']);
     Route::delete('perfil', [PerfilController::class, 'destroy']);
 });
-
-
-
-
-
-
-
 
 Route::prefix('estados-cuenta')->middleware('jwt.auth')->group(function () {
     Route::get('/', [EstadosCuentaController::class, 'index']);
@@ -336,6 +304,15 @@ Route::prefix('juntas')->group(function () {
     Route::put('/{id}',                   [AgendaController::class, 'updateJunta']);
     Route::delete('/{id}',               [AgendaController::class, 'destroyJunta']);
 });
+
+Route::prefix('scanner')->group(function () {
+    Route::post('/embarques', [ScannerEmbarquesController::class, 'scan']);
+});
+
+
+
+
+
 /**
  * SIEMPRE QUE SE AGREGE UNA NUEVA RUTA HAY QUE AGREGARLA A  
  * app/Http/Middleware/EncryptJsonResponse.php
