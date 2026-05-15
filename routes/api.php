@@ -19,8 +19,7 @@ use App\Http\Controllers\SuperAdmin\ReportesProduccion\ReportesProduccionControl
 use App\Http\Controllers\SuperAdmin\Roles\RolesController;
 use App\Http\Controllers\Clientes\EstadosCuentaController;
 use App\Http\Controllers\Clientes\PedidosController;
-
-
+use Illuminate\Http\Request;
 use App\Http\Controllers\Agentes\EstadosCuentaAgentesController;
 use App\Http\Controllers\Agentes\PedidosAgentesController;
 use App\Http\Controllers\TaskController;
