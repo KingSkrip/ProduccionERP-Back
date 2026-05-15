@@ -306,10 +306,20 @@ Route::prefix('juntas')->group(function () {
 });
 
 Route::prefix('scanner')->group(function () {
+    Route::get('/embarques',  [ScannerEmbarquesController::class, 'index']);
     Route::post('/embarques', [ScannerEmbarquesController::class, 'scan']);
 });
 
 
+// routes/api.php
+Route::get('mi-ip', function (Request $request) {
+    // Si hay proxy/nginx, leer el header
+    $ip = $request->header('X-Real-IP') 
+       ?? $request->header('X-Forwarded-For')
+       ?? $request->ip();
+
+    return response()->json(['ip' => $ip]);
+});
 
 
 
