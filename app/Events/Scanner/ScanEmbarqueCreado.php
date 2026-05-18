@@ -9,7 +9,8 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 
-class ScanEmbarqueCreado implements ShouldBroadcastNow 
+// ScanEmbarqueCreado.php
+class ScanEmbarqueCreado implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
@@ -17,7 +18,8 @@ class ScanEmbarqueCreado implements ShouldBroadcastNow
         public string $codigo,
         public int    $codigoEnt,
         public string $fechaYHora,
-        public int    $procesado
+        public int    $procesado,
+        public ?int    $scannedBy = null, // ← nuevo
     ) {}
 
     public function broadcastOn(): Channel

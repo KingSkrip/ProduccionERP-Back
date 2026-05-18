@@ -307,6 +307,8 @@ Route::prefix('juntas')->group(function () {
 Route::prefix('scanner')->group(function () {
     Route::get('/embarques',  [ScannerEmbarquesController::class, 'index']);
     Route::post('/embarques', [ScannerEmbarquesController::class, 'scan']);
+    Route::post('/registrar-operador', [ScannerEmbarquesController::class, 'registrarOperador'])
+    ->middleware('jwt.auth');
 });
 
 

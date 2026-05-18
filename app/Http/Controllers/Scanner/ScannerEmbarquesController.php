@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Events\Scanner\ScanEmbarqueCreado;
 use Illuminate\Http\Request;
 use App\Services\FirebirdConnectionService;
+use Illuminate\Support\Facades\Cache;
 
 class ScannerEmbarquesController extends Controller
 {
@@ -36,28 +37,39 @@ class ScannerEmbarquesController extends Controller
         $codigoLimpio   = str_replace('AC-', '', $codigoOriginal);
         $codigoCeros    = str_pad($codigoLimpio, 10, '0', STR_PAD_LEFT);
         $fechaYHora     = now()->toDateTimeString();
-
-        $connection = $this->firebird->getProductionConnection();
-        $connection
-            ->table('INVFISVSTEOPT')
-            ->insert([
-                'CODIGO'     => $codigoCeros,
-                'CODIGOENT'  => (int) $codigoLimpio,
-                'FECHAYHORA' => $fechaYHora,
-                'PROCESADO'  => 0
-            ]);
-
-        // Disparar evento WebSocket
-        broadcast(new ScanEmbarqueCreado(
-            codigo: $codigoCeros,
-            codigoEnt: (int) $codigoLimpio,
-            fechaYHora: $fechaYHora,
-            procesado: 0
-        ));
-
-        return response()->json([
-            'ok'     => true,
-            'codigo' => $codigoCeros
+        $scannedBy = Cache::get('scanner_operador_activo');
+    
+        // 👇 temporal para debuggear
+        \Illuminate\Support\Facades\Log::info('SCAN_DEBUG', [
+            'scannedBy_from_cache' => $scannedBy,
+            'cache_key' => 'scanner_operador_activo',
         ]);
+    
+        $connection = $this->firebird->getProductionConnection();
+        $connection->table('INVFISVSTEOPT')->insert([
+            'CODIGO'     => $codigoCeros,
+            'CODIGOENT'  => (int) $codigoLimpio,
+            'FECHAYHORA' => $fechaYHora,
+            'PROCESADO'  => 0
+        ]);
+    
+        broadcast(new ScanEmbarqueCreado(
+            codigo:     $codigoCeros,
+            codigoEnt:  (int) $codigoLimpio,
+            fechaYHora: $fechaYHora,
+            procesado:  0,
+            scannedBy:  $scannedBy,
+        ));
+    
+        return response()->json(['ok' => true, 'codigo' => $codigoCeros]);
     }
+
+// ScannerEmbarquesController.php
+public function registrarOperador(Request $request)
+{
+    $userId = $request->input('user_id');
+    Cache::put('scanner_operador_activo', $userId, now()->addHours(8));
+    return response()->json(['ok' => true, 'operador' => $userId]);
+}
+
 }
