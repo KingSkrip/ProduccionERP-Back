@@ -103,3 +103,10 @@ Broadcast::channel('user.{identityId}', function ($user, $identityId) {
     // Verificar que el identity_id del usuario coincida con el canal solicitado
     return (int) $identity->id === (int) $identityId;
 });
+
+
+
+// routes/channels.php
+Broadcast::channel('scanner-embarques.{userId}', function ($user, $userId) {
+    return true; // o validar: $user->id == $userId
+});

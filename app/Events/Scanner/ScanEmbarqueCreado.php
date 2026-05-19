@@ -19,12 +19,12 @@ class ScanEmbarqueCreado implements ShouldBroadcastNow
         public int    $codigoEnt,
         public string $fechaYHora,
         public int    $procesado,
-        public ?int    $scannedBy = null, // ← nuevo
+        public mixed  $userId  // 👈
     ) {}
 
     public function broadcastOn(): Channel
     {
-        return new Channel('scanner-embarques');
+        return new PrivateChannel("scanner-embarques.{$this->userId}"); // 👈
     }
 
     public function broadcastAs(): string

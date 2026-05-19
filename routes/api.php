@@ -304,11 +304,11 @@ Route::prefix('juntas')->group(function () {
     Route::delete('/{id}',               [AgendaController::class, 'destroyJunta']);
 });
 
-Route::prefix('scanner')->group(function () {
+Route::prefix('scanner')->middleware('jwt.auth')->group(function () {
     Route::get('/embarques',  [ScannerEmbarquesController::class, 'index']);
     Route::post('/embarques', [ScannerEmbarquesController::class, 'scan']);
-    Route::post('/registrar-operador', [ScannerEmbarquesController::class, 'registrarOperador'])
-    ->middleware('jwt.auth');
+    // Route::post('/registrar-operador', [ScannerEmbarquesController::class, 'registrarOperador'])
+    // ->middleware('jwt.auth');
 });
 
 

@@ -31,38 +31,35 @@ class ScannerEmbarquesController extends Controller
     }
 
 
-    public function scan(Request $request)
-    {
-        $codigoOriginal = trim($request->barcode);
-        $codigoLimpio   = str_replace('AC-', '', $codigoOriginal);
-        $codigoCeros    = str_pad($codigoLimpio, 10, '0', STR_PAD_LEFT);
-        $fechaYHora     = now()->toDateTimeString();
-        $scannedBy = Cache::get('scanner_operador_activo');
-    
-        // 👇 temporal para debuggear
-        \Illuminate\Support\Facades\Log::info('SCAN_DEBUG', [
-            'scannedBy_from_cache' => $scannedBy,
-            'cache_key' => 'scanner_operador_activo',
-        ]);
-    
-        $connection = $this->firebird->getProductionConnection();
-        $connection->table('INVFISVSTEOPT')->insert([
-            'CODIGO'     => $codigoCeros,
-            'CODIGOENT'  => (int) $codigoLimpio,
-            'FECHAYHORA' => $fechaYHora,
-            'PROCESADO'  => 0
-        ]);
-    
-        broadcast(new ScanEmbarqueCreado(
-            codigo:     $codigoCeros,
-            codigoEnt:  (int) $codigoLimpio,
-            fechaYHora: $fechaYHora,
-            procesado:  0,
-            scannedBy:  $scannedBy,
-        ));
-    
-        return response()->json(['ok' => true, 'codigo' => $codigoCeros]);
-    }
+// ScannerEmbarquesController.php
+public function scan(Request $request)
+{
+    // Obtener userId del JWT (tu middleware ya lo decodifica)
+    $userId = $request->firebird_user_id; // o como lo llames en tu middleware
+
+    $codigoOriginal = trim($request->barcode);
+    $codigoLimpio   = str_replace('AC-', '', $codigoOriginal);
+    $codigoCeros    = str_pad($codigoLimpio, 10, '0', STR_PAD_LEFT);
+    $fechaYHora     = now()->toDateTimeString();
+
+    $connection = $this->firebird->getProductionConnection();
+    $connection->table('INVFISVSTEOPT')->insert([
+        'CODIGO'     => $codigoCeros,
+        'CODIGOENT'  => (int) $codigoLimpio,
+        'FECHAYHORA' => $fechaYHora,
+        'PROCESADO'  => 0
+    ]);
+
+    broadcast(new ScanEmbarqueCreado(
+        codigo:    $codigoCeros,
+        codigoEnt: (int) $codigoLimpio,
+        fechaYHora: $fechaYHora,
+        procesado:  0,
+        userId:    $userId,
+    ));
+
+    return response()->json(['ok' => true, 'codigo' => $codigoCeros]);
+}
 
 // ScannerEmbarquesController.php
 public function registrarOperador(Request $request)
