@@ -106,7 +106,22 @@ Broadcast::channel('user.{identityId}', function ($user, $identityId) {
 
 
 
-// routes/channels.php
+// // routes/channels.php
 Broadcast::channel('scanner-embarques.{userId}', function ($user, $userId) {
-    return true; // o validar: $user->id == $userId
+    // Tu modelo Firebird usa ID mayúscula, pero el guard puede mapear distinto
+    $authId = $user->ID    // Firebird model
+           ?? $user->id    // Laravel standard  
+           ?? $user->firebird_user_id  // por si acaso
+           ?? null;
+
+    \Log::info('🔐 Channel auth scanner-embarques', [
+        'user_ID'          => $user->ID ?? null,
+        'user_id'          => $user->id ?? null,
+        'user_fuid'        => $user->firebird_user_id ?? null,
+        'authId_resuelto'  => $authId,
+        'canal_userId'     => $userId,
+        'match'            => (int) $authId === (int) $userId,
+    ]);
+
+    return (int) $authId === (int) $userId;
 });

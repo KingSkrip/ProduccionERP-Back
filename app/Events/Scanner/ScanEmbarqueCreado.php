@@ -8,6 +8,7 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Broadcasting\PrivateChannel;
 
 // ScanEmbarqueCreado.php
 class ScanEmbarqueCreado implements ShouldBroadcastNow
@@ -24,7 +25,8 @@ class ScanEmbarqueCreado implements ShouldBroadcastNow
 
     public function broadcastOn(): Channel
     {
-        return new PrivateChannel("scanner-embarques.{$this->userId}"); // 👈
+        // return new PrivateChannel("scanner-embarques.{$this->userId}");
+        return new PrivateChannel("scanner-embarques.{$this->userId}");
     }
 
     public function broadcastAs(): string

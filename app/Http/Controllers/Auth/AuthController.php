@@ -373,6 +373,7 @@ class AuthController extends Controller
             return response()->json([
                 'encrypt' => $token,
                 'user' => new UsuarioResource($usuario, [
+                    'identity_id'         => $identity->id ?? null,
                     'departamentos'       => $departamentos,
                     'sl'                  => $slRow,
                     'vacaciones'          => $vcRow,
