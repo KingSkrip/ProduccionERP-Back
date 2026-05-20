@@ -85,6 +85,21 @@ class ScannerEmbarquesController extends Controller
             return response()->json(['ok' => false, 'error' => 'Conexión Firebird fallida'], 500);
         }
 
+        // ── 4. Verificar duplicado ANTES de insertar ──────────────────────────────
+        $yaExiste = $connection->table('INVFISVSTEOPT')
+            ->where('CODIGO', $codigoCeros)
+            ->where('PROCESADO', 0)
+            ->exists();
+
+        if ($yaExiste) {
+            Log::info('⚠️ [scan] Código ya registrado con PROCESADO=0', ['codigo' => $codigoCeros]);
+            return response()->json([
+                'ok'     => false,
+                'motivo' => 'duplicado',
+                'codigo' => $codigoCeros,
+            ], 409);
+        }
+
         // ── 4. Insert en INVFISVSTEOPT ─────────────────────────────────────────
         $payload = [
             'CODIGO'     => $codigoCeros,
@@ -106,19 +121,6 @@ class ScannerEmbarquesController extends Controller
             return response()->json(['ok' => false, 'error' => 'Error al guardar el scan'], 500);
         }
 
-        $yaExiste = $connection->table('INVFISVSTEOPT')
-    ->where('CODIGO', $codigoCeros)
-    ->where('PROCESADO', 0)
-    ->exists();
-
-if ($yaExiste) {
-    Log::info('⚠️ [scan] Código ya registrado con PROCESADO=0', ['codigo' => $codigoCeros]);
-    return response()->json([
-        'ok'     => false,
-        'motivo' => 'duplicado',
-        'codigo' => $codigoCeros,
-    ], 409);
-}
 
         // ── 5. Broadcast del evento ────────────────────────────────────────────
         Log::info('📡 [scan] Disparando broadcast ScanEmbarqueCreado...', [
