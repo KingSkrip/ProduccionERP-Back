@@ -58,19 +58,21 @@ class ScannerEmbarquesController extends Controller
             'userId_value' => $userId,
         ]);
 
-        // ── 2. Limpiar y formatear el código ───────────────────────────────────
+        // ── 2. Validar formato del código ─────────────────────────────────────
         $codigoOriginal = trim($request->barcode);
-        $codigoLimpio   = str_replace('AC-', '', $codigoOriginal);
-        $codigoCeros    = str_pad($codigoLimpio, 10, '0', STR_PAD_LEFT);
-        $fechaYHora     = now()->toDateTimeString();
 
-        Log::info('🔢 [scan] Código transformado', [
-            'original'    => $codigoOriginal,
-            'limpio'      => $codigoLimpio,
-            'con_ceros'   => $codigoCeros,
-            'codigoEnt'   => (int) $codigoLimpio,
-            'fechaYHora'  => $fechaYHora,
-        ]);
+        if (!preg_match('/^\d{10}$/', $codigoOriginal)) {
+            Log::warning('⛔ [scan] Código inválido, se ignora', ['barcode' => $codigoOriginal]);
+            return response()->json([
+                'ok'     => false,
+                'motivo' => 'codigo_invalido',
+                'codigo' => $codigoOriginal,
+            ], 422);
+        }
+
+        $codigoCeros = $codigoOriginal;
+        $codigoLimpio = ltrim($codigoOriginal, '0') ?: '0'; // Para el cast a int en CODIGOENT
+        $fechaYHora  = now()->toDateTimeString();
 
         // ── 3. Conexión Firebird ───────────────────────────────────────────────
         Log::info('🔌 [scan] Obteniendo conexión Firebird...');
