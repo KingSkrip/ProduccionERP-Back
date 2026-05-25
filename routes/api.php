@@ -291,15 +291,10 @@ Route::prefix('citas')->group(function () {
 
 // Juntas
 Route::prefix('juntas')->group(function () {
-    // ── Rutas con segmento fijo PRIMERO ──
     Route::get('/',                       [AgendaController::class, 'indexJunta']);
     Route::post('/',                      [AgendaController::class, 'storeJunta']);
-
-    // ── Rutas con sub-segmento fijo ANTES que /{id} suelto ──
     Route::patch('/{id}/estado',          [AgendaController::class, 'updateEstadoJunta']);
     Route::patch('/{id}/asistencia', [AgendaController::class, 'updateAsistencia']);
-
-    // ── Rutas genéricas con solo {id} AL FINAL ──
     Route::put('/{id}',                   [AgendaController::class, 'updateJunta']);
     Route::delete('/{id}',               [AgendaController::class, 'destroyJunta']);
 });
@@ -307,17 +302,16 @@ Route::prefix('juntas')->group(function () {
 Route::prefix('scanner')->middleware('jwt.auth')->group(function () {
     Route::get('/embarques',  [ScannerEmbarquesController::class, 'index']);
     Route::post('/embarques', [ScannerEmbarquesController::class, 'scan']);
-    // Route::post('/registrar-operador', [ScannerEmbarquesController::class, 'registrarOperador'])
-    // ->middleware('jwt.auth');
+  
 });
 
 
 // routes/api.php
 Route::get('mi-ip', function (Request $request) {
     // Si hay proxy/nginx, leer el header
-    $ip = $request->header('X-Real-IP') 
-       ?? $request->header('X-Forwarded-For')
-       ?? $request->ip();
+    $ip = $request->header('X-Real-IP')
+        ?? $request->header('X-Forwarded-For')
+        ?? $request->ip();
 
     return response()->json(['ip' => $ip]);
 });

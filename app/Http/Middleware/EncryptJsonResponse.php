@@ -86,6 +86,9 @@ class EncryptJsonResponse
         'api/juntas/*',
 
 
+        // SCANNER
+        'api/scanner',
+        'api/scanner/*',
 
 
     ];
