@@ -114,7 +114,7 @@ Broadcast::channel('scanner-embarques.{userId}', function ($user, $userId) {
            ?? $user->firebird_user_id  // por si acaso
            ?? null;
 
-    \Log::info('🔐 Channel auth scanner-embarques', [
+    Log::info('🔐 Channel auth scanner-embarques', [
         'user_ID'          => $user->ID ?? null,
         'user_id'          => $user->id ?? null,
         'user_fuid'        => $user->firebird_user_id ?? null,
