@@ -160,4 +160,44 @@ class ScannerEmbarquesController extends Controller
         Cache::put('scanner_operador_activo', $userId, now()->addHours(8));
         return response()->json(['ok' => true, 'operador' => $userId]);
     }
+
+// ScannerEmbarquesController.php — agregar método
+public function verificarInventario(Request $request)
+{
+    $userId = $request->firebird_user_id
+        ?? $request->user()?->firebird_user_id
+        ?? $request->user()?->ID;
+
+    $codigoOriginal = trim($request->barcode);
+
+    if (!preg_match('/^\d{10}$/', $codigoOriginal)) {
+        return response()->json([
+            'ok'     => false,
+            'motivo' => 'codigo_invalido',
+        ], 422);
+    }
+
+    $connection = $this->firebird->getProductionConnection();
+
+    // Solo consultamos, NO insertamos nada
+    $yaInventariado = $connection->table('INVFISVSTEOPT')
+        ->where('CODIGO', $codigoOriginal)
+        ->where('PROCESADO', 1)
+        ->exists();
+
+    if ($yaInventariado) {
+        return response()->json([
+            'ok'     => false,
+            'motivo' => 'ya_inventariado',
+            'codigo' => $codigoOriginal,
+        ], 409);
+    }
+
+    return response()->json([
+        'ok'     => true,
+        'motivo' => 'no_inventariado',
+        'codigo' => $codigoOriginal,
+    ], 200);
+}
+    
 }
