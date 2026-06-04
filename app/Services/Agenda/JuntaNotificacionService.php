@@ -40,7 +40,7 @@ class JuntaNotificacionService
     ): string {
         $lista     = $this->listaParticipantes($nombresParticipantes);
         $asuntoTxt = $asunto ? "\n📋 Asunto: {$asunto}" : '';
-        $salaTxt   = $sala   ? "\n📍 Sala: " . getSalaLabel($sala) : '';
+        $salaTxt   = $sala   ? "\n📍 Sala: " . $this->getSalaLabel($sala) : '';
         $notasTxt  = $notas  ? "\n📝 Notas: {$notas}"   : '';
 
         return "✅ *Junta agendada*\n"
@@ -67,7 +67,7 @@ class JuntaNotificacionService
         ?string $notas  = null,
     ): string {
         $asuntoTxt = $asunto ? "\nAsunto: {$asunto}" : '';
-        $salaTxt   = $sala   ? "\n📍 Sala: " . getSalaLabel($sala) : '';
+        $salaTxt   = $sala   ? "\n📍 Sala: " . $this->getSalaLabel($sala) : '';
         $notasTxt  = $notas  ? "\nNotas: {$notas}"   : '';
 
         return "*{$nombreOrganizador}* te ha invitado a una junta.\n"
@@ -93,7 +93,7 @@ class JuntaNotificacionService
     ): string {
         $lista     = $this->listaParticipantes($nombresParticipantes);
         $asuntoTxt = $asunto ? "\n📋 Asunto: {$asunto}" : '';
-        $salaTxt   = $sala   ? "\n📍 Sala: " . getSalaLabel($sala) : '';
+        $salaTxt   = $sala   ? "\n📍 Sala: " . $this->getSalaLabel($sala) : '';
         $notasTxt  = $notas  ? "\n📝 Notas: {$notas}"   : '';
 
         return "✏️ *Junta actualizada*\n"
@@ -119,7 +119,7 @@ class JuntaNotificacionService
         ?string $notas  = null,
     ): string {
         $asuntoTxt = $asunto ? "\n📋 Asunto: {$asunto}" : '';
-        $salaTxt   = $sala   ? "\n📍 Sala: " . getSalaLabel($sala) : '';
+        $salaTxt   = $sala   ? "\n📍 Sala: " . $this->getSalaLabel($sala) : '';
         $notasTxt  = $notas  ? "\n📝 Notas: {$notas}"   : '';
 
         return "✏️ *{$nombreOrganizador}* actualizó una junta contigo.\n"
@@ -299,7 +299,7 @@ class JuntaNotificacionService
     // HELPERS PRIVADOS
     // ─────────────────────────────────────────────
 
-    function getSalaLabel(string $sala): string
+    private function getSalaLabel(string $sala): string
     {
         $labels = [
             'sala_tejido'    => 'Sala de juntas de tejido',

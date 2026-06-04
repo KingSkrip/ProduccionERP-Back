@@ -387,6 +387,7 @@ class AgendaController extends Controller
                 ['role_id' => 1, 'subrol_id' => 6],
                 ['role_id' => 1, 'subrol_id' => 14],
                 ['role_id' => 1, 'subrol_id' => 13],
+                ['role_id' => 3, 'subrol_id' => 8],
                 ['role_id' => 3, 'subrol_id' => null],
             ])
         );
