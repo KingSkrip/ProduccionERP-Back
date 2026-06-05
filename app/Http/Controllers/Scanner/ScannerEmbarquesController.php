@@ -88,19 +88,36 @@ class ScannerEmbarquesController extends Controller
         }
 
         // ── 4. Verificar duplicado ANTES de insertar ──────────────────────────────
-        $yaExiste = $connection->table('INVFISVSTEOPT')
-            ->where('CODIGO', $codigoCeros)
-            ->where('PROCESADO', 0)
-            ->exists();
 
-        if ($yaExiste) {
-            Log::info('⚠️ [scan] Código ya registrado con PROCESADO=0', ['codigo' => $codigoCeros]);
-            return response()->json([
-                'ok'     => false,
-                'motivo' => 'duplicado',
-                'codigo' => $codigoCeros,
-            ], 409);
-        }
+// Ya procesado (PROCESADO = 1) → suena "ya_inventariado"
+$yaInventariado = $connection->table('INVFISVSTEOPT')
+    ->where('CODIGO', $codigoCeros)
+    ->where('PROCESADO', 1)
+    ->exists();
+
+if ($yaInventariado) {
+    Log::info('⚠️ [scan] Código ya inventariado (PROCESADO=1)', ['codigo' => $codigoCeros]);
+    return response()->json([
+        'ok'     => false,
+        'motivo' => 'ya_inventariado',
+        'codigo' => $codigoCeros,
+    ], 409);
+}
+
+// Pendiente duplicado (PROCESADO = 0)
+$yaExiste = $connection->table('INVFISVSTEOPT')
+    ->where('CODIGO', $codigoCeros)
+    ->where('PROCESADO', 0)
+    ->exists();
+
+if ($yaExiste) {
+    Log::info('⚠️ [scan] Código ya registrado con PROCESADO=0', ['codigo' => $codigoCeros]);
+    return response()->json([
+        'ok'     => false,
+        'motivo' => 'duplicado',
+        'codigo' => $codigoCeros,
+    ], 409);
+}
 
         // ── 4. Insert en INVFISVSTEOPT ─────────────────────────────────────────
         $payload = [
@@ -161,43 +178,42 @@ class ScannerEmbarquesController extends Controller
         return response()->json(['ok' => true, 'operador' => $userId]);
     }
 
-// ScannerEmbarquesController.php — agregar método
-public function verificarInventario(Request $request)
-{
-    $userId = $request->firebird_user_id
-        ?? $request->user()?->firebird_user_id
-        ?? $request->user()?->ID;
+    // ScannerEmbarquesController.php — agregar método
+    public function verificarInventario(Request $request)
+    {
+        $userId = $request->firebird_user_id
+            ?? $request->user()?->firebird_user_id
+            ?? $request->user()?->ID;
 
-    $codigoOriginal = trim($request->barcode);
+        $codigoOriginal = trim($request->barcode);
 
-    if (!preg_match('/^\d{10}$/', $codigoOriginal)) {
+        if (!preg_match('/^\d{10}$/', $codigoOriginal)) {
+            return response()->json([
+                'ok'     => false,
+                'motivo' => 'codigo_invalido',
+            ], 422);
+        }
+
+        $connection = $this->firebird->getProductionConnection();
+
+        // Solo consultamos, NO insertamos nada
+        $yaInventariado = $connection->table('INVFISVSTEOPT')
+            ->where('CODIGO', $codigoOriginal)
+            ->where('PROCESADO', 1)
+            ->exists();
+
+        if ($yaInventariado) {
+            return response()->json([
+                'ok'     => false,
+                'motivo' => 'ya_inventariado',
+                'codigo' => $codigoOriginal,
+            ], 409);
+        }
+
         return response()->json([
-            'ok'     => false,
-            'motivo' => 'codigo_invalido',
-        ], 422);
-    }
-
-    $connection = $this->firebird->getProductionConnection();
-
-    // Solo consultamos, NO insertamos nada
-    $yaInventariado = $connection->table('INVFISVSTEOPT')
-        ->where('CODIGO', $codigoOriginal)
-        ->where('PROCESADO', 1)
-        ->exists();
-
-    if ($yaInventariado) {
-        return response()->json([
-            'ok'     => false,
-            'motivo' => 'ya_inventariado',
+            'ok'     => true,
+            'motivo' => 'no_inventariado',
             'codigo' => $codigoOriginal,
-        ], 409);
+        ], 200);
     }
-
-    return response()->json([
-        'ok'     => true,
-        'motivo' => 'no_inventariado',
-        'codigo' => $codigoOriginal,
-    ], 200);
-}
-    
 }
