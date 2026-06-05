@@ -89,35 +89,35 @@ class ScannerEmbarquesController extends Controller
 
         // ── 4. Verificar duplicado ANTES de insertar ──────────────────────────────
 
-// Ya procesado (PROCESADO = 1) → suena "ya_inventariado"
-$yaInventariado = $connection->table('INVFISVSTEOPT')
-    ->where('CODIGO', $codigoCeros)
-    ->where('PROCESADO', 1)
-    ->exists();
+        // Ya procesado (PROCESADO = 1) → suena "ya_inventariado"
+        $yaInventariado = $connection->table('INVFISVSTEOPT')
+            ->where('CODIGO', $codigoCeros)
+            ->where('PROCESADO', 1)
+            ->exists();
 
-if ($yaInventariado) {
-    Log::info('⚠️ [scan] Código ya inventariado (PROCESADO=1)', ['codigo' => $codigoCeros]);
-    return response()->json([
-        'ok'     => false,
-        'motivo' => 'ya_inventariado',
-        'codigo' => $codigoCeros,
-    ], 409);
-}
+        if ($yaInventariado) {
+            Log::info('⚠️ [scan] Código ya inventariado (PROCESADO=1)', ['codigo' => $codigoCeros]);
+            return response()->json([
+                'ok'     => false,
+                'motivo' => 'ya_inventariado',
+                'codigo' => $codigoCeros,
+            ], 409);
+        }
 
-// Pendiente duplicado (PROCESADO = 0)
-$yaExiste = $connection->table('INVFISVSTEOPT')
-    ->where('CODIGO', $codigoCeros)
-    ->where('PROCESADO', 0)
-    ->exists();
+        // Pendiente duplicado (PROCESADO = 0)
+        $yaExiste = $connection->table('INVFISVSTEOPT')
+            ->where('CODIGO', $codigoCeros)
+            ->where('PROCESADO', 0)
+            ->exists();
 
-if ($yaExiste) {
-    Log::info('⚠️ [scan] Código ya registrado con PROCESADO=0', ['codigo' => $codigoCeros]);
-    return response()->json([
-        'ok'     => false,
-        'motivo' => 'duplicado',
-        'codigo' => $codigoCeros,
-    ], 409);
-}
+        if ($yaExiste) {
+            Log::info('⚠️ [scan] Código ya registrado con PROCESADO=0', ['codigo' => $codigoCeros]);
+            return response()->json([
+                'ok'     => false,
+                'motivo' => 'duplicado',
+                'codigo' => $codigoCeros,
+            ], 409);
+        }
 
         // ── 4. Insert en INVFISVSTEOPT ─────────────────────────────────────────
         $payload = [
@@ -178,7 +178,6 @@ if ($yaExiste) {
         return response()->json(['ok' => true, 'operador' => $userId]);
     }
 
-    // ScannerEmbarquesController.php — agregar método
     public function verificarInventario(Request $request)
     {
         $userId = $request->firebird_user_id
@@ -196,7 +195,6 @@ if ($yaExiste) {
 
         $connection = $this->firebird->getProductionConnection();
 
-        // Solo consultamos, NO insertamos nada
         $yaInventariado = $connection->table('INVFISVSTEOPT')
             ->where('CODIGO', $codigoOriginal)
             ->where('PROCESADO', 1)
@@ -208,6 +206,24 @@ if ($yaExiste) {
                 'motivo' => 'ya_inventariado',
                 'codigo' => $codigoOriginal,
             ], 409);
+        }
+
+        // ── Disparar broadcast para que aparezca en la lista ──────────────────
+        $codigoLimpio = ltrim($codigoOriginal, '0') ?: '0';
+        $fechaYHora   = now()->toDateTimeString();
+
+        try {
+            broadcast(new ScanEmbarqueCreado(
+                codigo: $codigoOriginal,
+                codigoEnt: (int) $codigoLimpio,
+                fechaYHora: $fechaYHora,
+                procesado: 0,
+                userId: $userId,
+            ));
+        } catch (\Throwable $e) {
+            Log::warning('⚠️ [verificarInventario] Broadcast falló', [
+                'message' => $e->getMessage(),
+            ]);
         }
 
         return response()->json([
