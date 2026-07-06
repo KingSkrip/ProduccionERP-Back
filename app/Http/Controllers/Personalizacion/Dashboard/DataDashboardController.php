@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Personalizacion\Dashboard;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Checador\ChecadorAccessQrCodeResource;
 use App\Http\Resources\UsuarioResource;
-use App\Models\Firebird;
+
 use App\Models\Firebird\Users;
 use App\Models\UserFirebirdIdentity;
+use App\Services\Checador\ChecadorQrService;
 use App\Services\FirebirdConnectionService;
 use App\Services\FirebirdEmpresaManualService;
+
 
 use Exception;
 use Firebase\JWT\BeforeValidException;
@@ -27,11 +30,15 @@ class DataDashboardController extends Controller
     private $jwtSecret;
     private $jwtAlgorithm = 'HS256';
     protected FirebirdConnectionService $firebirdService;
+    protected ChecadorQrService $qrService; // 👈 3. DECLARAR PROPIEDAD
 
-    public function __construct(FirebirdConnectionService $firebirdService)
-    {
+    public function __construct(
+        FirebirdConnectionService $firebirdService,
+        ChecadorQrService $qrService // 👈 4. INYECTAR EN CONSTRUCTOR
+    ) {
         $this->jwtSecret = config('jwt.secret');
         $this->firebirdService = $firebirdService;
+        $this->qrService = $qrService;
     }
 
     public function me(Request $request)
@@ -42,13 +49,11 @@ class DataDashboardController extends Controller
                 return response()->json(['message' => 'Token requerido'], 401);
             }
 
-            // Decodificar forzando HS256 vía la Key (correcto y seguro)
             $decoded = JWT::decode(
                 $token,
-                new Key($this->jwtSecret, 'HS256')  // fuerza verificación con HS256
+                new Key($this->jwtSecret, 'HS256')
             );
 
-            // Validaciones estrictas de claims
             if (!isset($decoded->sub) || !ctype_digit((string)$decoded->sub)) {
                 return response()->json(['message' => 'Token inválido (sub inválido)'], 401);
             }
@@ -72,7 +77,6 @@ class DataDashboardController extends Controller
                 return response()->json(['message' => 'Token inválido (sin sub)'], 401);
             }
 
-            // ✅ PASO 1: Buscar usuario por ID (sub = USUARIOS.ID)
             $usuario = Users::find($sub);
 
             Log::info('👤 ME_FIREBIRD_USER_BY_ID', [
@@ -84,7 +88,6 @@ class DataDashboardController extends Controller
                 'nombre' => $usuario->NOMBRE ?? null,
             ]);
 
-            // 🧯 Fallback SOLO para debug/migración (NO recomendado dejarlo permanente en producción)
             if (!$usuario) {
                 $usuarioPorClave = Users::where('CLAVE', $sub)->first();
 
@@ -95,7 +98,6 @@ class DataDashboardController extends Controller
                     'usuario_clave' => $usuarioPorClave->CLAVE ?? null,
                 ]);
 
-                // Si lo encontró por CLAVE, úsalo (temporal)
                 $usuario = $usuarioPorClave;
             }
 
@@ -103,7 +105,6 @@ class DataDashboardController extends Controller
                 return response()->json(['message' => 'Usuario no encontrado en Firebird'], 404);
             }
 
-            // ✅ PASO 2: Buscar identidad en MySQL por ID (firebird_user_clave = USUARIOS.ID)
             $identity = UserFirebirdIdentity::where('firebird_user_clave', (int)$usuario->ID)->first();
 
             Log::info('📌 ME_MYSQL_IDENTITY_LOOKUP', [
@@ -120,7 +121,6 @@ class DataDashboardController extends Controller
                 'identity_empresa' => $identity->firebird_empresa ?? null,
             ]);
 
-            // 🧯 Fallback legacy (si antes guardabas CLAVE del usuario)
             if (!$identity) {
                 $identityLegacy = UserFirebirdIdentity::where('firebird_user_clave', (int)$usuario->CLAVE)->first();
 
@@ -144,7 +144,6 @@ class DataDashboardController extends Controller
                 return response()->json(['message' => 'Identidad de usuario no configurada'], 404);
             }
 
-            // 🎯 Determinar tipo de usuario
             $esEmpleado = $identity->firebird_tb_clave !== null;
             $esCliente = $identity->firebird_clie_clave !== null;
             $esVendedor = $identity->firebird_vend_clave !== null;
@@ -156,7 +155,6 @@ class DataDashboardController extends Controller
                 'es_vendedor' => $esVendedor,
             ]);
 
-            // ✅ PASO 3: Roles / turno
             $roles = $identity->roles()->get();
             $turnoActivo = null;
 
@@ -166,12 +164,22 @@ class DataDashboardController extends Controller
                     ->first();
             }
 
+            // 🎫 QR fijo de checador (mismo token siempre, mientras esté activo)
+            $qrData = null;
+            $qr = $this->qrService->generar($identity->id); // genera si no existe, reutiliza si ya existe
+            $qrData = (new ChecadorAccessQrCodeResource($qr))->resolve();
+
+            Log::info('🎫 ME_QR_CHECADOR', [
+                'identity_id' => $identity->id,
+                'qr_token' => $qr->token,
+                'qr_creado' => $qr->wasRecentlyCreated,
+            ]);
+
             Log::info('🎭 ME_ROLES_TURNO', [
                 'roles_count' => $roles->count(),
                 'turno_activo' => (bool) $turnoActivo,
             ]);
 
-            // 🔥 Inicializar variables de respuesta
             $departamentos = collect();
             $slRow = null;
             $vcRow = null;
@@ -181,9 +189,6 @@ class DataDashboardController extends Controller
             $tbRow = null;
             $clieRow = null;
 
-            // =====================================================
-            // 🏢 EMPLEADOS: Datos NOI usando TB.CLAVE
-            // =====================================================
             if ($esEmpleado) {
                 $tbClave = $identity->firebird_tb_clave;
                 $tbClaveNorm = is_string($tbClave) ? trim($tbClave) : $tbClave;
@@ -202,35 +207,28 @@ class DataDashboardController extends Controller
                 try {
                     $firebirdNoi = new FirebirdEmpresaManualService($empresaNoi, 'SRVNOI');
 
-                    // DEPTOS
                     $departamentos = $firebirdNoi->getMasterTable('DEPTOS')->keyBy('CLAVE');
 
-                    // SL
                     $sl = $firebirdNoi->getOperationalTable('SL')
                         ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
                     $slRow = $sl[$tbClaveNorm] ?? null;
 
-                    // VC
                     $vc = $firebirdNoi->getOperationalTable('VC')
                         ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
                     $vcRow = $vc[$tbClaveNorm] ?? null;
 
-                    // HISTVAC
                     $hvc = $firebirdNoi->getMasterTable('HISTVAC')
                         ->keyBy(fn($row) => trim((string)$row->CVETRAB));
                     $hvcRow = $hvc[$tbClaveNorm] ?? null;
 
-                    // MF
                     $mf = $firebirdNoi->getOperationalTable('MF')
                         ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
                     $mfRow = $mf[$tbClaveNorm] ?? null;
 
-                    // AC (varios)
                     $acRows = $firebirdNoi->getOperationalTable('AC')
                         ->filter(fn($row) => trim((string)$row->CLAVE_TRAB) === (string)$tbClaveNorm)
                         ->values();
 
-                    // TB
                     $tb = $firebirdNoi->getOperationalTable('TB')
                         ->keyBy(fn($row) => trim((string)$row->CLAVE));
                     $tbRow = $tb[$tbClaveNorm] ?? null;
@@ -256,9 +254,6 @@ class DataDashboardController extends Controller
                 }
             }
 
-            // =====================================================
-            // 🛒 CLIENTES: Datos de CLIE03
-            // =====================================================
             if ($esCliente) {
                 $clieClave = $identity->firebird_clie_clave;
 
@@ -268,16 +263,12 @@ class DataDashboardController extends Controller
                     'firebird_id' => $usuario->ID,
                     'clie_clave' => $clieClave,
                     'clie_tabla' => $identity->firebird_clie_tabla ?? null,
-                    'firebird_vend_clave' => null,
-                    'firebird_vend_clave' => null,
                 ]);
 
                 if ($clieClave) {
                     try {
-                        // 🔌 Conectar a srvasp01old para obtener datos de CLIE03
                         $connection = $this->firebirdService->getProductionConnection();
 
-                        // 📋 Obtener datos del cliente de CLIE03
                         $clieRow = $connection->selectOne(
                             "SELECT * FROM CLIE03 WHERE CLAVE = ?",
                             [$clieClave]
@@ -301,9 +292,6 @@ class DataDashboardController extends Controller
                 }
             }
 
-            // =====================================================
-            // 🧑‍💼 VENDEDORES: Datos de VEND03
-            // =====================================================
             $vendRow = null;
 
             if ($esVendedor) {
@@ -342,9 +330,6 @@ class DataDashboardController extends Controller
                 }
             }
 
-            // =====================================================
-            // 📦 PROVEEDORES: Datos de PROV03
-            // =====================================================
             $provRow = null;
 
             if ($esProveedor) {
@@ -384,7 +369,6 @@ class DataDashboardController extends Controller
                 }
             }
 
-            // ✅ PASO 5: Response
             return response()->json([
                 'user' => new UsuarioResource($usuario, [
                     'departamentos'       => $departamentos,
@@ -397,6 +381,7 @@ class DataDashboardController extends Controller
                     'TB'                  => $tbRow,
                     'CLIE'                => $clieRow,
                     'VEND'                => $vendRow,
+                    'qr'                  => $qrData, // 👈 5. AGREGAR AL CONTEXTO
                     'firebird_tb_clave'   => $identity->firebird_tb_clave ?? null,
                     'firebird_clie_clave' => $identity->firebird_clie_clave ?? null,
                     'firebird_vend_clave' => $identity->firebird_vend_clave ?? null,

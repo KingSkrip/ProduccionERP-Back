@@ -135,4 +135,10 @@ class UserFirebirdIdentity extends Model
     {
         return $this->hasMany(Ocultar::class, 'user_id');
     }
+
+    public function qrCode()
+    {
+        return $this->hasOne(ChecadorQrCode::class, 'user_firebird_identity_id')
+            ->where('activo', true);
+    }
 }

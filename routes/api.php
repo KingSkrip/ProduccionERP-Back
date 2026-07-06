@@ -22,6 +22,8 @@ use App\Http\Controllers\Clientes\PedidosController;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Agentes\EstadosCuentaAgentesController;
 use App\Http\Controllers\Agentes\PedidosAgentesController;
+use App\Http\Controllers\Checador\ChecadorPermisoController;
+use App\Http\Controllers\Checador\ChecadorQrController;
 use App\Http\Controllers\TaskController;
 use Illuminate\Support\Facades\Route;
 
@@ -317,6 +319,22 @@ Route::get('mi-ip', function (Request $request) {
 });
 
 
+
+Route::prefix('checador')->middleware('jwt.auth')->group(function () {
+    // QR
+    Route::post('/qr/{identityId}/generar', [ChecadorQrController::class, 'generar']);
+    Route::get('/qr/{identityId}', [ChecadorQrController::class, 'mostrar']);
+    Route::post('/qr/{identityId}/revocar', [ChecadorQrController::class, 'revocar']);
+    Route::post('/qr/registrar', [ChecadorQrController::class, 'registrar']);
+    Route::get('/historial/{identityId}', [ChecadorQrController::class, 'historial']);
+
+    // Permisos
+    Route::get('/permisos/catalogo', [ChecadorPermisoController::class, 'catalogo']);
+    Route::post('/permisos/solicitar', [ChecadorPermisoController::class, 'solicitar']);
+    Route::get('/permisos/pendientes', [ChecadorPermisoController::class, 'pendientes']);
+    Route::post('/permisos/{permisoId}/resolver', [ChecadorPermisoController::class, 'resolver']);
+    Route::get('/permisos/historial/{identityId}', [ChecadorPermisoController::class, 'historial']);
+});
 
 /**
  * SIEMPRE QUE SE AGREGE UNA NUEVA RUTA HAY QUE AGREGARLA A  

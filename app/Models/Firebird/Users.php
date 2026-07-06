@@ -2,7 +2,9 @@
 
 namespace App\Models\Firebird;
 
-
+use App\Models\ChecadorEntrada;
+use App\Models\ChecadorRegistro;
+use App\Models\ChecadorSalida;
 use App\Models\DepSupervisor;
 use App\Models\FaltasHistorial;
 use App\Models\HorarioEntrada;
@@ -26,7 +28,7 @@ class Users extends Authenticatable
     protected $connection = 'firebird';
     protected $table = 'USUARIOS';
     protected $primaryKey = 'ID';
-        // protected $primaryKey = 'CLAVE';
+    // protected $primaryKey = 'CLAVE';
     public $timestamps = false;
 
     public $incrementing = true;
@@ -284,5 +286,36 @@ class Users extends Authenticatable
     public function getDepartamentosQueSupervisa()
     {
         return $this->departamentosSupervisa()->pluck('departamento_id');
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    public function checadorEntradas()
+    {
+        return $this->hasMany(ChecadorEntrada::class, 'user_firebird_identity_id', 'ID');
+    }
+
+    public function checadorSalidas()
+    {
+        return $this->hasMany(ChecadorSalida::class, 'user_firebird_identity_id', 'ID');
+    }
+
+    public function checadorRegistros()
+    {
+        return $this->hasMany(ChecadorRegistro::class, 'user_firebird_identity_id', 'ID');
     }
 }

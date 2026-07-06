@@ -18,6 +18,7 @@ class RolesTableSeeder extends Seeder
             ['nombre' => 'CLIENTE', 'guard_name' => 'web'],
             ['nombre' => 'AGENTE', 'guard_name' => 'web'],
             ['nombre' => 'PROVEDORES', 'guard_name' => 'web'],
+            ['nombre' => 'REGISTRO_ACCESOS', 'guard_name' => 'web'],
         ];
 
         foreach ($roles as $role) {

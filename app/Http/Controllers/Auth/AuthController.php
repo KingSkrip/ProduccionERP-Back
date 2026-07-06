@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-
+use App\Http\Resources\Checador\ChecadorAccessQrCodeResource;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -16,6 +16,7 @@ use App\Mail\ForgotPasswordMail;
 use App\Models\Firebird\Users;
 use App\Models\ModelHasRole;
 use App\Models\UserFirebirdIdentity;
+use App\Services\Checador\ChecadorQrService;
 use App\Services\FirebirdEmpresaManualService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -29,12 +30,16 @@ class AuthController extends Controller
     private $jwtAlgorithm = 'HS256';
     private $jwtExpiration = 86400;
     protected FirebirdConnectionService $firebirdService;
+    protected ChecadorQrService $qrService;
 
-    public function __construct(FirebirdConnectionService $firebirdService)
-    {
-        $this->jwtSecret = config('jwt.secret');
-        $this->firebirdService = $firebirdService;
-    }
+   public function __construct(
+    FirebirdConnectionService $firebirdService,
+    ChecadorQrService $qrService
+) {
+    $this->jwtSecret = config('jwt.secret');
+    $this->firebirdService = $firebirdService;
+    $this->qrService = $qrService; 
+}
 
     /**
      * Iniciar sesión con correo y contraseña
@@ -100,7 +105,13 @@ class AuthController extends Controller
             ]);
 
             // 🔹 Pivote MySQL (roles/empresa)
-            $identity = UserFirebirdIdentity::where('firebird_user_clave', $userId)->first();
+            $identity = UserFirebirdIdentity::where('firebird_user_clave', (int)$usuario->ID)->first();
+
+            // 🧯 Fallback legacy
+            if (!$identity) {
+                $identityLegacy = UserFirebirdIdentity::where('firebird_user_clave', (int)$usuario->CLAVE)->first();
+                $identity = $identityLegacy;
+            }
 
             Log::info('📌 MYSQL_IDENTITY_LOOKUP', [
                 'found' => $identity ? true : false,
@@ -115,8 +126,11 @@ class AuthController extends Controller
             ]);
 
             $roles = collect();
+            $qrData = null;
             if ($identity) {
                 $roles = $identity->roles()->get();
+                $qr = $this->qrService->generar($identity->id);
+                $qrData = (new ChecadorAccessQrCodeResource($qr))->resolve();
             }
 
             Log::info('🎭 MYSQL_ROLES', [
@@ -384,7 +398,7 @@ class AuthController extends Controller
                     'TB'                  => $tbRow,
                     'CLIE'                => $clieRow,
                     'VEND'                => $vendRow,
-
+                    'qr'                  => $qrData,
                     'firebird_user_id'    => $userId,
                     'firebird_user_clave' => $identity->firebird_tb_clave ?? null,
                     'firebird_clie_clave' => $identity->firebird_clie_clave ?? null,
