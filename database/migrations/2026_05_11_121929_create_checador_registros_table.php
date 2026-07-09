@@ -10,22 +10,46 @@ return new class extends Migration
     {
         Schema::create('checador_registros', function (Blueprint $table) {
             $table->id();
+
             $table->foreignId('user_firebird_identity_id')
                 ->constrained('users_firebird_identities')
                 ->onDelete('cascade');
+
             $table->char('firebird_empresa', 2)->nullable();
-            $table->foreignId('turno_id')->nullable()->constrained('turnos')->nullOnDelete();
+
+            $table->foreignId('turno_id')
+                ->nullable()
+                ->constrained('turnos')
+                ->nullOnDelete();
+
+            $table->foreignId('checador_permiso_id')
+                ->nullable()
+                ->constrained('checador_permisos')
+                ->nullOnDelete();
+
+            $table->foreignId('dia_id')
+                ->nullable()
+                ->constrained('dias')
+                ->nullOnDelete();
+
             $table->enum('tipo', ['entrada', 'salida']);
+
             $table->date('fecha');
             $table->time('hora');
             $table->dateTime('fecha_hora');
+
             $table->enum('metodo', ['qr', 'manual'])->default('qr');
+
             $table->string('ip_address', 45)->nullable();
             $table->string('dispositivo')->nullable();
+
             $table->decimal('latitud', 10, 7)->nullable();
             $table->decimal('longitud', 10, 7)->nullable();
+
             $table->boolean('valido')->default(true);
+
             $table->text('observaciones')->nullable();
+
             $table->timestamps();
 
             $table->index(['user_firebird_identity_id', 'fecha']);

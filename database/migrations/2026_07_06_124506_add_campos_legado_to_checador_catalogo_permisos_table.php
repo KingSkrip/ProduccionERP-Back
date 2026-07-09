@@ -15,6 +15,7 @@ return new class extends Migration
             // Inspirado en Incidencias.Suma_a_hrs
             $table->boolean('suma_a_horas_trabajadas')->default(false)->after('tipo_unidad');
 
+            $table->boolean('requiere_regreso_mismo_dia')->default(true)->after('tipo_unidad');
             // Referencia al código viejo de Geminis para trazabilidad en migración de datos históricos
             $table->string('codigo_legado', 10)->nullable()->after('clave');
         });

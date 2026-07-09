@@ -5,12 +5,12 @@ namespace App\Http\Controllers\Checador;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Checador\ChecadorAccessQrCodeResource;
 use App\Http\Resources\Checador\ChecadorRegistroResource;
-use App\Services\Checador\ChecadorQrService;
+use App\Services\Checador\ChecadorScanService;
 use Illuminate\Http\Request;
 
 class ChecadorQrController extends Controller
 {
-    public function __construct(protected ChecadorQrService $qrService) {}
+    public function __construct(protected ChecadorScanService $qrService) {}
 
     public function generar(int $identityId)
     {

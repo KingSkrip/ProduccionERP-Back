@@ -16,6 +16,7 @@ use App\Mail\ForgotPasswordMail;
 use App\Models\Firebird\Users;
 use App\Models\ModelHasRole;
 use App\Models\UserFirebirdIdentity;
+use App\Models\UserPuesto;
 use App\Services\Checador\ChecadorQrService;
 use App\Services\FirebirdEmpresaManualService;
 use Carbon\Carbon;
@@ -32,14 +33,14 @@ class AuthController extends Controller
     protected FirebirdConnectionService $firebirdService;
     protected ChecadorQrService $qrService;
 
-   public function __construct(
-    FirebirdConnectionService $firebirdService,
-    ChecadorQrService $qrService
-) {
-    $this->jwtSecret = config('jwt.secret');
-    $this->firebirdService = $firebirdService;
-    $this->qrService = $qrService; 
-}
+    public function __construct(
+        FirebirdConnectionService $firebirdService,
+        ChecadorQrService $qrService
+    ) {
+        $this->jwtSecret = config('jwt.secret');
+        $this->firebirdService = $firebirdService;
+        $this->qrService = $qrService;
+    }
 
     /**
      * Iniciar sesión con correo y contraseña
@@ -133,6 +134,20 @@ class AuthController extends Controller
                 $qrData = (new ChecadorAccessQrCodeResource($qr))->resolve();
             }
 
+            $userPuesto = null;
+
+            if ($identity) {
+                $identity = UserFirebirdIdentity::where('firebird_user_clave', (int)$usuario->ID)
+                    ->with([
+                        'puestoActivo.puesto',
+                        'puestoActivo.area',
+                        'puestoActivo.jefe.firebirdUser',
+                    ])
+                    ->first();
+
+                $userPuesto = $identity->puestoActivo ?? null;
+            }
+
             Log::info('🎭 MYSQL_ROLES', [
                 'identity_id' => $identity->id ?? null,
                 'roles_count' => $roles->count(),
@@ -186,6 +201,8 @@ class AuthController extends Controller
             $mfRow = null;
             $acRows = collect();
             $tbRow = null;
+            $deptoRow = null;
+            $puestoRow = null;
             $turnoActivo = null;
             $clieRow = null;
 
@@ -218,6 +235,64 @@ class AuthController extends Controller
                             'tb_found' => $tbRow ? true : false,
                         ]);
 
+                        // 🆕 Si encontramos al empleado en TB, buscamos DEPTO y PUESTO
+                        if ($tbRow) {
+
+                            // 🏢 DEPTO -> tabla maestra DEPTOS + empresa (ej. DEPTOS04)
+                            $deptoClave = isset($tbRow->DEPTO) ? trim((string)$tbRow->DEPTO) : null;
+
+                            if ($deptoClave) {
+                                try {
+                                    $deptos = $firebirdNoi->getMasterTable('DEPTOS') // 🔥 antes: getOperationalTable
+                                        ->keyBy(fn($row) => trim((string)$row->CLAVE));
+                                    $deptoRow = $deptos[$deptoClave] ?? null;
+
+                                    Log::info('🏢 NOI_DEPTO_LOOKUP', [
+                                        'empresa'      => $empresaNoi,
+                                        'depto_clave'  => $deptoClave,
+                                        'depto_found'  => (bool) $deptoRow,
+                                        'depto_nombre' => $deptoRow->NOMBRE ?? null,
+                                    ]);
+                                } catch (\Throwable $e) {
+                                    Log::error('⚠️ NOI_DEPTO_LOOKUP_ERROR', [
+                                        'depto_clave' => $deptoClave,
+                                        'error'       => $e->getMessage(),
+                                    ]);
+                                }
+                            } else {
+                                Log::warning('⚠️ NOI_DEPTO_SKIPPED_TB_SIN_DEPTO', [
+                                    'tb_clave' => $tbClaveNorm,
+                                ]);
+                            }
+
+                            // 👔 PUESTO -> tabla maestra PUESTOS + empresa (ej. PUESTOS04)
+                            $puestoClave = isset($tbRow->PUESTO) ? trim((string)$tbRow->PUESTO) : null;
+
+                            if ($puestoClave) {
+                                try {
+                                    $puestos = $firebirdNoi->getMasterTable('PUESTOS') // 🔥 antes: getOperationalTable
+                                        ->keyBy(fn($row) => trim((string)$row->CLAVE));
+                                    $puestoRow = $puestos[$puestoClave] ?? null;
+
+                                    Log::info('👔 NOI_PUESTO_LOOKUP', [
+                                        'empresa'       => $empresaNoi,
+                                        'puesto_clave'  => $puestoClave,
+                                        'puesto_found'  => (bool) $puestoRow,
+                                        'puesto_nombre' => $puestoRow->NOMBRE ?? null,
+                                    ]);
+                                } catch (\Throwable $e) {
+                                    Log::error('⚠️ NOI_PUESTO_LOOKUP_ERROR', [
+                                        'puesto_clave' => $puestoClave,
+                                        'error'        => $e->getMessage(),
+                                    ]);
+                                }
+                            } else {
+                                Log::warning('⚠️ NOI_PUESTO_SKIPPED_TB_SIN_PUESTO', [
+                                    'tb_clave' => $tbClaveNorm,
+                                ]);
+                            }
+                        }
+
                         // SL - usando TB.CLAVE
                         $sl = $firebirdNoi->getOperationalTable('SL')
                             ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
@@ -248,6 +323,8 @@ class AuthController extends Controller
                             'has_tb' => (bool) $tbRow,
                             'has_sl' => (bool) $slRow,
                             'has_vc' => (bool) $vcRow,
+                            'has_depto' => (bool) $deptoRow,
+                            'has_puesto' => (bool) $puestoRow,
                         ]);
                     } catch (\Throwable $e) {
                         Log::error('⚠️ EMPLEADO_NOI_DATA_ERROR', [
@@ -387,6 +464,7 @@ class AuthController extends Controller
             return response()->json([
                 'encrypt' => $token,
                 'user' => new UsuarioResource($usuario, [
+                    'user_puesto' => $userPuesto,
                     'identity_id'         => $identity->id ?? null,
                     'departamentos'       => $departamentos,
                     'sl'                  => $slRow,
@@ -407,6 +485,8 @@ class AuthController extends Controller
                     'firebird_prov_clave' => $identity->firebird_prov_clave ?? null,
                     'tipo_usuario'        => $esEmpleado ? 'empleado' : ($esCliente ? 'cliente' : ($esVendedor ? 'vendedor' : ($esProveedor ? 'proveedor' :  null))),
                     'turnoActivo'         => $turnoActivo,
+                    'DEPTO_NOI'  => $deptoRow,
+                    'PUESTO_NOI' => $puestoRow,
                 ])
             ], 200);
         } catch (\Throwable $e) {

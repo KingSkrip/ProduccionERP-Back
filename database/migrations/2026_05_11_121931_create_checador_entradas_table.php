@@ -17,6 +17,10 @@ return new class extends Migration
                 ->onDelete('cascade');
             $table->char('firebird_empresa', 2)->nullable();
             $table->foreignId('turno_id')->nullable()->constrained('turnos')->nullOnDelete();
+            $table->foreignId('dia_id')
+    ->nullable()
+    ->constrained('dias')
+    ->nullOnDelete();
             $table->date('fecha');
             $table->time('hora_entrada');
             $table->time('hora_programada')->nullable();

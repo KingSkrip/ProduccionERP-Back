@@ -26,11 +26,13 @@ class UsuarioResource extends JsonResource
         $mf    = $this->ctx['faltas'] ?? null;
         $ac    = $this->ctx['acumuladosperiodos'] ?? null;
         $tb    = $this->ctx['TB'] ?? null;
+        $depto_noi  = $this->ctx['DEPTO_NOI'] ?? null;
+        $puesto_noi = $this->ctx['PUESTO_NOI'] ?? null;
         $clie  = $this->ctx['CLIE'] ?? null;
         $vend  = $this->ctx['VEND'] ?? null;
         $prov  = $this->ctx['PROV'] ?? null;
         $turnoActivo = $this->ctx['turnoActivo'] ?? null;
-
+        $userPuesto = $this->ctx['user_puesto'] ?? null;
 
         $roles = collect($this->ctx['roles'] ?? []);
 
@@ -134,15 +136,42 @@ class UsuarioResource extends JsonResource
 
 
             // 🔹 TB (SRVNOI)
+            // 🔹 TB (SRVNOI)
             'TB' => $tb ? [
-                'STATUS'     => $tb->STATUS ? trim((string) $tb->STATUS) : null,
-                'RFC'        => $tb->R_F_C_ ? trim((string) $tb->R_F_C_) : null,
-                'IMSS'       => $tb->IMSS ? trim((string) $tb->IMSS) : null,
-                'FECH_ALTA'  => $tb->FECH_ALTA ?? null,
-                'SAL_DIARIO' => $tb->SAL_DIARIO ? trim((string) $tb->SAL_DIARIO) : null,
-                'SUELDOXHORA' => $tb->SUELDOXHORA ? trim((string) $tb->SUELDOXHORA) : null,
-                'TELEFONO'   => $tb->TELEFONO ? trim((string) $tb->TELEFONO) : null,
-                'SEXO'       => $tb->SEXO ? trim((string) $tb->SEXO) : null,
+                'STATUS'          => $tb->STATUS ? trim((string) $tb->STATUS) : null,
+                'RFC'             => $tb->R_F_C_ ? trim((string) $tb->R_F_C_) : null,
+                'IMSS'            => $tb->IMSS ? trim((string) $tb->IMSS) : null,
+                'DEPTO'           => $tb->DEPTO ? trim((string) $tb->DEPTO) : null,
+                'PUESTO'          => $tb->PUESTO ? trim((string) $tb->PUESTO) : null,
+                'FECH_ALTA'       => $tb->FECH_ALTA ?? null,
+                'FECH_BAJA'       => $tb->FECH_BAJA ?? null,
+                'TELEFONO'        => $tb->TELEFONO ? trim((string) $tb->TELEFONO) : null,
+                'SEXO'            => $tb->SEXO ? trim((string) $tb->SEXO) : null,
+                'CURP'            => $tb->CURP ? trim((string) $tb->CURP) : null,
+                'FECH_NACIM'      => $tb->FECH_NACIM ?? null,
+                'TABLA_VAC'       => $tb->TABLA_VAC ? trim((string) $tb->TABLA_VAC) : null,
+                'SAL_DIARIO'      => $tb->SAL_DIARIO ? trim((string) $tb->SAL_DIARIO) : null,
+                'SUELDOXHORA'     => $tb->SUELDOXHORA ? trim((string) $tb->SUELDOXHORA) : null,
+                'TOTALHOXDIA'     => $tb->TOTALHOXDIA ?? null,
+                'TDIAPERIODO'     => $tb->TDIAPERIODO ?? null,
+                'TIPO_INGRESOS'   => $tb->TIPO_INGRESOS ? trim((string) $tb->TIPO_INGRESOS) : null,
+                'DIAS_DESCANSO'   => $tb->DIAS_DESCANSO ?? null,
+                'RE_TIPOJORNADA'  => $tb->RE_TIPOJORNADA ? trim((string) $tb->RE_TIPOJORNADA) : null,
+                'RE_TIPOCONTRATO' => $tb->RE_TIPOCONTRATO ? trim((string) $tb->RE_TIPOCONTRATO) : null,
+                'RE_BANCO'        => $tb->RE_BANCO ? trim((string) $tb->RE_BANCO) : null,
+                'CLASIF'          => $tb->CLASIF ? trim((string) $tb->CLASIF) : null,
+            ] : null,
+
+            // 🔹 DEPARTAMENTO (NOI) - tabla DEPTOS{empresa}
+            'DEPARTAMENTO_NOI' => $depto_noi ? [
+                'CLAVE'  => $depto_noi->CLAVE ? trim((string) $depto_noi->CLAVE) : null,
+                'NOMBRE' => $depto_noi->NOMBRE ? trim((string) $depto_noi->NOMBRE) : null,
+            ] : null,
+
+            // 🔹 PUESTO (NOI) - tabla PUESTOS{empresa}
+            'PUESTO_NOI' => $puesto_noi ? [
+                'CLAVE'  => $puesto_noi->CLAVE ? trim((string) $puesto_noi->CLAVE) : null,
+                'NOMBRE' => $puesto_noi->NOMBRE ? trim((string) $puesto_noi->NOMBRE) : null,
             ] : null,
 
             // 🔹 TURNO ACTIVO (FORMATO BD COMPLETO)
@@ -207,6 +236,33 @@ class UsuarioResource extends JsonResource
 
 
             'QR_CHECADOR' => $this->ctx['qr'] ?? null,
+
+
+            'USER_PUESTO' => $userPuesto ? [
+                'FECHA_INICIO' => $userPuesto->fecha_inicio,
+                'FECHA_FIN'    => $userPuesto->fecha_fin,
+
+                'ACTIVO' => $userPuesto->activo,
+
+                'PUESTO' => $userPuesto->puesto ? [
+                    'NOMBRE'       => $userPuesto->puesto->nombre,
+                    'DESCRIPCION'  => $userPuesto->puesto->descripcion,
+                    'ES_GERENTE'   => (bool) $userPuesto->puesto->es_gerente,
+                    'ES_JEFE_AREA' => (bool) $userPuesto->puesto->es_jefe_area,
+                    'ES_RH'        => (bool) $userPuesto->puesto->es_rh,
+                ] : null,
+
+                'AREA' => $userPuesto->area ? [
+
+                    'NOMBRE' => $userPuesto->area->nombre,
+                    'DESCRIPCION' => $userPuesto->area->descripcion,
+                ] : null,
+
+                'JEFE' => $userPuesto->jefe ? [
+                    'NOMBRE' => $userPuesto->jefe->firebirdUser->NOMBRE ?? null,
+                ] : null,
+
+            ] : null,
 
 
             // 'departamento' => $depto ? [

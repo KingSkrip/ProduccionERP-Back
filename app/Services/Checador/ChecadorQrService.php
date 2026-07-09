@@ -104,9 +104,19 @@ class ChecadorQrService
 
         $tipo = (!$ultimoRegistro || $ultimoRegistro->tipo === 'salida') ? 'entrada' : 'salida';
 
-        $permisoActivo = ChecadorPermiso::where('user_firebird_identity_id', $identity->id)
-            ->vigenteHoy()
-            ->first();
+      $permisoActivo = ChecadorPermiso::where('user_firebird_identity_id', $identity->id)
+    ->where('estado', 'aprobado')
+    ->whereDate('fecha_inicio', '<=', $hoy)
+    ->whereDate('fecha_fin', '>=', $hoy)
+    ->where(function ($q) use ($now) {
+        $q->whereNull('hora_inicio') // permisos de día completo
+          ->orWhere(function ($q2) use ($now) {
+              $q2->where('hora_inicio', '<=', $now->toTimeString())
+                 ->where('hora_fin', '>=', $now->toTimeString());
+          });
+    })
+    ->orderByRaw('hora_inicio IS NULL') // prioriza el que sí tiene horario específico
+    ->first();
 
         $turnoId = $identity->turnoActivo->turno_id ?? null;
         $horaProgramada = null;
@@ -179,6 +189,7 @@ class ChecadorQrService
             'registro' => $registro,
             'tipo' => $tipo,
             'usuario_nombre' => $qr->payload['nombre'] ?? null,
+            'usuario_photo' => $qr->payload['photo'] ?? null,
             'permiso' => $permisoActivo,
         ];
     }

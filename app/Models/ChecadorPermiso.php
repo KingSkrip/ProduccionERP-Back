@@ -20,16 +20,29 @@ class ChecadorPermiso extends Model
         'hora_inicio',
         'hora_fin',
         'motivo',
+
         'estado',
-        'aprobado_por',
-        'fecha_resolucion',
-        'comentarios_aprobador',
+
+        'estado_rh',
+        'aprobado_por_rh',
+        'fecha_resolucion_rh',
+        'comentarios_rh',
+
+        'estado_jefe',
+        'aprobado_por_jefe',
+        'fecha_resolucion_jefe',
+        'comentarios_jefe',
     ];
 
     protected $casts = [
         'fecha_inicio' => 'date',
         'fecha_fin' => 'date',
-        'fecha_resolucion' => 'datetime',
+
+        'hora_inicio' => 'datetime:H:i',
+        'hora_fin' => 'datetime:H:i',
+
+        'fecha_resolucion_rh' => 'datetime',
+        'fecha_resolucion_jefe' => 'datetime',
     ];
 
     public function identity(): BelongsTo
@@ -42,15 +55,22 @@ class ChecadorPermiso extends Model
         return $this->belongsTo(ChecadorCatalogoPermiso::class, 'checador_catalogo_permiso_id');
     }
 
-    public function aprobador(): BelongsTo
-    {
-        return $this->belongsTo(UserFirebirdIdentity::class, 'aprobado_por');
-    }
+
 
     public function scopeVigenteHoy($query)
     {
         return $query->where('estado', 'aprobado')
             ->whereDate('fecha_inicio', '<=', now()->toDateString())
             ->whereDate('fecha_fin', '>=', now()->toDateString());
+    }
+
+    public function aprobadorRh(): BelongsTo
+    {
+        return $this->belongsTo(UserFirebirdIdentity::class, 'aprobado_por_rh');
+    }
+
+    public function aprobadorJefe(): BelongsTo
+    {
+        return $this->belongsTo(UserFirebirdIdentity::class, 'aprobado_por_jefe');
     }
 }

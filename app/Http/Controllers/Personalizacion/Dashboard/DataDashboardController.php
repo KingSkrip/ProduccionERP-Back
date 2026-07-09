@@ -8,6 +8,7 @@ use App\Http\Resources\UsuarioResource;
 
 use App\Models\Firebird\Users;
 use App\Models\UserFirebirdIdentity;
+use App\Models\UserPuesto;
 use App\Services\Checador\ChecadorQrService;
 use App\Services\FirebirdConnectionService;
 use App\Services\FirebirdEmpresaManualService;
@@ -187,6 +188,8 @@ class DataDashboardController extends Controller
             $mfRow = null;
             $acRows = collect();
             $tbRow = null;
+            $deptoRow = null;
+            $puestoRow = null;
             $clieRow = null;
 
             if ($esEmpleado) {
@@ -232,7 +235,51 @@ class DataDashboardController extends Controller
                     $tb = $firebirdNoi->getOperationalTable('TB')
                         ->keyBy(fn($row) => trim((string)$row->CLAVE));
                     $tbRow = $tb[$tbClaveNorm] ?? null;
+                    if ($tbRow) {
+                        // 🏢 DEPTO
+                        $deptoClave = isset($tbRow->DEPTO) ? trim((string)$tbRow->DEPTO) : null;
 
+                        if ($deptoClave) {
+                            try {
+                                $deptos = $firebirdNoi->getMasterTable('DEPTOS')
+                                    ->keyBy(fn($row) => trim((string)$row->CLAVE));
+                                $deptoRow = $deptos[$deptoClave] ?? null;
+
+                                Log::info('🏢 ME_DEPTO_LOOKUP', [
+                                    'depto_clave'  => $deptoClave,
+                                    'depto_found'  => (bool) $deptoRow,
+                                    'depto_nombre' => $deptoRow->NOMBRE ?? null,
+                                ]);
+                            } catch (\Throwable $e) {
+                                Log::error('⚠️ ME_DEPTO_LOOKUP_ERROR', [
+                                    'depto_clave' => $deptoClave,
+                                    'error'       => $e->getMessage(),
+                                ]);
+                            }
+                        }
+
+                        // 👔 PUESTO
+                        $puestoClave = isset($tbRow->PUESTO) ? trim((string)$tbRow->PUESTO) : null;
+
+                        if ($puestoClave) {
+                            try {
+                                $puestos = $firebirdNoi->getMasterTable('PUESTOS')
+                                    ->keyBy(fn($row) => trim((string)$row->CLAVE));
+                                $puestoRow = $puestos[$puestoClave] ?? null;
+
+                                Log::info('👔 ME_PUESTO_LOOKUP', [
+                                    'puesto_clave'  => $puestoClave,
+                                    'puesto_found'  => (bool) $puestoRow,
+                                    'puesto_nombre' => $puestoRow->NOMBRE ?? null,
+                                ]);
+                            } catch (\Throwable $e) {
+                                Log::error('⚠️ ME_PUESTO_LOOKUP_ERROR', [
+                                    'puesto_clave' => $puestoClave,
+                                    'error'        => $e->getMessage(),
+                                ]);
+                            }
+                        }
+                    }
                     Log::info('✅ ME_EMPLEADO_NOI_DATA', [
                         'tb_clave' => $tbClaveNorm,
                         'found' => [
@@ -369,8 +416,18 @@ class DataDashboardController extends Controller
                 }
             }
 
+            $userPuesto = UserPuesto::with([
+                'puesto',
+                'area',
+                'jefe.firebirdUser',
+            ])
+                ->where('user_firebird_identity_id', $identity->id)
+                ->where('activo', true)
+                ->first();
+
             return response()->json([
                 'user' => new UsuarioResource($usuario, [
+                    'user_puesto' => $userPuesto,
                     'departamentos'       => $departamentos,
                     'sl'                  => $slRow,
                     'vacaciones'          => $vcRow,
@@ -390,7 +447,11 @@ class DataDashboardController extends Controller
                     'usuarios_clave'      => (string)$usuario->CLAVE,
                     'identity_id'         => $identity->id,
                     'empresaNoi'          => $identity->firebird_empresa ?? null,
-                    'tipo_usuario'        => $esEmpleado ? 'empleado' : ($esCliente ? 'cliente' : ($esVendedor ? 'vendedor' : null)),
+                    'tipo_usuario' => $esEmpleado ? 'empleado' : ($esCliente ? 'cliente' : ($esVendedor ? 'vendedor' : ($esProveedor ? 'proveedor' : null))),
+                    'DEPTO_NOI'  => $deptoRow,
+                    'PUESTO_NOI' => $puestoRow,
+                    'PROV'                => $provRow,
+                    'firebird_prov_clave' => $identity->firebird_prov_clave ?? null,
                 ])
             ], 200);
         } catch (SignatureInvalidException $e) {

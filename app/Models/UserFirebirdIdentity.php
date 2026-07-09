@@ -138,7 +138,23 @@ class UserFirebirdIdentity extends Model
 
     public function qrCode()
     {
-        return $this->hasOne(ChecadorQrCode::class, 'user_firebird_identity_id')
+        return $this->hasOne(ChecadorAccessQrCode::class, 'user_firebird_identity_id')
             ->where('activo', true);
+    }
+
+
+    public function puestos(): HasMany
+    {
+        return $this->hasMany(UserPuesto::class, 'user_firebird_identity_id');
+    }
+
+    public function puestoActivo(): HasOne
+    {
+        return $this->hasOne(UserPuesto::class, 'user_firebird_identity_id')
+            ->where('activo', true)
+            ->where(function ($q) {
+                $q->whereNull('fecha_fin')
+                    ->orWhere('fecha_fin', '>=', now()->toDateString());
+            });
     }
 }
