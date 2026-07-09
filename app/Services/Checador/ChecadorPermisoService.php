@@ -14,46 +14,65 @@ class ChecadorPermisoService
         return ChecadorCatalogoPermiso::activos()->get();
     }
 
-    public function solicitar(array $data): ChecadorPermiso
-    {
-        $identity = UserFirebirdIdentity::findOrFail($data['user_firebird_identity_id']);
+public function solicitar(array $data): ChecadorPermiso
+{
+    $identity = UserFirebirdIdentity::findOrFail($data['user_firebird_identity_id']);
 
-        $catalogo = ChecadorCatalogoPermiso::findOrFail(
-            $data['checador_catalogo_permiso_id']
-        );
+    $catalogo = ChecadorCatalogoPermiso::findOrFail(
+        $data['checador_catalogo_permiso_id']
+    );
 
+    // 🔒 Solo un permiso de COMIDA por día (por identidad)
+    if ($catalogo->clave === 'COMIDA') {
+        $yaTienePermisoComidaHoy = ChecadorPermiso::where('user_firebird_identity_id', $identity->id)
+            ->where('checador_catalogo_permiso_id', $catalogo->id)
+            ->where('estado', '!=', 'rechazado') // uno rechazado no cuenta, puede volver a pedir
+            ->whereDate('fecha_inicio', $data['fecha_inicio'])
+            ->exists();
 
-        $permiso = ChecadorPermiso::create([
-            'user_firebird_identity_id' => $identity->id,
-            'checador_catalogo_permiso_id' => $catalogo->id,
-            'firebird_empresa' => $identity->firebird_empresa,
+        if ($yaTienePermisoComidaHoy) {
+            Log::warning('🚫 PERMISO_COMIDA_DUPLICADO', [
+                'identity_id' => $identity->id,
+                'fecha' => $data['fecha_inicio'],
+            ]);
 
-            'tipo' => $data['tipo'] ?? 'normal',
-
-            'fecha_inicio' => $data['fecha_inicio'],
-            'fecha_fin' => $data['fecha_fin'],
-
-            'hora_inicio' => $data['hora_inicio'] ?? null,
-            'hora_fin' => $data['hora_fin'] ?? null,
-
-            'motivo' => $data['motivo'],
-
-            // SIEMPRE inicia pendiente
-            'estado' => 'solicitado',
-            'estado_rh' => 'pendiente',
-            'estado_jefe' => 'pendiente',
-        ]);
-
-
-        Log::info('📝 PERMISO_SOLICITADO', [
-            'permiso_id' => $permiso->id,
-            'identity_id' => $identity->id,
-            'estado_inicial' => 'pendiente',
-        ]);
-
-
-        return $permiso->load('catalogo');
+            throw new \RuntimeException(
+                'Ya tienes un permiso de comida solicitado para hoy. Solo se permite uno al día.',
+                422
+            );
+        }
     }
+
+    $permiso = ChecadorPermiso::create([
+        'user_firebird_identity_id' => $identity->id,
+        'checador_catalogo_permiso_id' => $catalogo->id,
+        'firebird_empresa' => $identity->firebird_empresa,
+
+        'tipo' => $data['tipo'] ?? 'normal',
+
+        'fecha_inicio' => $data['fecha_inicio'],
+        'fecha_fin' => $data['fecha_fin'],
+
+        'hora_inicio' => $data['hora_inicio'] ?? null,
+        'hora_fin' => $data['hora_fin'] ?? null,
+
+        'motivo' => $data['motivo'],
+
+        // SIEMPRE inicia pendiente
+        'estado' => 'solicitado',
+        'estado_rh' => 'pendiente',
+        'estado_jefe' => 'pendiente',
+    ]);
+
+    Log::info('📝 PERMISO_SOLICITADO', [
+        'permiso_id' => $permiso->id,
+        'identity_id' => $identity->id,
+        'catalogo_clave' => $catalogo->clave,
+        'estado_inicial' => 'pendiente',
+    ]);
+
+    return $permiso->load('catalogo');
+}
 
     /**
      * Bandeja de RH: todo lo que espera su visto bueno.
