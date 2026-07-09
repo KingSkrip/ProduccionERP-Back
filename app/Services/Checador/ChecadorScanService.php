@@ -777,39 +777,39 @@ class ChecadorScanService
      *
      * @throws \RuntimeException si el permiso está incompleto de aprobación
      */
-   private function verificarPermisoPendiente(UserFirebirdIdentity $identity, Carbon $now, string $hoy): void
-{
-    $permiso = ChecadorPermiso::where('user_firebird_identity_id', $identity->id)
-        ->whereIn('estado', ['pendiente', 'solicitado']) // solo los que faltan por resolver
-        ->whereDate('fecha_inicio', '<=', $hoy)
-        ->whereDate('fecha_fin', '>=', $hoy)
-        ->where(function ($q) use ($now) {
-            $q->whereNull('hora_inicio')
-                ->orWhere(function ($q2) use ($now) {
-                    $q2->where('hora_inicio', '<=', $now->toTimeString())
-                        ->where('hora_fin', '>=', $now->toTimeString());
-                });
-        })
-        ->orderByDesc('created_at')
-        ->first();
+    private function verificarPermisoPendiente(UserFirebirdIdentity $identity, Carbon $now, string $hoy): void
+    {
+        $permiso = ChecadorPermiso::where('user_firebird_identity_id', $identity->id)
+            ->whereIn('estado', ['pendiente', 'solicitado']) // solo los que faltan por resolver
+            ->whereDate('fecha_inicio', '<=', $hoy)
+            ->whereDate('fecha_fin', '>=', $hoy)
+            ->where(function ($q) use ($now) {
+                $q->whereNull('hora_inicio')
+                    ->orWhere(function ($q2) use ($now) {
+                        $q2->where('hora_inicio', '<=', $now->toTimeString())
+                            ->where('hora_fin', '>=', $now->toTimeString());
+                    });
+            })
+            ->orderByDesc('created_at')
+            ->first();
 
-    if (!$permiso) {
-        return; // no hay ningún permiso incompleto en juego
+        if (!$permiso) {
+            return; // no hay ningún permiso incompleto en juego
+        }
+
+        $faltantes = [];
+        if ($permiso->estado_rh !== 'aprobado') $faltantes[] = 'RH';
+        if ($permiso->estado_jefe !== 'aprobado') $faltantes[] = 'tu jefe directo';
+
+        $mensaje = 'Tu permiso todavía no puede usarse: falta la aprobación de ' . implode(' y ', $faltantes) . '.';
+
+        Log::warning('🚫 CHECADA_DENEGADA_PERMISO_INCOMPLETO', [
+            'identity_id' => $identity->id,
+            'permiso_id' => $permiso->id,
+            'estado_rh' => $permiso->estado_rh,
+            'estado_jefe' => $permiso->estado_jefe,
+        ]);
+
+        throw new \RuntimeException($mensaje, 403);
     }
-
-    $faltantes = [];
-    if ($permiso->estado_rh !== 'aprobado') $faltantes[] = 'RH';
-    if ($permiso->estado_jefe !== 'aprobado') $faltantes[] = 'tu jefe directo';
-
-    $mensaje = 'Tu permiso todavía no puede usarse: falta la aprobación de ' . implode(' y ', $faltantes) . '.';
-
-    Log::warning('🚫 CHECADA_DENEGADA_PERMISO_INCOMPLETO', [
-        'identity_id' => $identity->id,
-        'permiso_id' => $permiso->id,
-        'estado_rh' => $permiso->estado_rh,
-        'estado_jefe' => $permiso->estado_jefe,
-    ]);
-
-    throw new \RuntimeException($mensaje, 403);
-}
 }
