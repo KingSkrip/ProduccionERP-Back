@@ -178,7 +178,7 @@ class ChecadorQrService
             throw new \RuntimeException('Error al registrar checada', 500);
         }
 
-        Log::info('✅ CHECADA_REGISTRADA', [
+        Log::info('✅ CHECADA_REGISTRADA1', [
             'identity_id' => $identity->id,
             'tipo' => $tipo,
             'registro_id' => $registro->id,

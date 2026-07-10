@@ -32,7 +32,7 @@ return new class extends Migration
                 ->constrained('dias')
                 ->nullOnDelete();
 
-            $table->enum('tipo', ['entrada', 'salida']);
+            $table->enum('tipo', ['entrada','salida','Inicio de permiso','Fin de permiso']);
 
             $table->date('fecha');
             $table->time('hora');

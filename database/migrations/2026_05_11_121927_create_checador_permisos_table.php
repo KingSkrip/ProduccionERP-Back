@@ -12,6 +12,7 @@ return new class extends Migration
             $table->id();
 
             $table->foreignId('user_firebird_identity_id')
+            ->nullable()
                 ->constrained('users_firebird_identities')
                 ->cascadeOnDelete();
 
@@ -23,15 +24,19 @@ return new class extends Migration
             $table->char('firebird_empresa', 2)->nullable();
 
             $table->enum('tipo', ['normal', 'extraordinario'])
+            ->nullable()
                 ->default('normal');
 
-            $table->date('fecha_inicio');
-            $table->date('fecha_fin');
+            $table->date('fecha_inicio')
+            ->nullable();
+            $table->date('fecha_fin')
+            ->nullable();
 
             $table->time('hora_inicio')->nullable();
             $table->time('hora_fin')->nullable();
 
-            $table->string('motivo');
+            $table->string('motivo')
+            ->nullable();
 
             // Estado GENERAL, calculado a partir de estado_rh + estado_jefe.
             // No se edita directo, lo recalcula el Service en cada resolver().
@@ -40,7 +45,8 @@ return new class extends Migration
                 'aprobado',
                 'rechazado',
                 'solicitado',
-            ])->default('solicitado');
+            ])->default('solicitado')
+            ->nullable();
 
             // ===== Carril RH =====
             $table->enum('estado_rh', [
@@ -48,7 +54,8 @@ return new class extends Migration
                 'aprobado',
                 'rechazado',
                 'no_aplica',
-            ])->default('pendiente');
+            ])->default('pendiente')
+            ->nullable();
 
             $table->foreignId('aprobado_por_rh')
                 ->nullable()
@@ -64,7 +71,8 @@ return new class extends Migration
                 'aprobado',
                 'rechazado',
                 'no_aplica',
-            ])->default('pendiente');
+            ])->default('pendiente')
+            ->nullable();
 
             $table->foreignId('aprobado_por_jefe')
                 ->nullable()
