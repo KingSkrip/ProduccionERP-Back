@@ -11,6 +11,7 @@ class ChecadorRegistro extends Model
 
     protected $fillable = [
         'user_firebird_identity_id',
+        'checador_permiso_id',
         'firebird_empresa',
         'turno_id',
         'tipo',

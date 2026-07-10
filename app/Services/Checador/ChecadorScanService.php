@@ -101,242 +101,299 @@ class ChecadorScanService
         return $resultado;
     }
 
-    private function procesarChecada(UserFirebirdIdentity $identity, ?string $firebirdEmpresa, string $metodo, array $meta): array
-    {
-        $status = $this->obtenerStatusEmpleadoNoi($identity);
-        if ($status !== null && $status !== 'A') {
-            throw new \RuntimeException('Acceso denegado: el empleado no se encuentra activo', 403);
-        }
+private function procesarChecada(UserFirebirdIdentity $identity, ?string $firebirdEmpresa, string $metodo, array $meta): array
+{
+    $status = $this->obtenerStatusEmpleadoNoi($identity);
+    if ($status !== null && $status !== 'A') {
+        throw new \RuntimeException('Acceso denegado: el empleado no se encuentra activo', 403);
+    }
 
-        $now = Carbon::now();
-        $hoy = $now->toDateString();
+    $now = Carbon::now();
+    $hoy = $now->toDateString();
 
-        $this->verificarPermisoPendiente($identity, $now, $hoy);
+    $this->verificarPermisoPendiente($identity, $now, $hoy);
 
-        $turnoActivo = $identity->turnoActivo;
-        $turnoId = $turnoActivo->turno_id ?? null;
-        $horariosHoy = $turnoActivo?->getHorariosHoy();
+    $turnoActivo = $identity->turnoActivo;
+    $turnoId = $turnoActivo->turno_id ?? null;
+    $horariosHoy = $turnoActivo?->getHorariosHoy();
 
-        // 🚨 Si no hay horario para hoy configurado en turno_dias, forzamos la carga directa del Turno
-        if (!$turnoId || !$horariosHoy) {
-            $turno = $turnoId ? Turno::find($turnoId) : $this->resolverTurnoPorDefecto($identity);
-            
-            if ($turno) {
-                $turnoId = $turno->id;
-                $horariosHoy = [
-                    'hora_entrada'        => $turno->hora_entrada,
-                    'hora_salida'         => $turno->hora_salida,
-                    'hora_inicio_comida'  => $turno->hora_inicio_comida,
-                    'hora_fin_comida'     => $turno->hora_fin_comida,
-                    'entra_dia_anterior'  => (bool) $turno->entra_dia_anterior,
-                    'sale_dia_siguiente'  => (bool) $turno->sale_dia_siguiente,
-                ];
+    if (!$turnoId || !$horariosHoy) {
+        $turno = $turnoId ? Turno::find($turnoId) : $this->resolverTurnoPorDefecto($identity);
 
-                Log::info('🧭 TURNO_CARGADO_DESDE_DB', [
-                    'identity_id' => $identity->id,
-                    'turno_id' => $turno->id,
-                    'hora_salida' => $turno->hora_salida,
-                ]);
-            } else {
-                throw new \RuntimeException(
-                    'No se pudo registrar la checada: el empleado no tiene turno configurado.',
-                    422
-                );
-            }
-        }
+        if ($turno) {
+            $turnoId = $turno->id;
+            $horariosHoy = [
+                'hora_entrada'        => $turno->hora_entrada,
+                'hora_salida'         => $turno->hora_salida,
+                'hora_inicio_comida'  => $turno->hora_inicio_comida,
+                'hora_fin_comida'     => $turno->hora_fin_comida,
+                'entra_dia_anterior'  => (bool) $turno->entra_dia_anterior,
+                'sale_dia_siguiente'  => (bool) $turno->sale_dia_siguiente,
+            ];
 
-        $ultimoRegistro = ChecadorRegistro::where('user_firebird_identity_id', $identity->id)
-            ->where('fecha', $hoy)
-            ->orderByDesc('fecha_hora')
-            ->first();
-
-        // 🍽️ Autogenerar permiso de comida SOLO en la primer checada del día
-        if (!$ultimoRegistro) {
-            $permisoComida = $this->permisoService->crearPermisoComidaAutomaticoSiAplica($identity, $hoy, $horariosHoy);
-            Log::info('🍽️ DEBUG_COMIDA_POST', [
+            Log::info('🧭 TURNO_CARGADO_DESDE_DB', [
                 'identity_id' => $identity->id,
-                'permiso_creado' => $permisoComida ? $permisoComida->id : 'NULL',
+                'turno_id' => $turno->id,
+                'hora_salida' => $turno->hora_salida,
             ]);
-        }
-
-        // 🆕 Lógica para permisos: 1 solo uso por día. No se puede reutilizar si ya se regresó de comer.
-        $permisoActivo = null;
-
-        if ($ultimoRegistro && $ultimoRegistro->tipo === 'Inicio de permiso' && $ultimoRegistro->checador_permiso_id) {
-            // Si está afuera en un permiso, dejamos que lo termine sin importar cuánto tiempo lleve
-            $permisoActivo = ChecadorPermiso::with('catalogo')->find($ultimoRegistro->checador_permiso_id);
         } else {
-            // Si está adentro, buscamos un permiso disponible que NO se haya usado ya hoy para regresar
-            $permisosDisponibles = ChecadorPermiso::where('user_firebird_identity_id', $identity->id)
-                ->where('estado', 'aprobado')
-                ->whereDate('fecha_inicio', '<=', $hoy)
-                ->whereDate('fecha_fin', '>=', $hoy)
-                ->where(function ($q) use ($now) {
-                    $q->whereNull('hora_inicio')
-                      ->orWhere(function ($q2) use ($now) {
-                          $q2->where('hora_inicio', '<=', $now->toTimeString())
-                             ->where('hora_fin', '>=', $now->toTimeString());
-                      });
-                })
-                ->with('catalogo')
-                ->orderByRaw('hora_inicio IS NULL')
-                ->get();
+            throw new \RuntimeException(
+                'No se pudo registrar la checada: el empleado no tiene turno configurado.',
+                422
+            );
+        }
+    }
 
-            foreach ($permisosDisponibles as $permiso) {
-                // Verificamos si ya se usó para un 'Fin de permiso' hoy (ya regresaron de usarlo)
-                $yaRegresoDeEstePermisoHoy = ChecadorRegistro::where('user_firebird_identity_id', $identity->id)
+    $ultimoRegistro = ChecadorRegistro::where('user_firebird_identity_id', $identity->id)
+        ->where('fecha', $hoy)
+        ->orderByDesc('fecha_hora')
+        ->first();
+
+    if (!$ultimoRegistro) {
+        $permisoComida = $this->permisoService->crearPermisoComidaAutomaticoSiAplica($identity, $hoy, $horariosHoy);
+
+        Log::info('🍽️ DEBUG_COMIDA_POST', [
+            'identity_id' => $identity->id,
+            'permiso_creado' => $permisoComida ? $permisoComida->id : 'NULL',
+        ]);
+    }
+
+    $permisoComidaHoy = ChecadorPermiso::where('user_firebird_identity_id', $identity->id)
+        ->where('estado', 'aprobado')
+        ->whereDate('fecha_inicio', $hoy)
+        ->whereDate('fecha_fin', $hoy)
+        ->whereHas('catalogo', function ($q) {
+            $q->where('clave', 'COMIDA');
+        })
+        ->first();
+
+    $yaUsóComidaHoy = false;
+
+    if ($permisoComidaHoy) {
+        $yaUsóComidaHoy = ChecadorRegistro::where('user_firebird_identity_id', $identity->id)
+            ->where('fecha', $hoy)
+            ->where('checador_permiso_id', $permisoComidaHoy->id)
+            ->whereIn('tipo', ['Inicio de permiso', 'Fin de permiso'])
+            ->exists();
+    }
+
+    if (
+        $ultimoRegistro &&
+        $ultimoRegistro->tipo === 'Fin de permiso' &&
+        $permisoComidaHoy &&
+        $yaUsóComidaHoy
+    ) {
+        throw new \RuntimeException(
+            'Ya usaste tu permiso de comida hoy. No puedes volver a salir.',
+            409
+        );
+    }
+
+    $permisoActivo = null;
+
+    if (
+        $ultimoRegistro &&
+        $ultimoRegistro->tipo === 'Inicio de permiso' &&
+        $ultimoRegistro->checador_permiso_id
+    ) {
+        $permisoActivo = ChecadorPermiso::with('catalogo')->find($ultimoRegistro->checador_permiso_id);
+    } else {
+        $permisosDisponibles = ChecadorPermiso::where('user_firebird_identity_id', $identity->id)
+            ->where('estado', 'aprobado')
+            ->whereDate('fecha_inicio', '<=', $hoy)
+            ->whereDate('fecha_fin', '>=', $hoy)
+            ->where(function ($q) use ($now) {
+                $q->whereNull('hora_inicio')
+                    ->orWhere(function ($q2) use ($now) {
+                        $q2->where('hora_inicio', '<=', $now->toTimeString())
+                            ->where('hora_fin', '>=', $now->toTimeString());
+                    });
+            })
+            ->with('catalogo')
+            ->orderByRaw('hora_inicio IS NULL')
+            ->get();
+
+        foreach ($permisosDisponibles as $permiso) {
+            if ($permiso->catalogo && $permiso->catalogo->clave === 'COMIDA') {
+                $yaRegresadoDeEstePermiso = ChecadorRegistro::where('user_firebird_identity_id', $identity->id)
                     ->where('fecha', $hoy)
-                    ->where('tipo', 'Fin de permiso')
                     ->where('checador_permiso_id', $permiso->id)
+                    ->where('tipo', 'Fin de permiso')
                     ->exists();
 
-                if (!$yaRegresoDeEstePermisoHoy) {
-                    $permisoActivo = $permiso;
-                    break;
+                if ($yaRegresadoDeEstePermiso) {
+                    continue;
                 }
-            }
-        }
 
-        if ($permisoActivo && $this->permisoBloqueadoPorCierreDeTurno($permisoActivo, $now, $horariosHoy)) {
-            $permisoActivo = null;
-        }
-
-        // 🆕 Lógica CORREGIDA para distinguir entre entrada, salida, inicio/fin permiso
-        $estabaAfuera = !$ultimoRegistro || in_array($ultimoRegistro->tipo, ['salida', 'Inicio de permiso']);
-
-        if ($estabaAfuera) {
-            // Está entrando
-            if ($ultimoRegistro && $ultimoRegistro->tipo === 'Inicio de permiso') {
-                $tipo = 'Fin de permiso'; // Regresando de comer o de un permiso
-            } else {
-                $tipo = 'entrada'; // Primer entrada del día o entrada normal después de una salida
-                
-                // 🚨 Si es una entrada normal, NO le adjuntamos el permiso flotante.
-                if ($permisoActivo && $permisoActivo->hora_inicio === null) {
-                    $permisoActivo = null;
+                if ($yaUsóComidaHoy) {
+                    throw new \RuntimeException(
+                        'Ya usaste tu comida hoy. No puedes volver a salir sin un permiso nuevo.',
+                        409
+                    );
                 }
-            }
-        } else {
-            // Está saliendo
-            if ($permisoActivo) {
-                $tipo = 'Inicio de permiso'; // Saliendo a comer o usando un permiso activo
-            } else {
-                $tipo = 'salida'; // Salida final del día
-            }
-        }
 
-        if (!$permisoActivo) {
-            $registrosNormalesHoy = ChecadorRegistro::where('user_firebird_identity_id', $identity->id)
+                $permisoActivo = $permiso;
+                break;
+            }
+
+            $yaRegresadoDeEstePermiso = ChecadorRegistro::where('user_firebird_identity_id', $identity->id)
                 ->where('fecha', $hoy)
-                ->whereNull('checador_permiso_id')
-                ->get();
+                ->where('checador_permiso_id', $permiso->id)
+                ->where('tipo', 'Fin de permiso')
+                ->exists();
 
-            $entradasNormales = $registrosNormalesHoy->whereIn('tipo', ['entrada', 'Fin de permiso'])->count();
-            $salidasNormales = $registrosNormalesHoy->whereIn('tipo', ['salida', 'Inicio de permiso'])->count();
+            if (!$yaRegresadoDeEstePermiso) {
+                $permisoActivo = $permiso;
+                break;
+            }
+        }
+    }
 
-            if ($entradasNormales >= 1 && $salidasNormales >= 1) {
+    if ($permisoActivo && $this->permisoBloqueadoPorCierreDeTurno($permisoActivo, $now, $horariosHoy)) {
+        $permisoActivo = null;
+    }
+
+    $estabaAfuera = !$ultimoRegistro || in_array($ultimoRegistro->tipo, ['salida', 'Inicio de permiso'], true);
+
+    if ($estabaAfuera) {
+        if ($ultimoRegistro && $ultimoRegistro->tipo === 'Inicio de permiso') {
+            $tipo = 'Fin de permiso';
+        } else {
+            $tipo = 'entrada';
+
+            if ($permisoActivo && $permisoActivo->hora_inicio === null) {
+                $permisoActivo = null;
+            }
+        }
+    } else {
+        if ($permisoActivo) {
+            if ($permisoActivo->catalogo && $permisoActivo->catalogo->clave === 'COMIDA' && $yaUsóComidaHoy) {
                 throw new \RuntimeException(
-                    'Ya registraste tu entrada y tu salida de hoy. Si necesitas volver a checar, se requiere un permiso aprobado.',
+                    'Ya regresaste de comer. No puedes volver a salir hoy.',
                     409
                 );
             }
+
+            $tipo = 'Inicio de permiso';
+        } else {
+            $tipo = 'salida';
         }
+    }
 
-        $esEntrada = in_array($tipo, ['entrada', 'Fin de permiso']);
-        
-        $puntualidad = $esEntrada
-            ? $this->calcularPuntualidadEntrada($now, $horariosHoy, $permisoActivo)
-            : $this->calcularPuntualidadSalida($now, $horariosHoy, $permisoActivo);
+    if (!$permisoActivo) {
+        $registrosNormalesHoy = ChecadorRegistro::where('user_firebird_identity_id', $identity->id)
+            ->where('fecha', $hoy)
+            ->whereNull('checador_permiso_id')
+            ->get();
 
-        $jornada = null;
-        if (!$esEntrada) {
-            $ultimaEntradaHoy = ChecadorEntrada::where('user_firebird_identity_id', $identity->id)
+        $entradasNormales = $registrosNormalesHoy->whereIn('tipo', ['entrada', 'Fin de permiso'])->count();
+        $salidasNormales = $registrosNormalesHoy->whereIn('tipo', ['salida', 'Inicio de permiso'])->count();
+
+        if ($entradasNormales >= 1 && $salidasNormales >= 1) {
+            throw new \RuntimeException(
+                'Ya registraste tu entrada y tu salida de hoy. Si necesitas volver a checar, se requiere un permiso aprobado.',
+                409
+            );
+        }
+    }
+
+    $esEntrada = in_array($tipo, ['entrada', 'Fin de permiso'], true);
+
+    $puntualidad = $esEntrada
+        ? $this->calcularPuntualidadEntrada($now, $horariosHoy, $permisoActivo)
+        : $this->calcularPuntualidadSalida($now, $horariosHoy, $permisoActivo);
+
+    $jornada = null;
+    if (!$esEntrada) {
+        $ultimaEntradaHoy = ChecadorEntrada::where('user_firebird_identity_id', $identity->id)
+            ->where('fecha', $hoy)
+            ->orderByDesc('hora_entrada')
+            ->first();
+
+        if ($ultimaEntradaHoy) {
+            $horaEntradaReal = Carbon::parse($hoy . ' ' . $ultimaEntradaHoy->hora_entrada);
+            $jornada = $this->calcularHorasJornada($now, $horaEntradaReal, $identity->id, $hoy, $horariosHoy);
+        }
+    }
+
+    $observaciones = $permisoActivo
+        ? "Dentro de permiso #{$permisoActivo->id} ({$permisoActivo->motivo})"
+        : null;
+
+    DB::beginTransaction();
+
+    try {
+        $registro = ChecadorRegistro::create([
+            'user_firebird_identity_id' => $identity->id,
+            'firebird_empresa' => $firebirdEmpresa,
+            'turno_id' => $turnoId,
+            'checador_permiso_id' => $permisoActivo->id ?? null,
+            'tipo' => $tipo,
+            'fecha' => $hoy,
+            'hora' => $now->toTimeString(),
+            'fecha_hora' => $now,
+            'metodo' => $metodo,
+            'ip_address' => $meta['ip'] ?? null,
+            'dispositivo' => substr((string) ($meta['user_agent'] ?? ''), 0, 250),
+            'valido' => true,
+            'observaciones' => $observaciones,
+        ]);
+
+        if ($esEntrada) {
+            ChecadorEntrada::create([
+                'checador_registro_id' => $registro->id,
+                'user_firebird_identity_id' => $identity->id,
+                'firebird_empresa' => $firebirdEmpresa,
+                'turno_id' => $turnoId,
+                'fecha' => $hoy,
+                'hora_entrada' => $now->toTimeString(),
+                'hora_programada' => $puntualidad['hora_programada'],
+                'minutos_retardo' => $puntualidad['minutos_retardo'],
+                'es_retardo' => $puntualidad['es_retardo'],
+            ]);
+        } else {
+            $ultimaEntrada = ChecadorEntrada::where('user_firebird_identity_id', $identity->id)
                 ->where('fecha', $hoy)
                 ->orderByDesc('hora_entrada')
                 ->first();
 
-            if ($ultimaEntradaHoy) {
-                $horaEntradaReal = Carbon::parse($hoy . ' ' . $ultimaEntradaHoy->hora_entrada);
-                $jornada = $this->calcularHorasJornada($now, $horaEntradaReal, $identity->id, $hoy, $horariosHoy);
-            }
-        }
-
-        $observaciones = $permisoActivo
-            ? "Dentro de permiso #{$permisoActivo->id} ({$permisoActivo->motivo})"
-            : null;
-
-        DB::beginTransaction();
-        try {
-            $registro = ChecadorRegistro::create([
+            ChecadorSalida::create([
+                'checador_registro_id' => $registro->id,
+                'checador_entrada_id' => $ultimaEntrada->id ?? null,
                 'user_firebird_identity_id' => $identity->id,
                 'firebird_empresa' => $firebirdEmpresa,
                 'turno_id' => $turnoId,
-                'checador_permiso_id' => $permisoActivo->id ?? null,
-                'tipo' => $tipo,
                 'fecha' => $hoy,
-                'hora' => $now->toTimeString(),
-                'fecha_hora' => $now,
-                'metodo' => $metodo,
-                'ip_address' => $meta['ip'] ?? null,
-                'dispositivo' => substr((string) ($meta['user_agent'] ?? ''), 0, 250),
-                'valido' => true,
-                'observaciones' => $observaciones,
+                'hora_salida' => $now->toTimeString(),
+                'hora_programada' => $puntualidad['hora_programada'],
+                'minutos_anticipacion' => $puntualidad['minutos_anticipacion'],
+                'horas_extra' => $puntualidad['horas_extra'],
             ]);
-
-            if ($esEntrada) {
-                ChecadorEntrada::create([
-                    'checador_registro_id' => $registro->id,
-                    'user_firebird_identity_id' => $identity->id,
-                    'firebird_empresa' => $firebirdEmpresa,
-                    'turno_id' => $turnoId,
-                    'fecha' => $hoy,
-                    'hora_entrada' => $now->toTimeString(),
-                    'hora_programada' => $puntualidad['hora_programada'],
-                    'minutos_retardo' => $puntualidad['minutos_retardo'],
-                    'es_retardo' => $puntualidad['es_retardo'],
-                ]);
-            } else {
-                $ultimaEntrada = ChecadorEntrada::where('user_firebird_identity_id', $identity->id)
-                    ->where('fecha', $hoy)
-                    ->orderByDesc('hora_entrada')
-                    ->first();
-
-                ChecadorSalida::create([
-                    'checador_registro_id' => $registro->id,
-                    'checador_entrada_id' => $ultimaEntrada->id ?? null,
-                    'user_firebird_identity_id' => $identity->id,
-                    'firebird_empresa' => $firebirdEmpresa,
-                    'turno_id' => $turnoId,
-                    'fecha' => $hoy,
-                    'hora_salida' => $now->toTimeString(),
-                    'hora_programada' => $puntualidad['hora_programada'],
-                    'minutos_anticipacion' => $puntualidad['minutos_anticipacion'],
-                    'horas_extra' => $puntualidad['horas_extra'],
-                ]);
-            }
-            DB::commit();
-        } catch (Throwable $e) {
-            DB::rollBack();
-            throw new RuntimeException('Error al registrar checada', 500);
         }
 
-        $datosEmpleado = $this->obtenerDatosEmpleadoNoi($identity);
-        $userPuesto = $this->obtenerPuestoAreaLocal($identity);
-
-        return [
-            'registro' => $registro,
-            'tipo' => $tipo,
-            'usuario_nombre' => $identity->firebirdUser->NOMBRE ?? null,
-            'usuario_photo' => $identity->firebirdUser->PHOTO ?? null,
-            'TB' => $datosEmpleado['tbRow'],
-            'DEPTO_NOI' => $datosEmpleado['deptoRow'],
-            'PUESTO_NOI' => $datosEmpleado['puestoRow'],
-            'USER_PUESTO' => $userPuesto,
-            'permiso' => $permisoActivo,
-            'puntualidad' => $puntualidad,
-            'jornada' => $jornada,
-        ];
+        DB::commit();
+    } catch (Throwable $e) {
+        DB::rollBack();
+        throw new RuntimeException('Error al registrar checada', 500);
     }
+
+    $datosEmpleado = $this->obtenerDatosEmpleadoNoi($identity);
+    $userPuesto = $this->obtenerPuestoAreaLocal($identity);
+
+    return [
+        'registro' => $registro,
+        'tipo' => $tipo,
+        'usuario_nombre' => $identity->firebirdUser->NOMBRE ?? null,
+        'usuario_photo' => $identity->firebirdUser->PHOTO ?? null,
+        'TB' => $datosEmpleado['tbRow'],
+        'DEPTO_NOI' => $datosEmpleado['deptoRow'],
+        'PUESTO_NOI' => $datosEmpleado['puestoRow'],
+        'USER_PUESTO' => $userPuesto,
+        'permiso' => $permisoActivo,
+        'puntualidad' => $puntualidad,
+        'jornada' => $jornada,
+    ];
+}
     
     private function calcularPuntualidadEntrada(Carbon $now, ?array $horariosHoy, ?ChecadorPermiso $permiso): array
     {
@@ -525,39 +582,76 @@ class ChecadorScanService
         return $identity->puestoActivo()->with(['puesto', 'area', 'jefe.firebirdUser'])->first();
     }
 
-    private function verificarPermisoPendiente(UserFirebirdIdentity $identity, Carbon $now, string $hoy): void
-    {
-        $permiso = ChecadorPermiso::where('user_firebird_identity_id', $identity->id)
-            ->whereIn('estado', ['pendiente', 'solicitado'])
-            ->whereDate('fecha_inicio', '<=', $hoy)
-            ->whereDate('fecha_fin', '>=', $hoy)
-            ->whereDoesntHave('catalogo', fn($q) => $q->where('clave', 'COMIDA'))
-            ->where(function ($q) use ($now) {
-                $q->whereNull('hora_inicio')
-                    ->orWhere(function ($q2) use ($now) {
-                        $q2->where('hora_inicio', '<=', $now->toTimeString())
-                            ->where('hora_fin', '>=', $now->toTimeString());
-                    });
-            })
-            ->orderByDesc('created_at')
-            ->first();
+private function verificarPermisoPendiente(UserFirebirdIdentity $identity, Carbon $now, string $hoy): void
+{
+    $permiso = ChecadorPermiso::where('user_firebird_identity_id', $identity->id)
+        ->whereIn('estado', ['pendiente', 'solicitado'])
+        ->whereDate('fecha_inicio', '<=', $hoy)
+        ->whereDate('fecha_fin', '>=', $hoy)
+        ->whereDoesntHave('catalogo', function ($q) {
+            $q->where('clave', 'COMIDA');
+        })
+        ->where(function ($q) use ($now) {
+            $q->whereNull('hora_inicio')
+                ->orWhere(function ($q2) use ($now) {
+                    $q2->where('hora_inicio', '<=', $now->toTimeString())
+                        ->where('hora_fin', '>=', $now->toTimeString());
+                });
+        })
+        ->orderByDesc('created_at')
+        ->first();
 
-        if (!$permiso || $permiso->estado_jefe === 'aprobado') return;
-
-        throw new \RuntimeException('Tu permiso todavía no puede usarse: falta la aprobación de tu jefe directo.', 403);
+    if (!$permiso || $permiso->estado_jefe === 'aprobado') {
+        return;
     }
 
-    private function permisoBloqueadoPorCierreDeTurno(ChecadorPermiso $permiso, Carbon $now, ?array $horariosHoy): bool
-    {
-        if (empty($horariosHoy['hora_salida'])) return false;
+    throw new \RuntimeException(
+        'Tu permiso todavía no puede usarse: falta la aprobación de tu jefe directo.',
+        403
+    );
+}
 
-        $horaSalida = Carbon::parse($now->toDateString() . ' ' . $horariosHoy['hora_salida']);
-        if ($horariosHoy['sale_dia_siguiente'] ?? false) $horaSalida->addDay();
-        $inicioBloqueo = $horaSalida->copy()->subMinutes(self::VENTANA_BLOQUEO_PERMISO_MINUTOS);
-
-        if ($now->lessThan($inicioBloqueo)) return false;
-
-        $yaSeHabiaUsado = ChecadorRegistro::where('checador_permiso_id', $permiso->id)->exists();
-        return !$yaSeHabiaUsado;
+private function permisoBloqueadoPorCierreDeTurno(ChecadorPermiso $permiso, Carbon $now, ?array $horariosHoy): bool
+{
+    if (empty($horariosHoy['hora_salida'])) {
+        return false;
     }
+
+    $horaSalida = Carbon::parse($now->toDateString() . ' ' . $horariosHoy['hora_salida']);
+    if ($horariosHoy['sale_dia_siguiente'] ?? false) {
+        $horaSalida->addDay();
+    }
+
+    $inicioBloqueo = $horaSalida->copy()->subMinutes(self::VENTANA_BLOQUEO_PERMISO_MINUTOS);
+
+    if ($now->lessThan($inicioBloqueo)) {
+        return false;
+    }
+
+    $yaSeHabiaUsado = ChecadorRegistro::where('checador_permiso_id', $permiso->id)->exists();
+
+    return !$yaSeHabiaUsado;
+}
+
+
+    private function permisoComidaUsadoHoy(int $identityId, string $hoy): bool
+{
+    return ChecadorRegistro::where('user_firebird_identity_id', $identityId)
+        ->where('fecha', $hoy)
+        ->whereHas('permiso.catalogo', function ($q) {
+            $q->where('clave', 'COMIDA');
+        })
+        ->whereIn('tipo', ['Inicio de permiso', 'Fin de permiso'])
+        ->exists();
+}
+
+private function permisoComidaAbiertoHoy(int $identityId, string $hoy): ?ChecadorPermiso
+{
+    return ChecadorPermiso::where('user_firebird_identity_id', $identityId)
+        ->where('estado', 'aprobado')
+        ->whereDate('fecha_inicio', $hoy)
+        ->whereDate('fecha_fin', $hoy)
+        ->whereHas('catalogo', fn ($q) => $q->where('clave', 'COMIDA'))
+        ->first();
+}
 }
