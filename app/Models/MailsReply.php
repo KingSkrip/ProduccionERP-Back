@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class MailsReply extends Model
 {
     protected $table = 'mails_replies';
+    protected $connection = 'mysql';
 
     protected $fillable = [
         'workorder_id',

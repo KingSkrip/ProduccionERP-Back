@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Area extends Model
 {
+    protected $connection = 'mysql';
+
     protected $fillable = [
         'nombre',
         'descripcion',

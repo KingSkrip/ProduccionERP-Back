@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 class ChecadorRegistro extends Model
 {
     protected $table = 'checador_registros';
+    protected $connection = 'mysql';
 
     protected $fillable = [
         'user_firebird_identity_id',

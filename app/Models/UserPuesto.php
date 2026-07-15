@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class UserPuesto extends Model
 {
+    protected $connection = 'mysql';
     protected $fillable = [
         'user_firebird_identity_id',
         'puesto_id',

@@ -10,6 +10,7 @@ class Ocultar extends Model
     use HasFactory;
 
     protected $table = 'ocultar';
+    protected $connection = 'mysql';
 
     protected $fillable = [
         'user_id',

@@ -232,9 +232,23 @@ class DataDashboardController extends Controller
                         ->filter(fn($row) => trim((string)$row->CLAVE_TRAB) === (string)$tbClaveNorm)
                         ->values();
 
-                    $tb = $firebirdNoi->getOperationalTable('TB')
+                   $tb = $firebirdNoi->getOperationalTable('TB')
                         ->keyBy(fn($row) => trim((string)$row->CLAVE));
                     $tbRow = $tb[$tbClaveNorm] ?? null;
+
+                    // 🚫 Bloquear sesión si el empleado está dado de baja (STATUS = 'B')
+                    if ($tbRow && isset($tbRow->STATUS) && trim((string)$tbRow->STATUS) === 'B') {
+                        Log::warning('🚫 ME_BLOCKED_STATUS_BAJA', [
+                            'firebird_id' => $usuario->ID,
+                            'tb_clave'    => $tbClaveNorm,
+                            'status'      => $tbRow->STATUS,
+                        ]);
+
+                        return response()->json([
+                            'message' => 'Tu usuario ha sido dado de baja y no puedes ingresar.'
+                        ], 403);
+                    }
+
                     if ($tbRow) {
                         // 🏢 DEPTO
                         $deptoClave = isset($tbRow->DEPTO) ? trim((string)$tbRow->DEPTO) : null;

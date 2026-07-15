@@ -32,6 +32,15 @@ class ChecadorPermiso extends Model
         'aprobado_por_jefe',
         'fecha_resolucion_jefe',
         'comentarios_jefe',
+
+
+
+        'tiempo_pagado',
+        'fecha_tiempo_pagado',
+        'pagado_en_registro_id',
+        'permiso_origen_id',
+
+        'minutos_pagados',
     ];
 
     protected $casts = [
@@ -72,5 +81,16 @@ class ChecadorPermiso extends Model
     public function aprobadorJefe(): BelongsTo
     {
         return $this->belongsTo(UserFirebirdIdentity::class, 'aprobado_por_jefe');
+    }
+
+    // dentro de ChecadorPermiso.php
+    public function pagos()
+    {
+        return $this->hasMany(ChecadorPermisoPago::class, 'checador_permiso_id');
+    }
+
+    public function getMinutosPendientesAttribute(): int
+    {
+        return max(0, ($this->minutos_ausencia ?? 0) - ($this->minutos_pagados ?? 0));
     }
 }

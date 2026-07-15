@@ -225,6 +225,7 @@ class AuthController extends Controller
                     try {
                         $firebirdNoi = new FirebirdEmpresaManualService($empresaNoi, 'SRVNOI');
 
+
                         // TB (base) - usando TB.CLAVE
                         $tb = $firebirdNoi->getOperationalTable('TB')
                             ->keyBy(fn($row) => trim((string)$row->CLAVE));
@@ -234,6 +235,19 @@ class AuthController extends Controller
                             'tb_clave' => $tbClaveNorm,
                             'tb_found' => $tbRow ? true : false,
                         ]);
+
+                        // 🚫 Bloquear login si el empleado está dado de baja (STATUS = 'B')
+                        if ($tbRow && isset($tbRow->STATUS) && trim((string)$tbRow->STATUS) === 'B') {
+                            Log::warning('🚫 LOGIN_BLOCKED_STATUS_BAJA', [
+                                'firebird_id' => $userId,
+                                'tb_clave'    => $tbClaveNorm,
+                                'status'      => $tbRow->STATUS,
+                            ]);
+
+                            return response()->json([
+                                'message' => 'Tu usuario ha sido dado de baja y no puedes ingresar.'
+                            ], 403);
+                        }
 
                         // 🆕 Si encontramos al empleado en TB, buscamos DEPTO y PUESTO
                         if ($tbRow) {

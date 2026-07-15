@@ -10,6 +10,7 @@ class CitaType extends Model
     use HasFactory;
 
     protected $table = 'citas_types';
+    protected $connection = 'mysql';
 
     protected $fillable = [
         'nombre',

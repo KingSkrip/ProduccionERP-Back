@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 class ChecadorEntrada extends Model
 {
     protected $table = 'checador_entradas';
+    protected $connection = 'mysql';
 
     protected $fillable = [
         'checador_registro_id',

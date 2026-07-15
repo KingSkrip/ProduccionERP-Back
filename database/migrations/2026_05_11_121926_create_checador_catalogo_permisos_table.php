@@ -14,7 +14,11 @@ return new class extends Migration
             $table->string('clave', 30)->unique(); // Ej: "COMIDA", "MEDICO", "TRAMITE"
             $table->text('descripcion')->nullable();
             $table->integer('duracion_default_minutos')->nullable(); // Ej: 60 para comida
+            $table->string('tipo_unidad')->nullable(); // Ej: 60 para comida
             $table->boolean('requiere_aprobacion')->default(true);
+
+            $table->string('requiere_regreso_mismo_dia')->nullable(); // Ej: 60 para comida    
+            $table->string('tipo_unidadsuma_a_horas_trabajadas')->nullable(); // Ej: 60 para comida
             $table->boolean('activo')->default(true);
             $table->integer('orden')->default(0); // para ordenar en el combo/dropdown
             $table->timestamps();

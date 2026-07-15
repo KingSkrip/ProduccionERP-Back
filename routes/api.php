@@ -25,6 +25,7 @@ use App\Http\Controllers\Agentes\PedidosAgentesController;
 use App\Http\Controllers\Checador\ChecadorController;
 use App\Http\Controllers\Checador\ChecadorPermisoController;
 use App\Http\Controllers\Checador\ChecadorQrController;
+use App\Http\Controllers\Checador\ChecadorIdentidadController;
 use App\Http\Controllers\TaskController;
 use Illuminate\Support\Facades\Route;
 
@@ -320,17 +321,32 @@ Route::prefix('checador')->middleware('jwt.auth')->group(function () {
     Route::get('/buscar-empleado', [ChecadorController::class, 'buscarEmpleado']);
     Route::post('/registrar-manual', [ChecadorController::class, 'registrarManual']);
     Route::get('/hoy', [ChecadorController::class, 'hoy']);
-    
-    
+
+
     // Permisos
     Route::get('/permisos/catalogo', [ChecadorPermisoController::class, 'catalogo']);
     Route::post('/permisos/solicitar', [ChecadorPermisoController::class, 'solicitar']);
-    Route::get('/permisos/mis-permisos', [ChecadorPermisoController::class, 'misPermisos']); 
-    Route::get('/permisos/pendientes-rh', [ChecadorPermisoController::class, 'pendientesRh']);
+    Route::get('/permisos/mis-permisos', [ChecadorPermisoController::class, 'misPermisos']);
+    // Route::get('/permisos/pendientes-rh', [ChecadorPermisoController::class, 'pendientesRh']);
     Route::get('/permisos/pendientes-jefe/{jefeId}', [ChecadorPermisoController::class, 'pendientesJefe']);
     Route::post('/permisos/{permisoId}/resolver/{rol}', [ChecadorPermisoController::class, 'resolver'])
         ->whereIn('rol', ['rh', 'jefe']);
-    Route::get('/permisos/historial/{identityId}', [ChecadorPermisoController::class, 'historial']); // admin/RH consultando a otra persona
+    Route::get('/permisos/historial/{identityId}', [ChecadorPermisoController::class, 'historial']);
+    Route::get('/permisos/historial-equipo/{jefeId}', [ChecadorPermisoController::class, 'historialEquipo']);
+
+
+
+
+
+
+
+
+
+
+
+
+    Route::patch('/identidades/{identityId}/ajuste-salida', [ChecadorIdentidadController::class, 'toggleAjusteSalida']);
+    Route::patch('/identidades/{identityId}/credencial', [ChecadorIdentidadController::class, 'asignarCredencial']);
 });
 
 

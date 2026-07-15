@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class ChecadorSalida extends Model
 {
     protected $table = 'checador_salidas';
+    protected $connection = 'mysql';
 
     protected $fillable = [
         'checador_registro_id',

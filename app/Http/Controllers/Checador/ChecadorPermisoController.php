@@ -4,25 +4,35 @@ namespace App\Http\Controllers\Checador;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Checador\ChecadorPermisoResource;
+use App\Models\ChecadorCatalogoPermiso;
 use App\Models\Firebird\Users;
 use App\Models\UserFirebirdIdentity;
 use App\Services\Checador\ChecadorPermisoService;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class ChecadorPermisoController extends Controller
 {
     public function __construct(protected ChecadorPermisoService $permisoService) {}
-
+    private const CLAVES_PAGO_TIEMPO = ['EXTRA', 'PERSONAL', 'TRAMITE', 'MEDICO'];
     public function catalogo()
     {
-        return response()->json($this->permisoService->catalogo());
+        return ChecadorCatalogoPermiso::query()
+            ->where('activo', 1)
+            ->orderBy('orden')
+            ->get();
     }
+
 
     public function solicitar(Request $request)
     {
         $identity = $this->identityAutenticada($request);
+
+        $catalogo = ChecadorCatalogoPermiso::find($request->input('checador_catalogo_permiso_id'));
+        $requierePagoTiempo = $catalogo && in_array($catalogo->clave, self::CLAVES_PAGO_TIEMPO, true);
 
         $data = $request->validate([
             'checador_catalogo_permiso_id' => 'required|integer|exists:checador_catalogo_permisos,id',
@@ -30,28 +40,68 @@ class ChecadorPermisoController extends Controller
             'fecha_inicio' => 'required|date',
             'fecha_fin' => 'required|date|after_or_equal:fecha_inicio',
             'hora_inicio' => 'nullable|date_format:H:i',
-            'hora_fin' => 'nullable|date_format:H:i|after:hora_inicio',
+            'hora_fin' => [
+                'nullable',
+                Rule::requiredIf(fn() => !$request->boolean('no_regresa')),
+                'date_format:H:i',
+                'after:hora_inicio',
+            ],
+            'no_regresa' => 'required|boolean',
             'motivo' => 'required|string|max:255',
+
+            'tipo_pago_tiempo' => [
+                Rule::requiredIf($requierePagoTiempo),
+                'nullable',
+                'in:tiempo_por_tiempo,dia_descanso,sin_goce',
+            ],
+            'fecha_reposicion' => [
+                'nullable',
+                Rule::requiredIf(fn() => $requierePagoTiempo && $request->input('tipo_pago_tiempo') === 'dia_descanso'),
+                'date',
+                'after:fecha_fin',
+            ],
+            'hora_inicio_reposicion' => [
+                'nullable',
+                'date_format:H:i',
+            ],
+            'hora_fin_reposicion' => [
+                'nullable',
+                'date_format:H:i',
+                'after:hora_inicio_reposicion',
+            ],
+            'justificacion_pago_tiempo' => 'nullable|string|max:255',
         ]);
 
-        // 👇 la identidad SIEMPRE sale del JWT, nunca del body.
+
+        if ($request->input('tipo') === 'extraordinario') {
+            $identity = $this->identityAutenticada($request);
+            if (!$identity->puede_solicitar_extraordinario) {
+                return response()->json(['message' => 'No tienes privilegios para solicitar permisos extraordinarios'], 403);
+            }
+        }
+
+        // si el tipo de permiso no aplica pago de tiempo, ignoramos cualquier basura que haya mandado el front
+        if (!$requierePagoTiempo) {
+            unset(
+                $data['tipo_pago_tiempo'],
+                $data['fecha_reposicion'],
+                $data['hora_inicio_reposicion'],
+                $data['hora_fin_reposicion'],
+                $data['justificacion_pago_tiempo'],
+            );
+        }
+
         $data['user_firebird_identity_id'] = $identity->id;
 
         $permiso = $this->permisoService->solicitar($data);
 
+
         return (new ChecadorPermisoResource($permiso))
             ->additional(['message' => $permiso->estado === 'aprobado'
                 ? 'Permiso registrado y aprobado automáticamente'
-                : 'Permiso solicitado, en espera de aprobación de RH'])
+                : 'Permiso solicitado, en espera de aprobación de tu jefe'])
             ->response()
             ->setStatusCode(201);
-    }
-
-    public function pendientesRh(Request $request)
-    {
-        $pendientes = $this->permisoService->pendientesRh($request->query('firebird_empresa'));
-
-        return ChecadorPermisoResource::collection($pendientes);
     }
 
     public function pendientesJefe(Request $request, int $jefeId)
@@ -79,8 +129,13 @@ class ChecadorPermisoController extends Controller
 
             return (new ChecadorPermisoResource($permiso))
                 ->additional(['message' => 'Permiso ' . $data['estado'] . ' por ' . strtoupper($rol)]);
+        } catch (\Illuminate\Database\QueryException $e) {
+            Log::error('DB_ERROR_CHECADA', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Error interno al procesar la operación'], 500);
         } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], $e->getCode() ?: 500);
+            $codigo = $e->getCode();
+            $status = (is_int($codigo) && $codigo >= 100 && $codigo < 600) ? $codigo : 500;
+            return response()->json(['message' => $e->getMessage()], $status);
         }
     }
 
@@ -156,5 +211,13 @@ class ChecadorPermisoController extends Controller
         }
 
         return $identity;
+    }
+
+
+    public function historialEquipo(Request $request, int $jefeId)
+    {
+        $historial = $this->permisoService->historialEquipo($jefeId);
+
+        return ChecadorPermisoResource::collection($historial);
     }
 }
