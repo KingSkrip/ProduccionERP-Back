@@ -10,6 +10,7 @@ class Turno extends Model
 {
     protected $connection = 'mysql';
     protected $table = 'turnos';
+    public $timestamps = true;
 
     protected $fillable = [
         'firebird_empresa',
@@ -17,12 +18,11 @@ class Turno extends Model
         'nombre',
         'hora_entrada',
         'hora_salida',
-        'hora_inicio_comida',
-        'hora_fin_comida',
         'entra_dia_anterior',
         'sale_dia_siguiente',
         'status_id',
     ];
+
 
     protected $casts = [
         'entra_dia_anterior' => 'boolean',
@@ -69,11 +69,11 @@ class Turno extends Model
     public function getMultiplicadorFaltaAttribute(): float
     {
         $diasLaborables = $this->dias_laborables;
-        
+
         if ($diasLaborables === 0) {
             return 0; // Turno sin días laborables (eventual, etc.)
         }
-        
+
         return round(6 / $diasLaborables, 2);
     }
 
@@ -130,9 +130,13 @@ class Turno extends Model
             'nombre' => $this->nombre,
             'dias_laborables' => $this->dias_laborables,
             'multiplicador_falta' => $this->multiplicador_falta,
-            'horario_base' => $this->hora_entrada && $this->hora_salida 
-                ? "{$this->hora_entrada} - {$this->hora_salida}" 
+            'horario_base' => $this->hora_entrada && $this->hora_salida
+                ? "{$this->hora_entrada} - {$this->hora_salida}"
                 : 'Variable',
         ];
+    }
+    public function dias()
+    {
+        return $this->hasMany(TurnoDia::class, 'turno_id');
     }
 }

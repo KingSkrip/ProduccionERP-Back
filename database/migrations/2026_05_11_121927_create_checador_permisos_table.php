@@ -39,6 +39,10 @@ return new class extends Migration
                 ->nullable()
                 ->default(false);
 
+   $table->boolean('todo_el_dia')
+    ->nullable()
+    ->default(false);
+
             $table->enum('tipo_pago_tiempo', [
                 'tiempo_por_tiempo',
                 'dia_descanso',
@@ -56,22 +60,22 @@ return new class extends Migration
             $table->string('justificacion_pago_tiempo')->nullable();
             $table->string('motivo')->nullable();
 
-$table->foreignId('permiso_origen_id')
-    ->nullable()
-    ->constrained('checador_permisos')
-    ->nullOnDelete();
+            $table->foreignId('permiso_origen_id')
+                ->nullable()
+                ->constrained('checador_permisos')
+                ->nullOnDelete();
 
-// Indica si el tiempo de ausencia ya fue pagado
-$table->boolean('tiempo_pagado')
-    ->default(false);
+            // Indica si el tiempo de ausencia ya fue pagado
+            $table->boolean('tiempo_pagado')
+                ->default(false);
 
-// Cuándo se pagó
-$table->timestamp('fecha_tiempo_pagado')
-    ->nullable();
+            // Cuándo se pagó
+            $table->timestamp('fecha_tiempo_pagado')
+                ->nullable();
 
-// Registro de checador donde se pagó el tiempo
-$table->unsignedBigInteger('pagado_en_registro_id')
-    ->nullable();
+            // Registro de checador donde se pagó el tiempo
+            $table->unsignedBigInteger('pagado_en_registro_id')
+                ->nullable();
 
             // Estado GENERAL, calculado a partir de estado_rh + estado_jefe.
             // No se edita directo, lo recalcula el Service en cada resolver().

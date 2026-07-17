@@ -65,6 +65,7 @@ class ChecadorPermisoService
             'hora_inicio' => $data['hora_inicio'] ?? null,
             'hora_fin' => $noRegresa ? null : ($data['hora_fin'] ?? null),
             'no_regresa' => $noRegresa,
+            'todo_el_dia' => (bool) ($data['todo_el_dia'] ?? false),
             'motivo' => $data['motivo'],
             'estado' => 'solicitado',
             'estado_rh' => 'no_aplica',
@@ -141,82 +142,82 @@ class ChecadorPermisoService
             $this->generarPermisoReposicionDiaDescanso($permiso);
         }
 
-         if ($permiso->estado === 'aprobado' && $permiso->fecha_reposicion) {
-        if (in_array($permiso->tipo_pago_tiempo, ['dia_descanso', 'tiempo_por_tiempo'], true)) {
-            $this->generarPermisoReposicionSiAplica($permiso);
+        if ($permiso->estado === 'aprobado' && $permiso->fecha_reposicion) {
+            if (in_array($permiso->tipo_pago_tiempo, ['dia_descanso', 'tiempo_por_tiempo'], true)) {
+                $this->generarPermisoReposicionSiAplica($permiso);
+            }
         }
+
+        return $permiso->fresh()->load('catalogo', 'aprobadorJefe');
     }
 
-    return $permiso->fresh()->load('catalogo', 'aprobadorJefe');
-}
 
+    /**
+     * Genera un permiso FUNCION para la fecha de reposición SOLO si ese día
+     * no es laborable en el turno del empleado (ej. sábado en turno L-V).
+     * Si el día ya es laborable normal, no hace falta permiso: el empleado
+     * simplemente checa normal y el motor de pago de tiempo hace el resto.
+     */
+    private function generarPermisoReposicionSiAplica(ChecadorPermiso $permisoOriginal): void
+    {
+        $identity = UserFirebirdIdentity::with('turnoActivo.turno')->find($permisoOriginal->user_firebird_identity_id);
+        if (!$identity) {
+            return;
+        }
 
-/**
- * Genera un permiso FUNCION para la fecha de reposición SOLO si ese día
- * no es laborable en el turno del empleado (ej. sábado en turno L-V).
- * Si el día ya es laborable normal, no hace falta permiso: el empleado
- * simplemente checa normal y el motor de pago de tiempo hace el resto.
- */
-private function generarPermisoReposicionSiAplica(ChecadorPermiso $permisoOriginal): void
-{
-    $identity = UserFirebirdIdentity::with('turnoActivo.turno')->find($permisoOriginal->user_firebird_identity_id);
-    if (!$identity) {
-        return;
+        $fecha = Carbon::parse($permisoOriginal->fecha_reposicion);
+        $horario = $this->horarioDelDia($identity, $fecha);
+
+        // Si el día YA es laborable normal, no generamos nada: solo checa normal
+        // y ChecadorPagoTiempoService detecta la deuda por fecha_reposicion.
+        if ($horario !== null) {
+            return;
+        }
+
+        $this->crearPermisoFuncionReposicion($permisoOriginal, $fecha->toDateString());
     }
 
-    $fecha = Carbon::parse($permisoOriginal->fecha_reposicion);
-    $horario = $this->horarioDelDia($identity, $fecha);
+    private function crearPermisoFuncionReposicion(ChecadorPermiso $permisoOriginal, string $fechaReposicion): void
+    {
+        $catalogoFuncion = ChecadorCatalogoPermiso::where('clave', 'FUNCION')->first();
+        if (!$catalogoFuncion) {
+            Log::warning('REPOSICION_SIN_CATALOGO_FUNCION', ['permiso_id' => $permisoOriginal->id]);
+            return;
+        }
 
-    // Si el día YA es laborable normal, no generamos nada: solo checa normal
-    // y ChecadorPagoTiempoService detecta la deuda por fecha_reposicion.
-    if ($horario !== null) {
-        return;
+        $yaExiste = ChecadorPermiso::where('user_firebird_identity_id', $permisoOriginal->user_firebird_identity_id)
+            ->where('permiso_origen_id', $permisoOriginal->id)
+            ->whereDate('fecha_inicio', $fechaReposicion)
+            ->exists();
+
+        if ($yaExiste) {
+            return;
+        }
+
+        $reposicion = ChecadorPermiso::create([
+            'user_firebird_identity_id' => $permisoOriginal->user_firebird_identity_id,
+            'checador_catalogo_permiso_id' => $catalogoFuncion->id,
+            'firebird_empresa' => $permisoOriginal->firebird_empresa,
+            'tipo' => 'normal',
+            'fecha_inicio' => $fechaReposicion,
+            'fecha_fin' => $fechaReposicion,
+            'no_regresa' => false,
+            'motivo' => "Reposición por permiso #{$permisoOriginal->id} — {$permisoOriginal->motivo}",
+            'estado' => 'aprobado',
+            'estado_rh' => 'no_aplica',
+            'estado_jefe' => 'aprobado',
+            'aprobado_por_jefe' => $permisoOriginal->aprobado_por_jefe,
+            'fecha_resolucion_jefe' => now(),
+            'comentarios_jefe' => 'Auto-generado: reposición de tiempo.',
+            'permiso_origen_id' => $permisoOriginal->id,
+        ]);
+
+        Log::info('REPOSICION_GENERADA', [
+            'permiso_original_id' => $permisoOriginal->id,
+            'reposicion_id' => $reposicion->id,
+            'fecha_reposicion' => $fechaReposicion,
+        ]);
     }
-
-    $this->crearPermisoFuncionReposicion($permisoOriginal, $fecha->toDateString());
-}
-
-private function crearPermisoFuncionReposicion(ChecadorPermiso $permisoOriginal, string $fechaReposicion): void
-{
-    $catalogoFuncion = ChecadorCatalogoPermiso::where('clave', 'FUNCION')->first();
-    if (!$catalogoFuncion) {
-        Log::warning('REPOSICION_SIN_CATALOGO_FUNCION', ['permiso_id' => $permisoOriginal->id]);
-        return;
-    }
-
-    $yaExiste = ChecadorPermiso::where('user_firebird_identity_id', $permisoOriginal->user_firebird_identity_id)
-        ->where('permiso_origen_id', $permisoOriginal->id)
-        ->whereDate('fecha_inicio', $fechaReposicion)
-        ->exists();
-
-    if ($yaExiste) {
-        return;
-    }
-
-    $reposicion = ChecadorPermiso::create([
-        'user_firebird_identity_id' => $permisoOriginal->user_firebird_identity_id,
-        'checador_catalogo_permiso_id' => $catalogoFuncion->id,
-        'firebird_empresa' => $permisoOriginal->firebird_empresa,
-        'tipo' => 'normal',
-        'fecha_inicio' => $fechaReposicion,
-        'fecha_fin' => $fechaReposicion,
-        'no_regresa' => false,
-        'motivo' => "Reposición por permiso #{$permisoOriginal->id} — {$permisoOriginal->motivo}",
-        'estado' => 'aprobado',
-        'estado_rh' => 'no_aplica',
-        'estado_jefe' => 'aprobado',
-        'aprobado_por_jefe' => $permisoOriginal->aprobado_por_jefe,
-        'fecha_resolucion_jefe' => now(),
-        'comentarios_jefe' => 'Auto-generado: reposición de tiempo.',
-        'permiso_origen_id' => $permisoOriginal->id,
-    ]);
-
-    Log::info('REPOSICION_GENERADA', [
-        'permiso_original_id' => $permisoOriginal->id,
-        'reposicion_id' => $reposicion->id,
-        'fecha_reposicion' => $fechaReposicion,
-    ]);
-}
 
 
 

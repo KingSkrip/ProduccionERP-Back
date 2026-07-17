@@ -157,4 +157,9 @@ class UserFirebirdIdentity extends Model
                     ->orWhere('fecha_fin', '>=', now()->toDateString());
             });
     }
+
+    public function userTurnos()
+{
+    return $this->hasMany(\App\Models\UserTurno::class, 'user_firebird_identity_id');
+}
 }

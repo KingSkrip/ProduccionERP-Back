@@ -17,8 +17,6 @@ return new class extends Migration
             // Campos generales (pueden ser NULL si se configuran por día)
             $table->time('hora_entrada')->nullable();
             $table->time('hora_salida')->nullable();
-            $table->time('hora_inicio_comida')->nullable();
-            $table->time('hora_fin_comida')->nullable();
             
             // Banderas especiales
             $table->boolean('entra_dia_anterior')->default(false);

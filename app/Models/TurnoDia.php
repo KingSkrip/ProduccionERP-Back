@@ -9,6 +9,7 @@ class TurnoDia extends Model
 {
     protected $connection = 'mysql';
     protected $table = 'turno_dias';
+    public $timestamps = true;
 
     protected $fillable = [
         'turno_id',
@@ -17,19 +18,15 @@ class TurnoDia extends Model
         'es_descanso',
         'hora_entrada',
         'hora_salida',
-        'hora_inicio_comida',
-        'hora_fin_comida',
         'entra_dia_anterior',
         'sale_dia_siguiente',
     ];
 
     protected $casts = [
-        'dia_semana' => 'integer',
         'es_laborable' => 'boolean',
         'es_descanso' => 'boolean',
-        'entra_dia_anterior' => 'boolean',
-        'sale_dia_siguiente' => 'boolean',
     ];
+
 
     public function turno(): BelongsTo
     {

@@ -10,15 +10,11 @@ class UserTurno extends Model
 {
     protected $connection = 'mysql';
     protected $table = 'user_turnos';
+    public $timestamps = true;
 
-    protected $fillable = [
-        'user_firebird_identity_id',
-        'turno_id',
-        'fecha_inicio',
-        'fecha_fin',
-        'semana_anio',
-        'dias_descanso_personalizados',
-        'status_id',
+     protected $fillable = [
+        'user_firebird_identity_id', 'turno_id', 'fecha_inicio', 'fecha_fin',
+        'semana_anio', 'dias_descanso_personalizados', 'status_id',
     ];
 
     protected $casts = [

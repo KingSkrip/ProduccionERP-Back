@@ -10,50 +10,68 @@ class ChecadorPermiso extends Model
     protected $connection = 'mysql';
     protected $table = 'checador_permisos';
 
-    protected $fillable = [
-        'user_firebird_identity_id',
-        'checador_catalogo_permiso_id',
-        'firebird_empresa',
-        'tipo',
-        'fecha_inicio',
-        'fecha_fin',
-        'hora_inicio',
-        'hora_fin',
-        'motivo',
+protected $fillable = [
+    'user_firebird_identity_id',
+    'checador_catalogo_permiso_id',
+    'firebird_empresa',
 
-        'estado',
+    'tipo',
 
-        'estado_rh',
-        'aprobado_por_rh',
-        'fecha_resolucion_rh',
-        'comentarios_rh',
+    'fecha_inicio',
+    'fecha_fin',
+    'hora_inicio',
+    'hora_fin',
 
-        'estado_jefe',
-        'aprobado_por_jefe',
-        'fecha_resolucion_jefe',
-        'comentarios_jefe',
+    'no_regresa',
+    'todo_el_dia',
 
+    'tipo_pago_tiempo',
+    'minutos_ausencia',
 
+    'fecha_reposicion',
+    'hora_inicio_reposicion',
+    'hora_fin_reposicion',
+    'justificacion_pago_tiempo',
 
-        'tiempo_pagado',
-        'fecha_tiempo_pagado',
-        'pagado_en_registro_id',
-        'permiso_origen_id',
+    'motivo',
 
-        'minutos_pagados',
-    ];
+    'permiso_origen_id',
+    'tiempo_pagado',
+    'fecha_tiempo_pagado',
+    'pagado_en_registro_id',
 
-    protected $casts = [
-        'fecha_inicio' => 'date',
-        'fecha_fin' => 'date',
+    'estado',
 
-        'hora_inicio' => 'datetime:H:i',
-        'hora_fin' => 'datetime:H:i',
+    'estado_rh',
+    'aprobado_por_rh',
+    'fecha_resolucion_rh',
+    'comentarios_rh',
 
-        'fecha_resolucion_rh' => 'datetime',
-        'fecha_resolucion_jefe' => 'datetime',
-    ];
+    'estado_jefe',
+    'aprobado_por_jefe',
+    'fecha_resolucion_jefe',
+    'comentarios_jefe',
+];
 
+protected $casts = [
+    'fecha_inicio' => 'date',
+    'fecha_fin' => 'date',
+
+    'hora_inicio' => 'datetime:H:i',
+    'hora_fin' => 'datetime:H:i',
+
+    'fecha_reposicion' => 'date',
+    'hora_inicio_reposicion' => 'datetime:H:i',
+    'hora_fin_reposicion' => 'datetime:H:i',
+
+    'no_regresa' => 'boolean',
+    'todo_el_dia' => 'boolean',
+    'tiempo_pagado' => 'boolean',
+
+    'fecha_tiempo_pagado' => 'datetime',
+    'fecha_resolucion_rh' => 'datetime',
+    'fecha_resolucion_jefe' => 'datetime',
+];
     public function identity(): BelongsTo
     {
         return $this->belongsTo(UserFirebirdIdentity::class, 'user_firebird_identity_id');
@@ -83,7 +101,6 @@ class ChecadorPermiso extends Model
         return $this->belongsTo(UserFirebirdIdentity::class, 'aprobado_por_jefe');
     }
 
-    // dentro de ChecadorPermiso.php
     public function pagos()
     {
         return $this->hasMany(ChecadorPermisoPago::class, 'checador_permiso_id');

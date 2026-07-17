@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Checador;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Checador\ChecadorPermisoResource;
 use App\Models\ChecadorCatalogoPermiso;
+use App\Models\ChecadorPermiso;
 use App\Models\Firebird\Users;
 use App\Models\UserFirebirdIdentity;
 use App\Services\Checador\ChecadorPermisoService;
@@ -33,6 +34,14 @@ class ChecadorPermisoController extends Controller
 
         $catalogo = ChecadorCatalogoPermiso::find($request->input('checador_catalogo_permiso_id'));
         $requierePagoTiempo = $catalogo && in_array($catalogo->clave, self::CLAVES_PAGO_TIEMPO, true);
+
+        if ($request->boolean('todo_el_dia')) {
+            $request->merge([
+                'no_regresa' => true,
+                'hora_inicio' => null,
+                'hora_fin' => null,
+            ]);
+        }
 
         $data = $request->validate([
             'checador_catalogo_permiso_id' => 'required|integer|exists:checador_catalogo_permisos,id',
@@ -72,6 +81,12 @@ class ChecadorPermisoController extends Controller
             'justificacion_pago_tiempo' => 'nullable|string|max:255',
         ]);
 
+        $data['todo_el_dia'] = (bool) ($data['todo_el_dia'] ?? false);
+        if ($data['todo_el_dia']) {
+            $data['no_regresa'] = true;
+            $data['hora_inicio'] = null;
+            $data['hora_fin'] = null;
+        }
 
         if ($request->input('tipo') === 'extraordinario') {
             $identity = $this->identityAutenticada($request);
@@ -80,7 +95,6 @@ class ChecadorPermisoController extends Controller
             }
         }
 
-        // si el tipo de permiso no aplica pago de tiempo, ignoramos cualquier basura que haya mandado el front
         if (!$requierePagoTiempo) {
             unset(
                 $data['tipo_pago_tiempo'],
@@ -92,9 +106,7 @@ class ChecadorPermisoController extends Controller
         }
 
         $data['user_firebird_identity_id'] = $identity->id;
-
         $permiso = $this->permisoService->solicitar($data);
-
 
         return (new ChecadorPermisoResource($permiso))
             ->additional(['message' => $permiso->estado === 'aprobado'
@@ -111,19 +123,14 @@ class ChecadorPermisoController extends Controller
         return ChecadorPermisoResource::collection($pendientes);
     }
 
-    // 👇 recibe $rol desde la ruta; el aprobador sale del JWT.
     public function resolver(Request $request, int $permisoId, string $rol)
     {
         $identity = $this->identityAutenticada($request);
-
         $data = $request->validate([
             'estado' => 'required|in:aprobado,rechazado',
             'comentarios_aprobador' => 'nullable|string|max:500',
         ]);
-
-        // 👇 igual que arriba: quién aprueba lo dice el token, no el body.
         $data['aprobado_por'] = $identity->id;
-
         try {
             $permiso = $this->permisoService->resolver($permisoId, $rol, $data);
 
@@ -213,11 +220,47 @@ class ChecadorPermisoController extends Controller
         return $identity;
     }
 
-
     public function historialEquipo(Request $request, int $jefeId)
     {
         $historial = $this->permisoService->historialEquipo($jefeId);
 
         return ChecadorPermisoResource::collection($historial);
+    }
+
+    public function pendientesRh(Request $request)
+    {
+        $permisos = ChecadorPermiso::with(['identity', 'catalogo'])
+            ->where('estado', 'pendiente')
+            ->orderBy('fecha_inicio')
+            ->get();
+
+        return ChecadorPermisoResource::collection($permisos);
+    }
+
+    // public function historialRh(Request $request)
+    // {
+    //     $query = ChecadorPermiso::with(['identity', 'catalogo'])
+    //         ->whereIn('estado', ['aprobado', 'rechazado']);
+
+    //     if ($request->filled('desde')) {
+    //         $query->whereDate('fecha_fin', '>=', $request->query('desde'));
+    //     }
+    //     if ($request->filled('hasta')) {
+    //         $query->whereDate('fecha_inicio', '<=', $request->query('hasta'));
+    //     }
+
+    //     return ChecadorPermisoResource::collection($query->orderByDesc('fecha_inicio')->get());
+    // }
+
+
+    public function historialRh(Request $request)
+    {
+        $query = ChecadorPermiso::with(['identity', 'catalogo'])
+            ->whereIn('estado', ['aprobado', 'rechazado']);
+
+        if ($request->filled('desde')) $query->whereDate('fecha_fin', '>=', $request->query('desde'));
+        if ($request->filled('hasta')) $query->whereDate('fecha_inicio', '<=', $request->query('hasta'));
+
+        return ChecadorPermisoResource::collection($query->orderByDesc('fecha_inicio')->get());
     }
 }

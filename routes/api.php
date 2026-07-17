@@ -22,6 +22,7 @@ use App\Http\Controllers\Clientes\PedidosController;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Agentes\EstadosCuentaAgentesController;
 use App\Http\Controllers\Agentes\PedidosAgentesController;
+use App\Http\Controllers\Checador\ChecadorAsistenciaController;
 use App\Http\Controllers\Checador\ChecadorController;
 use App\Http\Controllers\Checador\ChecadorPermisoController;
 use App\Http\Controllers\Checador\ChecadorQrController;
@@ -327,7 +328,6 @@ Route::prefix('checador')->middleware('jwt.auth')->group(function () {
     Route::get('/permisos/catalogo', [ChecadorPermisoController::class, 'catalogo']);
     Route::post('/permisos/solicitar', [ChecadorPermisoController::class, 'solicitar']);
     Route::get('/permisos/mis-permisos', [ChecadorPermisoController::class, 'misPermisos']);
-    // Route::get('/permisos/pendientes-rh', [ChecadorPermisoController::class, 'pendientesRh']);
     Route::get('/permisos/pendientes-jefe/{jefeId}', [ChecadorPermisoController::class, 'pendientesJefe']);
     Route::post('/permisos/{permisoId}/resolver/{rol}', [ChecadorPermisoController::class, 'resolver'])
         ->whereIn('rol', ['rh', 'jefe']);
@@ -338,10 +338,20 @@ Route::prefix('checador')->middleware('jwt.auth')->group(function () {
 
 
 
+    // Permisos - RH
+    Route::get('/permisos/pendientes-rh', [ChecadorPermisoController::class, 'pendientesRh']);
+    Route::get('/permisos/historial-rh', [ChecadorPermisoController::class, 'historialRh']);
 
+    // Asistencia / tarjeta - RH
+    // 👇 Las literales van PRIMERO
+    Route::get('/asistencia/equipo/semana', [ChecadorAsistenciaController::class, 'resumenEquipo']);
+    Route::get('/asistencia/excel', [ChecadorAsistenciaController::class, 'excelEquipo']);
 
-
-
+    // 👇 Las que tienen {identityId} van DESPUÉS
+    Route::get('/asistencia/{identityId}/semana', [ChecadorAsistenciaController::class, 'resumenSemana'])
+        ->whereNumber('identityId');
+    Route::get('/asistencia/{identityId}/excel', [ChecadorAsistenciaController::class, 'excelSemana'])
+        ->whereNumber('identityId');
 
 
 
