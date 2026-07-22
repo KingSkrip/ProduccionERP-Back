@@ -22,12 +22,15 @@ use App\Http\Controllers\Clientes\PedidosController;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Agentes\EstadosCuentaAgentesController;
 use App\Http\Controllers\Agentes\PedidosAgentesController;
+use App\Http\Controllers\Area\AreaController;
 use App\Http\Controllers\Checador\ChecadorAsistenciaController;
 use App\Http\Controllers\Checador\ChecadorController;
 use App\Http\Controllers\Checador\ChecadorPermisoController;
 use App\Http\Controllers\Checador\ChecadorQrController;
 use App\Http\Controllers\Checador\ChecadorIdentidadController;
+use App\Http\Controllers\Puestos\PuestoController;
 use App\Http\Controllers\TaskController;
+use App\Http\Controllers\Turnos\TurnoController;
 use Illuminate\Support\Facades\Route;
 
 Route::options('/{any}', function () {
@@ -334,10 +337,6 @@ Route::prefix('checador')->middleware('jwt.auth')->group(function () {
     Route::get('/permisos/historial/{identityId}', [ChecadorPermisoController::class, 'historial']);
     Route::get('/permisos/historial-equipo/{jefeId}', [ChecadorPermisoController::class, 'historialEquipo']);
 
-
-
-
-
     // Permisos - RH
     Route::get('/permisos/pendientes-rh', [ChecadorPermisoController::class, 'pendientesRh']);
     Route::get('/permisos/historial-rh', [ChecadorPermisoController::class, 'historialRh']);
@@ -353,26 +352,58 @@ Route::prefix('checador')->middleware('jwt.auth')->group(function () {
     Route::get('/asistencia/{identityId}/excel', [ChecadorAsistenciaController::class, 'excelSemana'])
         ->whereNumber('identityId');
 
-
-
     Route::patch('/identidades/{identityId}/ajuste-salida', [ChecadorIdentidadController::class, 'toggleAjusteSalida']);
     Route::patch('/identidades/{identityId}/credencial', [ChecadorIdentidadController::class, 'asignarCredencial']);
 });
 
 
-// routes/api.php
 Route::get('mi-ip', function (Request $request) {
-    // Si hay proxy/nginx, leer el header
     $ip = $request->header('X-Real-IP')
         ?? $request->header('X-Forwarded-For')
         ?? $request->ip();
-
     return response()->json(['ip' => $ip]);
 });
 
+/*
+|--------------------------------------------------------------------------
+| Áreas
+|--------------------------------------------------------------------------
+*/
+Route::prefix('areas')->middleware('jwt.auth')->group(function () {
+    Route::get('/activas', [AreaController::class, 'activas']);
+    Route::patch('/{id}/toggle-activo', [AreaController::class, 'toggleActivo']);
 
+    Route::apiResource('', AreaController::class)
+        ->parameters(['' => 'id']);
+});
 
+/*
+|--------------------------------------------------------------------------
+| Puestos
+|--------------------------------------------------------------------------
+*/
+Route::prefix('puestos')->middleware('jwt.auth')->group(function () {
+    Route::get('/activos', [PuestoController::class, 'activos']);
+    Route::patch('/{id}/toggle-activo', [PuestoController::class, 'toggleActivo']);
 
+    Route::apiResource('', PuestoController::class)
+        ->parameters(['' => 'id']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Turnos
+|--------------------------------------------------------------------------
+*/
+Route::prefix('turnos')->middleware('jwt.auth')->group(function () {
+
+    // ← SIEMPRE antes del apiResource
+    Route::get('/activos', [TurnoController::class, 'activos']);
+    Route::patch('/{id}/dias/{diaSemana}', [TurnoController::class, 'actualizarDia']);
+
+    Route::apiResource('', TurnoController::class)
+        ->parameters(['' => 'id']);
+});
 
 /**
  * SIEMPRE QUE SE AGREGE UNA NUEVA RUTA HAY QUE AGREGARLA A  

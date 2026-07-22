@@ -7,21 +7,34 @@ use App\Models\ChecadorRegistro;
 use App\Models\UserFirebirdIdentity;
 use App\Models\Turno;
 use App\Models\TurnoDia;
+use App\Services\FirebirdConnectionService;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ChecadorAsistenciaService
 {
+
+    public function __construct(
+        protected FirebirdConnectionService $firebirdService,
+    ) {}
+
     /**
      * Query base: SOLO identidades que son empleados reales (tabla TB de Firebird),
      * excluye clientes/proveedores/vendedores/usuarios de sistema que también
      * viven en users_firebird_identities.
      */
-    private function queryEmpleados(?string $empresa = null)
-    {
+    private function queryEmpleados(
+        ?string $empresa = null,
+        ?int $areaId = null,
+        ?int $departamentoId = null,
+        ?int $turnoId = null,
+        ?int $catalogoId = null,
+        ?string $busqueda = null,
+    ) {
         $query = UserFirebirdIdentity::query()
             ->where('firebird_tb_tabla', 'like', 'TB%')
             ->with(['firebirdUser', 'turnoActivo.turno.turnoDias'])
@@ -32,8 +45,42 @@ class ChecadorAsistenciaService
             $query->where('firebird_empresa', $empresa);
         }
 
+        if ($turnoId) {
+            $query->whereHas('turnoActivo', fn($q) => $q->where('turno_id', $turnoId));
+        }
+
+        if ($catalogoId) {
+            $query->whereHas('permisos', fn($q) => $q->where('catalogo_id', $catalogoId));
+        }
+
+        if ($areaId) {
+            $query->whereHas('puestoActivo', fn($q) => $q->where('area_id', $areaId));
+        }
+
+        if ($departamentoId) {
+            $query->whereHas('puestoActivo', fn($q) => $q->where('puesto_id', $departamentoId));
+        }
+
+        if ($busqueda) {
+            $claves = $this->buscarClavesPorNombre($busqueda);
+            $query->whereIn('firebird_user_clave', $claves ?: [-1]);
+        }
+
         return $query;
     }
+
+    private function buscarClavesPorNombre(string $busqueda): array
+    {
+        $connection = $this->firebirdService->getProductionConnection();
+
+        $filas = $connection->select(
+            "SELECT ID FROM USUARIOS WHERE NOMBRE LIKE ?",
+            ["%{$busqueda}%"]
+        );
+
+        return array_map(fn($row) => (int) $row->ID, $filas);
+    }
+
 
     /**
      * Tarjeta de UN empleado para la semana de $fechaEnSemana.
@@ -53,7 +100,7 @@ class ChecadorAsistenciaService
             ->where('valido', true)
             ->orderBy('fecha_hora')
             ->get()
-            ->groupBy(fn ($r) => $r->fecha->format('Y-m-d'));
+            ->groupBy(fn($r) => $r->fecha->format('Y-m-d'));
 
         $permisos = ChecadorPermiso::with('catalogo')
             ->where('user_firebird_identity_id', $identity->id)
@@ -63,7 +110,7 @@ class ChecadorAsistenciaService
                     ->orWhereBetween('fecha_fin', [$lunes->toDateString(), $domingo->toDateString()]);
             })
             ->get()
-            ->groupBy(fn ($p) => Carbon::parse($p->fecha_inicio)->format('Y-m-d'));
+            ->groupBy(fn($p) => Carbon::parse($p->fecha_inicio)->format('Y-m-d'));
 
         $dias = [];
         $totalMinutos = 0;
@@ -99,7 +146,7 @@ class ChecadorAsistenciaService
                 'metodo_salida' => $salida?->metodo,
                 'horas_trabajadas' => round($minutosDia / 60, 2),
                 // 👇 lo que faltaba: hora de entrada/salida de CADA permiso tomado ese día
-                'permisos' => $permisosDia->map(fn ($p) => [
+                'permisos' => $permisosDia->map(fn($p) => [
                     'id' => $p->id,
                     'tipo' => $p->catalogo->nombre ?? 'Permiso',
                     'hora_inicio' => $p->hora_inicio ? Carbon::parse($p->hora_inicio)->format('H:i') : null,
@@ -147,43 +194,58 @@ class ChecadorAsistenciaService
     /**
      * Tarjetas de TODOS los empleados (paginado), con o sin turno asignado.
      */
- public function tarjetaEquipo(string $fechaEnSemana, ?string $empresa = null, int $page = 1, int $perPage = 20): array
-{
-    $paginator = $this->queryEmpleados($empresa)->paginate($perPage, ['*'], 'page', $page);
+    public function tarjetaEquipo(
+        string $fechaEnSemana,
+        ?string $empresa = null,
+        int $page = 1,
+        int $perPage = 20,
+        ?int $areaId = null,
+        ?int $departamentoId = null,
+        ?int $turnoId = null,
+        ?int $catalogoId = null,
+        ?string $busqueda = null,
+    ): array {
+        $paginator = $this->queryEmpleados($empresa, $areaId, $departamentoId, $turnoId, $catalogoId, $busqueda)
+            ->paginate($perPage, ['*'], 'page', $page);
 
-    Log::info('TARJETA_EQUIPO_DEBUG', [
-        'fecha' => $fechaEnSemana,
-        'empresa' => $empresa,
-        'total_paginator' => $paginator->total(),
-        'items_esta_pagina' => $paginator->count(),
-    ]);
+        Log::info('TARJETA_EQUIPO_DEBUG', [
+            'fecha' => $fechaEnSemana,
+            'empresa' => $empresa,
+            'area_id' => $areaId,
+            'departamento_id' => $departamentoId,
+            'turno_id' => $turnoId,
+            'catalogo_id' => $catalogoId,
+            'busqueda' => $busqueda,
+            'total_paginator' => $paginator->total(),
+            'items_esta_pagina' => $paginator->count(),
+        ]);
 
-    $tarjetas = $paginator->getCollection()
-        ->map(function (UserFirebirdIdentity $identity) use ($fechaEnSemana) {
-            try {
-                return $this->tarjetaSemana($identity, $fechaEnSemana);
-            } catch (\Throwable $e) {
-                Log::error('TARJETA_SEMANA_FALLO', [
-                    'identity_id' => $identity->id,
-                    'error' => $e->getMessage(),
-                    'linea' => $e->getLine(),
-                ]);
-                return null; // para no tumbar toda la respuesta
-            }
-        })
-        ->filter()
-        ->values();
+        $tarjetas = $paginator->getCollection()
+            ->map(function (UserFirebirdIdentity $identity) use ($fechaEnSemana) {
+                try {
+                    return $this->tarjetaSemana($identity, $fechaEnSemana);
+                } catch (\Throwable $e) {
+                    Log::error('TARJETA_SEMANA_FALLO', [
+                        'identity_id' => $identity->id,
+                        'error' => $e->getMessage(),
+                        'linea' => $e->getLine(),
+                    ]);
+                    return null;
+                }
+            })
+            ->filter()
+            ->values();
 
-    return [
-        'data' => $tarjetas,
-        'meta' => [
-            'current_page' => $paginator->currentPage(),
-            'last_page' => $paginator->lastPage(),
-            'total' => $paginator->total(),
-            'per_page' => $paginator->perPage(),
-        ],
-    ];
-}
+        return [
+            'data' => $tarjetas,
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'total' => $paginator->total(),
+                'per_page' => $paginator->perPage(),
+            ],
+        ];
+    }
 
     public function csvSemana(UserFirebirdIdentity $identity, string $fechaEnSemana): string
     {
@@ -207,13 +269,17 @@ class ChecadorAsistenciaService
 
             foreach ($tarjeta['dias'] as $d) {
                 $permisosTexto = collect($d['permisos'])
-                    ->map(fn ($p) => "{$p['tipo']} ({$p['hora_inicio']}-{$p['hora_fin']})")
+                    ->map(fn($p) => "{$p['tipo']} ({$p['hora_inicio']}-{$p['hora_fin']})")
                     ->implode(' | ');
 
                 fputcsv($handle, [
-                    $d['fecha'], $d['dia_semana'], $d['horario_esperado'],
-                    $d['hora_entrada_real'] ?? '-', $d['hora_salida_real'] ?? '-',
-                    $d['horas_trabajadas'], $permisosTexto,
+                    $d['fecha'],
+                    $d['dia_semana'],
+                    $d['horario_esperado'],
+                    $d['hora_entrada_real'] ?? '-',
+                    $d['hora_salida_real'] ?? '-',
+                    $d['horas_trabajadas'],
+                    $permisosTexto,
                 ]);
             }
             fputcsv($handle, ['Total horas de la semana', $tarjeta['total_horas_semana']]);
@@ -234,13 +300,17 @@ class ChecadorAsistenciaService
 
         foreach ($tarjeta['dias'] as $d) {
             $permisosTexto = collect($d['permisos'])
-                ->map(fn ($p) => "{$p['tipo']} ({$p['hora_inicio']}-{$p['hora_fin']})")
+                ->map(fn($p) => "{$p['tipo']} ({$p['hora_inicio']}-{$p['hora_fin']})")
                 ->implode(' | ');
 
             fputcsv($handle, [
-                $d['fecha'], $d['dia_semana'], $d['horario_esperado'],
-                $d['hora_entrada_real'] ?? '-', $d['hora_salida_real'] ?? '-',
-                $d['horas_trabajadas'], $permisosTexto,
+                $d['fecha'],
+                $d['dia_semana'],
+                $d['horario_esperado'],
+                $d['hora_entrada_real'] ?? '-',
+                $d['hora_salida_real'] ?? '-',
+                $d['horas_trabajadas'],
+                $permisosTexto,
             ]);
         }
         fputcsv($handle, []);

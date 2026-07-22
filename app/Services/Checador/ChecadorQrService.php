@@ -137,7 +137,7 @@ class ChecadorQrService
                 'dispositivo' => substr((string) ($meta['user_agent'] ?? ''), 0, 250),
                 'valido' => true,
                 'observaciones' => $permisoActivo
-                    ? "Dentro de permiso #{$permisoActivo->id} ({$permisoActivo->motivo})"
+                    ? "{$permisoActivo->motivo}"
                     : null,
             ]);
 

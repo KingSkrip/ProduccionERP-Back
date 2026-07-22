@@ -31,9 +31,24 @@ class ChecadorAsistenciaController extends Controller
         $page = (int) $request->query('page', 1);
         $perPage = (int) $request->query('per_page', 20);
 
-        return response()->json($this->service->tarjetaEquipo($fecha, $empresa, $page, $perPage));
-    }
+        $areaId = $request->query('area_id');
+        $departamentoId = $request->query('departamento_id');
+        $turnoId = $request->query('turno_id');
+        $catalogoId = $request->query('catalogo_id');
+        $busqueda = $request->query('busqueda');
 
+        return response()->json($this->service->tarjetaEquipo(
+            $fecha,
+            $empresa,
+            $page,
+            $perPage,
+            $areaId ? (int) $areaId : null,
+            $departamentoId ? (int) $departamentoId : null,
+            $turnoId ? (int) $turnoId : null,
+            $catalogoId ? (int) $catalogoId : null,
+            $busqueda,
+        ));
+    }
     public function excelSemana(Request $request, int $identityId)
     {
         $identity = UserFirebirdIdentity::findOrFail($identityId);

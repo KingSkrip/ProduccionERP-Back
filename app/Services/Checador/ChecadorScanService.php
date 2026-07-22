@@ -191,6 +191,10 @@ class ChecadorScanService
             $this->permisoService->iniciarUsoPermiso($permisoActivo, $now);
         }
 
+        if ($tipo === 'Fin de permiso' && $permisoActivo) {
+    $this->permisoService->finalizarUsoPermiso($permisoActivo, $now);
+}
+
         $esEntrada = in_array($tipo, ['entrada', 'Fin de permiso'], true);
 
         // Regla 10: para identidades marcadas, si checan salida unos minutos antes de su
@@ -217,7 +221,7 @@ class ChecadorScanService
         }
 
         $observaciones = $permisoActivo
-            ? "Dentro de permiso #{$permisoActivo->id} ({$permisoActivo->motivo})"
+            ? "{$permisoActivo->motivo}"
             : null;
 
         DB::beginTransaction();

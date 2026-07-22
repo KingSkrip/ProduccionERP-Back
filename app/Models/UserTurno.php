@@ -138,4 +138,27 @@ class UserTurno extends Model
     {
         return $query->where('semana_anio', $semana);
     }
+
+
+
+    // 👇 EL FIX: si el día específico no trae hora, cae al horario general del turno
+    public function getHoraEntradaEfectivaAttribute(): ?string
+    {
+        return $this->hora_entrada ?? $this->turno?->hora_entrada;
+    }
+
+    public function getHoraSalidaEfectivaAttribute(): ?string
+    {
+        return $this->hora_salida ?? $this->turno?->hora_salida;
+    }
+
+    public function getHoraInicioComidaEfectivaAttribute(): ?string
+    {
+        return $this->hora_inicio_comida ?? $this->turno?->hora_inicio_comida ?? null;
+    }
+
+    public function getHoraFinComidaEfectivaAttribute(): ?string
+    {
+        return $this->hora_fin_comida ?? $this->turno?->hora_fin_comida ?? null;
+    }
 }

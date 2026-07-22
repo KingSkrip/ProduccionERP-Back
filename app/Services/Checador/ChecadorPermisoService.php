@@ -407,4 +407,58 @@ class ChecadorPermisoService
     {
         return $identity->puestoActivo()->first()?->jefe_id;
     }
+
+
+    /**
+     * Cierra el uso real de un permiso cuando el empleado checa su regreso
+     * ("Fin de permiso"). Corrige el hora_fin "estimado" (duracion_default_minutos)
+     * que se puso al iniciar, reemplazándolo por la hora REAL de regreso.
+     */
+    public function finalizarUsoPermiso(ChecadorPermiso $permiso, Carbon $ahora): void
+    {
+        // Si nunca se "inició" en automático (permisos de día completo, de horario
+        // fijo capturado por el usuario, etc.), no tocamos nada.
+        if ($permiso->hora_inicio === null) {
+            return;
+        }
+
+        $horaInicioStr = $this->horaComoString($permiso->hora_inicio);
+        $horaInicio = Carbon::parse($permiso->fecha_inicio->toDateString() . ' ' . $horaInicioStr);
+
+        // Protección: si por algún motivo llega un registro desordenado
+        // (fin antes que inicio), no muevas el hora_fin hacia atrás.
+        if ($ahora->lessThan($horaInicio)) {
+            return;
+        }
+
+        $permiso->hora_fin = $ahora->toTimeString();
+        $permiso->save();
+
+        Log::info('PERMISO_FINALIZADO_HORA_REAL', [
+            'permiso_id' => $permiso->id,
+            'hora_inicio' => $horaInicioStr,
+            'hora_fin_real' => $permiso->hora_fin,
+        ]);
+    }
+
+    /**
+     * hora_inicio/hora_fin pueden llegar como Carbon (cast datetime) o string.
+     * Normaliza a "H:i:s" para poder concatenar con la fecha sin reventar.
+     */
+    private function horaComoString($valor): ?string
+    {
+        if ($valor === null) {
+            return null;
+        }
+
+        if ($valor instanceof Carbon) {
+            return $valor->format('H:i:s');
+        }
+
+        if (is_string($valor) && str_contains($valor, ' ')) {
+            return Carbon::parse($valor)->format('H:i:s');
+        }
+
+        return (string) $valor;
+    }
 }
