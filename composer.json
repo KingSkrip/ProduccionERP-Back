@@ -11,6 +11,7 @@
     "require": {
         "php": "^8.2",
         "barryvdh/laravel-dompdf": "^3.1",
+        "doctrine/dbal": "^4.4",
         "firebase/php-jwt": "^6.11",
         "harrygulliford/laravel-firebird": "^3.3",
         "laravel/framework": "^11.31",

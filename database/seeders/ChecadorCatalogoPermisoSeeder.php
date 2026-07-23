@@ -70,18 +70,6 @@ class ChecadorCatalogoPermisoSeeder extends Seeder
                 'orden' => 5,
             ],
             [
-                'nombre' => 'Permiso sin goce de sueldo',
-                'clave' => 'SIN_GOCE_SUELDO',
-        
-                'descripcion' => 'Permiso autorizado que NO cuenta como tiempo trabajado.',
-                'duracion_default_minutos' => null,
-                'tipo_unidad' => 'dias',
-                'requiere_regreso_mismo_dia' => '0',
-                'suma_a_horas_trabajadas' => false,
-                'requiere_aprobacion' => true,
-                'orden' => 6,
-            ],
-            [
                 'nombre' => 'Salida por función/trabajo',
                 'clave' => 'FUNCION',
               
