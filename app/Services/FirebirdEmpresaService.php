@@ -10,8 +10,22 @@ class FirebirdEmpresaService
 
     public function __construct()
     {
-        $this->empresa = $this->resolverEmpresa();
+        $fbDatabase = env('FB_DATABASE'); // srvasp01old
+        preg_match('/\d{2}/', $fbDatabase, $matches);
+        $this->empresa = $matches[0] ?? '00';
     }
+
+
+    public function setEmpresa(string $empresa): void
+    {
+        $this->empresa = $empresa;
+    }
+
+    public function getEmpresa(): string
+    {
+        return $this->empresa;
+    }
+
 
     protected function resolverEmpresa(): string
     {
@@ -23,10 +37,5 @@ class FirebirdEmpresaService
             'fb_database' => $fbDatabase,
         ]);
         return $empresa;
-    }
-
-    public function getEmpresa(): string
-    {
-        return $this->empresa;
     }
 }

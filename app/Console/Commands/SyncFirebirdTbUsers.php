@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Services\FirebirdComandEmpresaService;
 use App\Services\FirebirdConnectionService;
+use App\Services\FirebirdEmpresaService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -16,8 +17,11 @@ class SyncFirebirdTbUsers extends Command
     protected $description = 'Sincroniza TB (empleados activos) con USUARIOS Firebird y pivote MySQL';
     protected FirebirdConnectionService $firebirdService;
 
-    public function __construct(FirebirdConnectionService $firebirdService)
-    {
+    public function __construct(
+        FirebirdConnectionService $firebirdService,
+        FirebirdEmpresaService $empresaService,
+        FirebirdConnectionService $connectionService
+    ) {
         parent::__construct();
         $this->firebirdService = $firebirdService;
     }
@@ -31,7 +35,13 @@ class SyncFirebirdTbUsers extends Command
 
         try {
             // 🔌 Inicializar servicio con empresa específica
-            $firebirdService = new FirebirdComandEmpresaService($empresa);
+            $empresaService = app(FirebirdEmpresaService::class);
+            $empresaService->setEmpresa($empresa);
+
+            $firebirdService = new FirebirdComandEmpresaService(
+                $empresaService,
+                $this->firebirdService // ya lo tienes inyectado en el constructor del comando
+            );
 
             // 📊 Obtener tabla TB más reciente
             $this->info("📊 Buscando tabla TB activa...");
@@ -305,7 +315,7 @@ class SyncFirebirdTbUsers extends Command
     protected function crearUsuarioFirebird(string $nombre, string $correo, string $passwordPlain, int $depto): ?int
     {
         try {
-            $connection = $this->getProduccionConnection();
+            $connection = $this->firebirdService->getProductionConnection();
 
             // 🔑 Obtener siguiente CLAVE
             $maxClave = $connection->selectOne("SELECT MAX(CLAVE) as MAX_CLAVE FROM USUARIOS");

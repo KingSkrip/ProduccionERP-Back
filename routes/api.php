@@ -354,6 +354,7 @@ Route::prefix('checador')->middleware('jwt.auth')->group(function () {
 
     Route::patch('/identidades/{identityId}/ajuste-salida', [ChecadorIdentidadController::class, 'toggleAjusteSalida']);
     Route::patch('/identidades/{identityId}/credencial', [ChecadorIdentidadController::class, 'asignarCredencial']);
+    Route::get('/empleados/lista', [ChecadorAsistenciaController::class, 'listaEmpleados']);
 });
 
 

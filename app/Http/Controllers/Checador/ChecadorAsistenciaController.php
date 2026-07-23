@@ -61,15 +61,63 @@ class ChecadorAsistenciaController extends Controller
         return response()->download($path, $archivo)->deleteFileAfterSend(true);
     }
 
+    // public function excelEquipo(Request $request)
+    // {
+    //     $fecha = $request->query('fecha', now()->toDateString());
+    //     $empresa = $request->query('empresa');
+
+    //     $spreadsheet = $this->excelService->excelEquipo($fecha, $empresa);
+    //     $archivo = "asistencia_equipo_{$fecha}" . ($empresa ? "_emp{$empresa}" : '') . '.xlsx';
+    //     $path = $this->excelService->guardarTemporal($spreadsheet, $archivo);
+
+    //     return response()->download($path, $archivo)->deleteFileAfterSend(true);
+    // }
+
     public function excelEquipo(Request $request)
     {
         $fecha = $request->query('fecha', now()->toDateString());
         $empresa = $request->query('empresa');
+        $areaId = $request->query('area_id');
+        $departamentoId = $request->query('departamento_id');
+        $turnoId = $request->query('turno_id');
+        $busqueda = $request->query('busqueda');
 
-        $spreadsheet = $this->excelService->excelEquipo($fecha, $empresa);
+        $spreadsheet = $this->excelService->excelEquipo(
+            $fecha,
+            $empresa,
+            $areaId ? (int) $areaId : null,
+            $departamentoId ? (int) $departamentoId : null,
+            $turnoId ? (int) $turnoId : null,
+            null, // catalogoId — el modal no lo usa, se manda null
+            $busqueda,
+        );
+
         $archivo = "asistencia_equipo_{$fecha}" . ($empresa ? "_emp{$empresa}" : '') . '.xlsx';
         $path = $this->excelService->guardarTemporal($spreadsheet, $archivo);
 
         return response()->download($path, $archivo)->deleteFileAfterSend(true);
+    }
+
+
+    public function listaEmpleados(Request $request)
+    {
+        $empresa = $request->query('empresa');
+        $areaId = $request->query('area_id');
+        $departamentoId = $request->query('departamento_id');
+        $turnoId = $request->query('turno_id');
+
+        $identidades = $this->service->identidadesFiltradas(
+            $empresa,
+            $areaId ? (int) $areaId : null,
+            $departamentoId ? (int) $departamentoId : null,
+            $turnoId ? (int) $turnoId : null,
+        );
+
+        $lista = $identidades->map(fn($identity) => [
+            'id' => $identity->id,
+            'nombre' => trim((string) ($identity->firebirdUser->NOMBRE ?? "Empleado #{$identity->id}")),
+        ])->sortBy('nombre')->values();
+
+        return response()->json($lista);
     }
 }

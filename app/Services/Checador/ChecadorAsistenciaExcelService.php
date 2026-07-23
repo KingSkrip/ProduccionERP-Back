@@ -8,16 +8,31 @@ use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Worksheet\PageBreak;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class ChecadorAsistenciaExcelService
 {
-    private const EMPRESA_NOMBRE = 'COMERCIALIZADORA FIBRASAN S.A. DE C.V.';
+    private const EMPRESAS = [
+        '1' => 'GORDON',
+        '2' => 'FIBRA',
+        '3' => 'BALLESTA',
+        '4' => 'COMERCIALIZADORA FIBRASAN S.A. DE C.V.',
+    ];
 
     public function __construct(protected ChecadorAsistenciaService $asistenciaService) {}
 
+    private function nombreEmpresa(UserFirebirdIdentity $identity): string
+    {
+        $codigoOriginal = (string) $identity->firebird_empresa;
+        $codigo = (string) (int) $identity->firebird_empresa;
+
+        return self::EMPRESAS[$codigo] ?? "EMPRESA {$codigoOriginal}";
+    }
+
     /**
-     * Excel de UN empleado, con el mismo layout de "Tarjeta de Asistencia".
+     * Excel de UN empleado, con el layout de "Tarjeta de Asistencia".
      */
     public function excelIndividual(UserFirebirdIdentity $identity, string $fechaEnSemana): Spreadsheet
     {
@@ -26,54 +41,83 @@ class ChecadorAsistenciaExcelService
         $spreadsheet = new Spreadsheet();
         $spreadsheet->removeSheetByIndex(0);
 
-        $this->escribirHoja($spreadsheet, $tarjeta, $identity);
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle($this->nombreHojaSeguro($tarjeta['nombre'] ?: "ID{$identity->id}"));
+        $sheet->getParent()->getDefaultStyle()->getFont()->setName('Arial')->setSize(10);
+
+        $row = 1;
+        $this->escribirBloqueEmpleado($sheet, $row, $tarjeta, $identity);
+        $this->aplicarAnchoColumnas($sheet);
 
         return $spreadsheet;
     }
 
     /**
-     * Excel de TODOS los empleados filtrados: un libro, una hoja por empleado.
+     * Excel de TODOS los empleados filtrados: UN SOLO libro, UNA SOLA hoja,
+     * con el bloque de cada empleado uno debajo del otro.
      */
-    public function excelEquipo(string $fechaEnSemana, ?string $empresa = null): Spreadsheet
-    {
-        // Reutilizamos la query interna del servicio de asistencia (todos, sin paginar).
-        $identidades = app(\App\Models\UserFirebirdIdentity::class)::query()
-            ->where('firebird_tb_tabla', 'like', 'TB%')
-            ->when($empresa, fn ($q) => $q->where('firebird_empresa', $empresa))
-            ->with(['firebirdUser', 'turnoActivo.turno.turnoDias'])
-            ->orderBy('firebird_empresa')
-            ->orderBy('firebird_user_clave')
-            ->get();
+    public function excelEquipo(
+        string $fechaEnSemana,
+        ?string $empresa = null,
+        ?int $areaId = null,
+        ?int $departamentoId = null,
+        ?int $turnoId = null,
+        ?int $catalogoId = null,
+        ?string $busqueda = null,
+    ): Spreadsheet {
+        $identidades = $this->asistenciaService->identidadesFiltradas(
+            $empresa,
+            $areaId,
+            $departamentoId,
+            $turnoId,
+            $catalogoId,
+            $busqueda
+        );
 
         $spreadsheet = new Spreadsheet();
         $spreadsheet->removeSheetByIndex(0);
 
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle('Asistencia Equipo');
+        $sheet->getParent()->getDefaultStyle()->getFont()->setName('Arial')->setSize(10);
+
+        $row = 1;
+
         foreach ($identidades as $identity) {
-            $tarjeta = $this->asistenciaService->tarjetaSemana($identity, $fechaEnSemana);
-            $this->escribirHoja($spreadsheet, $tarjeta, $identity);
+            try {
+                $tarjeta = $this->asistenciaService->tarjetaSemana($identity, $fechaEnSemana);
+            } catch (\Throwable $e) {
+                // Si un empleado falla, lo saltamos pero seguimos con el resto.
+                continue;
+            }
+
+           if ($row > 1) {
+    $sheet->setBreak("A{$row}", Worksheet::BREAK_ROW);
+}
+            $this->escribirBloqueEmpleado($sheet, $row, $tarjeta, $identity);
+
+            // Espacio en blanco entre un empleado y el siguiente.
+            $row += 2;
         }
 
-        // Si no hubo nadie que coincidiera, deja al menos una hoja vacía para no romper el writer.
-        if ($spreadsheet->getSheetCount() === 0) {
-            $spreadsheet->createSheet();
+        // Si nadie coincidió, deja al menos un mensaje para no romper el writer.
+        if ($row === 1) {
+            $sheet->setCellValue('A1', 'No se encontraron empleados con los filtros seleccionados.');
         }
+
+        $this->aplicarAnchoColumnas($sheet);
 
         return $spreadsheet;
     }
 
-    private function escribirHoja(Spreadsheet $spreadsheet, array $tarjeta, UserFirebirdIdentity $identity): void
+    /**
+     * Escribe el bloque completo de UN empleado a partir de $row,
+     * y deja $row apuntando a la siguiente fila libre al terminar.
+     */
+    private function escribirBloqueEmpleado($sheet, int &$row, array $tarjeta, UserFirebirdIdentity $identity): void
     {
-        $nombreHoja = $this->nombreHojaSeguro($tarjeta['nombre'] ?: "ID{$identity->id}");
-        $sheet = $spreadsheet->createSheet();
-        $sheet->setTitle($nombreHoja);
-
-        // Fuente base
-        $sheet->getParent()->getDefaultStyle()->getFont()->setName('Arial')->setSize(10);
-
         $col = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
         $lastCol = 'G';
-
-        $row = 1;
 
         $sheet->setCellValue("A{$row}", 'Usuario: ' . (auth()->user()->name ?? 'RH'));
         $row++;
@@ -89,7 +133,7 @@ class ChecadorAsistenciaExcelService
         $sheet->getStyle("A{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
         $row++;
 
-        $sheet->setCellValue("A{$row}", self::EMPRESA_NOMBRE);
+        $sheet->setCellValue("A{$row}", $this->nombreEmpresa($identity));
         $sheet->mergeCells("A{$row}:{$lastCol}{$row}");
         $sheet->getStyle("A{$row}")->getFont()->setBold(true);
         $sheet->getStyle("A{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
@@ -106,7 +150,7 @@ class ChecadorAsistenciaExcelService
         $sheet->getStyle("A{$row}")->getFont()->setBold(true);
         $row++;
 
-        $sheet->setCellValue("A{$row}", 'PUESTO: ' . ($identity->puestoActivo?->puesto?->nombre ?? 'N/D'));
+        $sheet->setCellValue("A{$row}", 'AREA: ' . ($identity->puestoActivo?->puesto?->nombre ?? 'N/D'));
         $sheet->setCellValue("D{$row}", 'Tarjeta: ' . ($identity->numero_credencial ?? 'N/D'));
         $sheet->setCellValue("F{$row}", 'Turno: ' . ($tarjeta['turno']['nombre'] ?? 'Sin turno'));
         $row += 2;
@@ -162,13 +206,18 @@ class ChecadorAsistenciaExcelService
         $sheet->setCellValue("A{$row}", 'TRABAJADOR: ' . $tarjeta['nombre']);
         $sheet->setCellValue("D{$row}", 'JEFE DE DEPARTAMENTO');
         $sheet->setCellValue("F{$row}", 'Vo. Bo. RH');
+        $row++;
 
-        // Anchos de columna
-        foreach ($col as $c) {
+        // Bordes de la tabla de este bloque
+        $sheet->getStyle("A{$headerRow}:{$lastCol}" . ($row - 4))
+            ->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
+    }
+
+    private function aplicarAnchoColumnas($sheet): void
+    {
+        foreach (['A', 'B', 'C', 'D', 'E', 'F', 'G'] as $c) {
             $sheet->getColumnDimension($c)->setAutoSize(true);
         }
-        $sheet->getStyle("A{$headerRow}:{$lastCol}" . ($row))
-            ->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
     }
 
     private function nombreHojaSeguro(string $texto): string

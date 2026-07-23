@@ -322,4 +322,15 @@ class ChecadorAsistenciaService
 
         return $csv;
     }
+
+    public function identidadesFiltradas(
+        ?string $empresa = null,
+        ?int $areaId = null,
+        ?int $departamentoId = null,
+        ?int $turnoId = null,
+        ?int $catalogoId = null,
+        ?string $busqueda = null,
+    ) {
+        return $this->queryEmpleados($empresa, $areaId, $departamentoId, $turnoId, $catalogoId, $busqueda)->get();
+    }
 }

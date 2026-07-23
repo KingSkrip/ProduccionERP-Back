@@ -50,7 +50,7 @@ return new class extends Migration
             ])->nullable();
 
             $table->integer('minutos_ausencia')->nullable();
-
+  $table->integer('minutos_pagados')->default(0)->nullable();
             $table->date('fecha_reposicion')->nullable();
 
             $table->time('hora_inicio_reposicion')->nullable();
