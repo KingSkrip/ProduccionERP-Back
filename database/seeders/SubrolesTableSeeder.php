@@ -28,12 +28,6 @@ class SubrolesTableSeeder extends Seeder
             ['nombre' => 'ALMACEN', 'guard_name' => 'web'],
             ['nombre' => 'ENCARGADO', 'guard_name' => 'web'],
             ['nombre' => 'ADMINISTRATIVO', 'guard_name' => 'web'],
-
-
-
-
-
-            
         ];
 
         foreach ($subroles as $subrole) {
