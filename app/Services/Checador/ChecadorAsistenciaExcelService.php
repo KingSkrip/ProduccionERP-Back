@@ -15,10 +15,11 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 class ChecadorAsistenciaExcelService
 {
     private const EMPRESAS = [
-        '1' => 'GORDON',
-        '2' => 'FIBRA',
-        '3' => 'BALLESTA',
+        '1' => 'GORDON LERMA GO',
+        '2' => 'FIBRA 26',
+        '3' => 'FIBRA BALLESTA',
         '4' => 'COMERCIALIZADORA FIBRASAN S.A. DE C.V.',
+        '5' => 'BH CONTINENTAL',
     ];
 
     public function __construct(protected ChecadorAsistenciaService $asistenciaService) {}
@@ -91,9 +92,9 @@ class ChecadorAsistenciaExcelService
                 continue;
             }
 
-           if ($row > 1) {
-    $sheet->setBreak("A{$row}", Worksheet::BREAK_ROW);
-}
+            if ($row > 1) {
+                $sheet->setBreak("A{$row}", Worksheet::BREAK_ROW);
+            }
             $this->escribirBloqueEmpleado($sheet, $row, $tarjeta, $identity);
 
             // Espacio en blanco entre un empleado y el siguiente.

@@ -159,7 +159,7 @@ class UserFirebirdIdentity extends Model
     }
 
     public function userTurnos()
-{
-    return $this->hasMany(\App\Models\UserTurno::class, 'user_firebird_identity_id');
-}
+    {
+        return $this->hasMany(\App\Models\UserTurno::class, 'user_firebird_identity_id');
+    }
 }

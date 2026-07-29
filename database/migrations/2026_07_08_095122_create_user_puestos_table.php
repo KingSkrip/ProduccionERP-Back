@@ -37,6 +37,14 @@ return new class extends Migration
                 ->cascadeOnUpdate()
                 ->nullOnDelete();
 
+
+            // Jefe auxiliar / suplente (otro usuario Firebird)
+            $table->foreignId('jefe_aux_id')
+                ->nullable()
+                ->constrained('users_firebird_identities')
+                ->cascadeOnUpdate()
+                ->nullOnDelete();
+
             $table->date('fecha_inicio')->nullable();
             $table->date('fecha_fin')->nullable();
 

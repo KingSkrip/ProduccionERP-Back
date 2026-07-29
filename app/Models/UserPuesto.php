@@ -12,6 +12,7 @@ class UserPuesto extends Model
         'puesto_id',
         'area_id',
         'jefe_id',
+        'jefe_aux_id',
         'fecha_inicio',
         'fecha_fin',
         'activo',
@@ -36,7 +37,11 @@ class UserPuesto extends Model
     }
 
     public function jefe()
-{
-    return $this->belongsTo(UserFirebirdIdentity::class, 'jefe_id');
-}
+    {
+        return $this->belongsTo(UserFirebirdIdentity::class, 'jefe_id');
+    }
+        public function jefe_auxiliar()
+    {
+        return $this->belongsTo(UserFirebirdIdentity::class, 'jefe_aux_id');
+    }
 }

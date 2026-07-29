@@ -12,7 +12,7 @@ use App\Models\Turno;
 class SyncUserTurnosPorEmpresa extends Command
 {
     protected $signature = 'mysql:sync-user-turnos-empresa 
-        {--empresa= : Procesar solo una empresa (01,02,03,04)}';
+        {--empresa= : Procesar solo una empresa (01,02,03,04,05)}';
 
     protected $description = 'Asigna turnos a users_firebird_identities según su empresa';
 
