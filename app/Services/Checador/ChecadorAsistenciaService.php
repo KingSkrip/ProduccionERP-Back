@@ -122,8 +122,26 @@ class ChecadorAsistenciaService
 
             $horario = $this->horarioEsperado($turno, $dia);
 
+            // Entrada del día = el PRIMER registro de tipo "entrada".
             $entrada = $regsDia->firstWhere('tipo', 'entrada');
-            $salida = $regsDia->where('tipo', 'salida')->last();
+
+            // Salida del día = el ÚLTIMO movimiento del día, SOLO si ese
+            // movimiento representa que el empleado efectivamente "salió"
+            // (salida normal, o un permiso que se quedó abierto/no_regresa
+            // ese mismo día). Si el último evento fue "entrada" o
+            // "Fin de permiso", el empleado sigue técnicamente adentro y
+            // no hay salida real que mostrar todavía.
+            //
+            // Esto corrige el caso donde el filtro viejo
+            // ($regsDia->where('tipo','salida')->last()) no detectaba un
+            // "Inicio de permiso" sin cerrar como la salida del día, y
+            // dejaba la columna Salida en "—" aunque el empleado sí se
+            // había ido.
+            $ultimoRegistroDia = $regsDia->last();
+
+            $salida = ($ultimoRegistroDia && in_array($ultimoRegistroDia->tipo, ['salida', 'Inicio de permiso'], true))
+                ? $ultimoRegistroDia
+                : $regsDia->where('tipo', 'salida')->last();
 
             $minutosDia = ($entrada && $salida)
                 ? $entrada->fecha_hora->diffInMinutes($salida->fecha_hora)

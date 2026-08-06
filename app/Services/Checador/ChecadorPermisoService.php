@@ -117,9 +117,17 @@ class ChecadorPermisoService
             throw new RuntimeException('El jefe ya se pronunció sobre este permiso', 409);
         }
 
-        $jefeIdActual = $this->jefeIdDe($permiso->identity);
-        if ($jefeIdActual && (int) $data['aprobado_por'] !== (int) $jefeIdActual) {
-            throw new RuntimeException('Solo el jefe asignado puede resolver este permiso', 403);
+        $puesto = $permiso->identity->puestoActivo()->first();
+        $autorizadoresValidos = array_filter([
+            $puesto?->jefe_id,
+            $puesto?->jefe_aux_id,
+        ]);
+
+        if (
+            !empty($autorizadoresValidos)
+            && !in_array((int) $data['aprobado_por'], array_map('intval', $autorizadoresValidos), true)
+        ) {
+            throw new RuntimeException('Solo el jefe o el jefe auxiliar asignado pueden resolver este permiso', 403);
         }
 
         $permiso->estado_jefe = $data['estado'];
@@ -296,11 +304,32 @@ class ChecadorPermisoService
     //  COMIDA AUTOMÁTICA
     // ══════════════════════════════════════════════════════════════
 
+    /**
+     * Genera (si aplica) el permiso automático de "Hora de comida" al checar
+     * la primera entrada del día. La lógica ahora se divide según
+     * `checador_permisos_extraordinarios`:
+     *
+     *  - puede_salir_cualquier_momento = true  → NO se genera nada: esta
+     *    gente ya tiene libertad total de entrada/salida, no necesitan que
+     *    les amarremos un permiso de comida específico.
+     *  - puede_salir_comer = true, salir_comer_necesita_permiso = false →
+     *    se genera el permiso pero AUTO-APROBADO (no espera al jefe).
+     *  - Cualquier otro caso (o sin config extraordinaria) → comportamiento
+     *    de siempre: se genera "pendiente" y espera aprobación del jefe.
+     */
     public function crearPermisoComidaAutomaticoSiAplica(
         UserFirebirdIdentity $identity,
         string $fecha,
         ?array $horariosHoy
     ): ?ChecadorPermiso {
+        $permisoExtra = $identity->permisoExtraordinario;
+        $extraActivo = $permisoExtra && $permisoExtra->activo;
+
+        // Libertad total de entrada/salida: no se le amarra permiso de comida.
+        if ($extraActivo && $permisoExtra->puede_salir_cualquier_momento) {
+            return null;
+        }
+
         if (empty($horariosHoy['hora_salida'])) {
             return null;
         }
@@ -320,7 +349,13 @@ class ChecadorPermisoService
             return null;
         }
 
-        $permiso = ChecadorPermiso::create([
+        // Sin config extraordinaria (o config inactiva) se mantiene el flujo
+        // normal: se genera pendiente y espera aprobación del jefe.
+        $necesitaPermiso = $extraActivo
+            ? (bool) $permisoExtra->salir_comer_necesita_permiso
+            : true;
+
+        $permisoData = [
             'user_firebird_identity_id' => $identity->id,
             'checador_catalogo_permiso_id' => $catalogo->id,
             'firebird_empresa' => $identity->firebird_empresa,
@@ -331,17 +366,29 @@ class ChecadorPermisoService
             'hora_fin' => null,
             'no_regresa' => false,
             'motivo' => 'Hora de comida',
-            'estado' => 'pendiente',
+            'estado' => $necesitaPermiso ? 'pendiente' : 'aprobado',
             'estado_rh' => 'no_aplica',
-            'estado_jefe' => 'pendiente',
-        ]);
+            'estado_jefe' => $necesitaPermiso ? 'pendiente' : 'aprobado',
+        ];
 
-        $this->autoAprobarSiNoTieneJefe($permiso, $identity);
+        if (!$necesitaPermiso) {
+            $permisoData['fecha_resolucion_jefe'] = now();
+            $permisoData['comentarios_jefe'] = 'Autoaprobado: el colaborador no requiere permiso para su hora de comida.';
+        }
+
+        $permiso = ChecadorPermiso::create($permisoData);
+
+        // Si sí requiere permiso pero el colaborador no tiene jefe asignado,
+        // se sigue auto-aprobando por el motivo de siempre.
+        if ($necesitaPermiso) {
+            $this->autoAprobarSiNoTieneJefe($permiso, $identity);
+        }
 
         Log::info('PERMISO_COMIDA_GENERADO', [
             'permiso_id' => $permiso->id,
             'identity_id' => $identity->id,
             'fecha' => $fecha,
+            'necesitaba_permiso' => $necesitaPermiso,
             'estado' => $permiso->fresh()->estado,
         ]);
 
@@ -367,7 +414,7 @@ class ChecadorPermisoService
 
     private function autoAprobarSiNoTieneJefe(ChecadorPermiso $permiso, UserFirebirdIdentity $identity): void
     {
-        if ($this->jefeIdDe($identity)) {
+        if ($this->jefeIdDe($identity) || $this->jefeAuxIdDe($identity)) {
             return;
         }
 
@@ -381,7 +428,10 @@ class ChecadorPermisoService
     public function pendientesJefe(int $jefeId)
     {
         return ChecadorPermiso::where('estado_jefe', 'pendiente')
-            ->whereHas('identity.puestoActivo', fn($q) => $q->where('jefe_id', $jefeId))
+            ->whereHas('identity.puestoActivo', function ($q) use ($jefeId) {
+                $q->where('jefe_id', $jefeId)
+                    ->orWhere('jefe_aux_id', $jefeId);
+            })
             ->with(['identity.firebirdUser', 'identity.puestoActivo.area', 'identity.puestoActivo.puesto', 'catalogo'])
             ->orderBy('fecha_inicio')
             ->paginate(20);
@@ -397,7 +447,10 @@ class ChecadorPermisoService
 
     public function historialEquipo(int $jefeId)
     {
-        return ChecadorPermiso::whereHas('identity.puestoActivo', fn($q) => $q->where('jefe_id', $jefeId))
+        return ChecadorPermiso::whereHas('identity.puestoActivo', function ($q) use ($jefeId) {
+            $q->where('jefe_id', $jefeId)
+                ->orWhere('jefe_aux_id', $jefeId);
+        })
             ->with(['identity.firebirdUser', 'identity.puestoActivo.area', 'catalogo'])
             ->orderByDesc('fecha_inicio')
             ->paginate(100);
@@ -406,6 +459,11 @@ class ChecadorPermisoService
     private function jefeIdDe(UserFirebirdIdentity $identity): ?int
     {
         return $identity->puestoActivo()->first()?->jefe_id;
+    }
+
+    private function jefeAuxIdDe(UserFirebirdIdentity $identity): ?int
+    {
+        return $identity->puestoActivo()->first()?->jefe_aux_id;
     }
 
 

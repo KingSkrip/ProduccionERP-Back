@@ -162,4 +162,10 @@ class UserFirebirdIdentity extends Model
     {
         return $this->hasMany(\App\Models\UserTurno::class, 'user_firebird_identity_id');
     }
+
+
+    public function permisoExtraordinario()
+    {
+        return $this->hasOne(ChecadorPermisoExtraordinario::class, 'user_firebird_identity_id');
+    }
 }

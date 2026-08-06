@@ -134,19 +134,25 @@ class AuthController extends Controller
                 $qrData = (new ChecadorAccessQrCodeResource($qr))->resolve();
             }
 
-            $userPuesto = null;
+$userPuesto = null;
+$esJefeAuxiliar = false; 
 
-            if ($identity) {
-                $identity = UserFirebirdIdentity::where('firebird_user_clave', (int)$usuario->ID)
-                    ->with([
-                        'puestoActivo.puesto',
-                        'puestoActivo.area',
-                        'puestoActivo.jefe.firebirdUser',
-                    ])
-                    ->first();
+if ($identity) {
+    $identity = UserFirebirdIdentity::where('firebird_user_clave', (int)$usuario->ID)
+        ->with([
+            'puestoActivo.puesto',
+            'puestoActivo.area',
+            'puestoActivo.jefe.firebirdUser',
+        ])
+        ->first();
 
-                $userPuesto = $identity->puestoActivo ?? null;
-            }
+    $userPuesto = $identity->puestoActivo ?? null;
+
+    // 👇 nuevo: ¿eres jefe_aux_id de ALGÚN puesto activo (de otro colaborador)?
+    $esJefeAuxiliar = UserPuesto::where('jefe_aux_id', $identity->id)
+        ->where('activo', 1)
+        ->exists();
+}
 
             Log::info('🎭 MYSQL_ROLES', [
                 'identity_id' => $identity->id ?? null,
@@ -479,6 +485,7 @@ class AuthController extends Controller
                 'encrypt' => $token,
                 'user' => new UsuarioResource($usuario, [
                     'user_puesto' => $userPuesto,
+                    'es_jefe_auxiliar' => $esJefeAuxiliar,
                     'identity_id'         => $identity->id ?? null,
                     'departamentos'       => $departamentos,
                     'sl'                  => $slRow,

@@ -106,6 +106,12 @@ class ChecadorRegistroResource extends JsonResource
                 'horas_trabajadas' => $jornada['horas_trabajadas'] ?? null,
                 'horas_esperadas' => $jornada['horas_esperadas'] ?? null,
             ] : null,
+
+
+             'autorizada_libre' => $this->resource['autorizada_libre'] ?? false,
+            'es_primer_registro_dia' => $this->resource['es_primer_registro_dia'] ?? false,
+            'es_cierre_de_turno' => $this->resource['es_cierre_de_turno'] ?? false,
+
         ];
     }
 }

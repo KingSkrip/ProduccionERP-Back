@@ -234,7 +234,11 @@ class UsuarioResource extends JsonResource
 
             ] : null,
 
-
+            'departamento' => $depto ? [
+                'id'     => $depto->CLAVE,
+                'nombre' => $depto->NOMBRE,
+            ] : null,
+            
             'QR_CHECADOR' => $this->ctx['qr'] ?? null,
 
 
@@ -264,6 +268,13 @@ class UsuarioResource extends JsonResource
 
             ] : null,
 
+            
+
+            'ES_JEFE_AUXILIAR' => (bool) ($this->ctx['es_jefe_auxiliar'] ?? false),
+
+                    ];
+    }
+}
 
             // 'departamento' => $depto ? [
             //     'id'     => $depto->CLAVE,
@@ -510,10 +521,7 @@ class UsuarioResource extends JsonResource
 
 
             // 🔥 DEPTO dinámico desde Firebird
-            'departamento' => $depto ? [
-                'id'     => $depto->CLAVE,
-                'nombre' => $depto->NOMBRE,
-            ] : null,
+
 
             // WorkOrders solicitadas por el usuario
             // 'workorders_solicitadas' => $this->workordersSolicitadas->map(function ($wo) {
@@ -544,8 +552,6 @@ class UsuarioResource extends JsonResource
             //     ];
             // }),
 
-        ];
-    }
-}
+
 //photos/photo_100_1764942680.png
 //photos/photo_100_1764942680.png

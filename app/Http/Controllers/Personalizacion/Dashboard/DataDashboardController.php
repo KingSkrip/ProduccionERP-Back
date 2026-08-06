@@ -237,17 +237,17 @@ class DataDashboardController extends Controller
                     $tbRow = $tb[$tbClaveNorm] ?? null;
 
                     // 🚫 Bloquear sesión si el empleado está dado de baja (STATUS = 'B')
-                    if ($tbRow && isset($tbRow->STATUS) && trim((string)$tbRow->STATUS) === 'B') {
-                        Log::warning('🚫 ME_BLOCKED_STATUS_BAJA', [
-                            'firebird_id' => $usuario->ID,
-                            'tb_clave'    => $tbClaveNorm,
-                            'status'      => $tbRow->STATUS,
-                        ]);
+                    // if ($tbRow && isset($tbRow->STATUS) && trim((string)$tbRow->STATUS) === 'B') {
+                    //     Log::warning('🚫 ME_BLOCKED_STATUS_BAJA', [
+                    //         'firebird_id' => $usuario->ID,
+                    //         'tb_clave'    => $tbClaveNorm,
+                    //         'status'      => $tbRow->STATUS,
+                    //     ]);
 
-                        return response()->json([
-                            'message' => 'Tu usuario ha sido dado de baja y no puedes ingresar.'
-                        ], 403);
-                    }
+                    //     return response()->json([
+                    //         'message' => 'Tu usuario ha sido dado de baja y no puedes ingresar.'
+                    //     ], 403);
+                    // }
 
                     if ($tbRow) {
                         // 🏢 DEPTO

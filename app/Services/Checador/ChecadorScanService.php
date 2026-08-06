@@ -88,7 +88,7 @@ class ChecadorScanService
     {
         $qr = ChecadorAccessQrCode::where('token', $token)
             ->where('activo', true)
-            ->with(['identity.turnoActivo.turno.turnoDias'])
+            ->with(['identity.turnoActivo.turno.turnoDias', 'identity.permisoExtraordinario'])
             ->first();
 
         if (!$qr) {
@@ -109,7 +109,7 @@ class ChecadorScanService
 
     public function registrarChecadaManual(int $identityId, array $meta = []): array
     {
-        $identity = UserFirebirdIdentity::with(['firebirdUser', 'turnoActivo.turno.turnoDias'])->find($identityId);
+        $identity = UserFirebirdIdentity::with(['firebirdUser', 'turnoActivo.turno.turnoDias', 'permisoExtraordinario'])->find($identityId);
         if (!$identity) {
             throw new RuntimeException('Identidad no encontrada', 404);
         }
@@ -123,12 +123,18 @@ class ChecadorScanService
     private function procesarChecada(UserFirebirdIdentity $identity, ?string $firebirdEmpresa, string $metodo, array $meta): array
     {
         $status = $this->obtenerStatusEmpleadoNoi($identity);
-        if ($status !== null && $status !== 'A') {
-            throw new RuntimeException('Acceso denegado: el empleado no se encuentra activo', 403);
-        }
+        // if ($status !== null && $status !== 'A') {
+        //     throw new RuntimeException('Acceso denegado: el empleado no se encuentra activo', 403);
+        // }
 
         $now = Carbon::now();
         $hoy = $now->toDateString();
+
+        // Permiso extraordinario de la identidad (si tiene). Se usa para
+        // decidir tolerancia de entrada, generación de permiso de comida,
+        // y si puede saltarse los bloqueos de salida sin permiso.
+        $permisoExtra = $identity->permisoExtraordinario;
+        $puedeEntrarSalirLibre = (bool) ($permisoExtra && $permisoExtra->activo && $permisoExtra->puede_salir_cualquier_momento);
 
         // Permisos que no sean de comida (comida se valida aparte, más abajo).
         $this->verificarPermisoNoComidaPendiente($identity, $now, $hoy);
@@ -139,6 +145,8 @@ class ChecadorScanService
             ->where('fecha', $hoy)
             ->orderByDesc('fecha_hora')
             ->first();
+
+        $esPrimerRegistroDelDia = !$ultimoRegistro;
 
         if (!$ultimoRegistro) {
             $this->permisoService->crearPermisoComidaAutomaticoSiAplica($identity, $hoy, $horariosHoy);
@@ -179,11 +187,15 @@ class ChecadorScanService
         } elseif ($permisoActivo) {
             $tipo = 'Inicio de permiso';
         } else {
-            $this->bloquearSalidaSinPermiso($now, $horariosHoy, $permisoComidaHoy, $yaUsoComidaHoy);
+            // Quien puede entrar/salir cuando quiera no se topa con el
+            // bloqueo de "no puedes salir sin permiso autorizado".
+            if (!$puedeEntrarSalirLibre) {
+                $this->bloquearSalidaSinPermiso($now, $horariosHoy, $permisoComidaHoy, $yaUsoComidaHoy);
+            }
             $tipo = 'salida';
         }
 
-        if (!$permisoActivo) {
+        if (!$permisoActivo && !$puedeEntrarSalirLibre) {
             $this->verificarNoExcedeEntradaYSalidaNormales($identity, $hoy);
         }
 
@@ -192,8 +204,8 @@ class ChecadorScanService
         }
 
         if ($tipo === 'Fin de permiso' && $permisoActivo) {
-    $this->permisoService->finalizarUsoPermiso($permisoActivo, $now);
-}
+            $this->permisoService->finalizarUsoPermiso($permisoActivo, $now);
+        }
 
         $esEntrada = in_array($tipo, ['entrada', 'Fin de permiso'], true);
 
@@ -205,7 +217,18 @@ class ChecadorScanService
 
         $puntualidad = $esEntrada
             ? $this->calcularPuntualidadEntrada($now, $horariosHoy, $permisoActivo, $identity, $hoy)
-            : $this->calcularPuntualidadSalida($horaParaRegistro, $horariosHoy, $permisoActivo, $identity, $hoy, null);
+            : $this->calcularPuntualidadSalida($horaParaRegistro, $horariosHoy, $permisoActivo, $identity, $hoy, null, $puedeEntrarSalirLibre);
+
+        $esCierreDeTurno = false;
+        if ($tipo === 'salida' && !empty($horariosHoy['hora_salida'])) {
+            $horaSalidaProg = Carbon::parse($hoy . ' ' . $horariosHoy['hora_salida']);
+            if ($horariosHoy['sale_dia_siguiente'] ?? false) {
+                $horaSalidaProg->addDay();
+            }
+            $esCierreDeTurno = $now->greaterThanOrEqualTo(
+                $horaSalidaProg->copy()->subMinutes(self::VENTANA_BLOQUEO_PERMISO_MINUTOS)
+            );
+        }
 
         $jornada = null;
         if (!$esEntrada) {
@@ -223,6 +246,10 @@ class ChecadorScanService
         $observaciones = $permisoActivo
             ? "{$permisoActivo->motivo}"
             : null;
+
+        $autorizadaLibre = $puedeEntrarSalirLibre
+            && !$permisoActivo
+            && in_array($tipo, ['entrada', 'salida'], true);
 
         DB::beginTransaction();
 
@@ -281,12 +308,14 @@ class ChecadorScanService
             Log::error('ERROR_REGISTRAR_CHECADA', ['identity_id' => $identity->id, 'error' => $e->getMessage()]);
             throw new RuntimeException('Error al registrar checada', 500);
         }
-
+        $esPrimerRegistroDelDia = !$ultimoRegistro;
         $datosEmpleado = $this->obtenerDatosEmpleadoNoi($identity);
 
         return [
             'registro' => $registro,
             'tipo' => $tipo,
+            'es_primer_registro_dia' => $esPrimerRegistroDelDia,
+            'es_cierre_de_turno' => $esCierreDeTurno,
             'usuario_nombre' => $identity->firebirdUser->NOMBRE ?? null,
             'usuario_photo' => $identity->firebirdUser->PHOTO ?? null,
             'TB' => $datosEmpleado['tbRow'],
@@ -294,6 +323,7 @@ class ChecadorScanService
             'PUESTO_NOI' => $datosEmpleado['puestoRow'],
             'USER_PUESTO' => $this->obtenerPuestoAreaLocal($identity),
             'permiso' => $permisoActivo,
+            'autorizada_libre' => $autorizadaLibre,
             'puntualidad' => $puntualidad,
             'jornada' => $jornada,
         ];
@@ -523,13 +553,56 @@ class ChecadorScanService
         }
 
         $minutosTarde = (int) floor($diff / 60);
-        $minutosRetardo = max(0, $minutosTarde - self::TOLERANCIA_ENTRADA_MINUTOS);
+        $toleranciaMinutos = $this->toleranciaEntradaMinutos($identity, $horaProgramada, $now);
 
         $base['hora_programada'] = $horariosHoy['hora_entrada'];
+
+        if ($toleranciaMinutos === null) {
+            // Tolerancia ilimitada (permiso extraordinario): nunca marca retardo.
+            return $base;
+        }
+
+        $minutosRetardo = max(0, $minutosTarde - $toleranciaMinutos);
         $base['minutos_retardo'] = $minutosRetardo;
         $base['es_retardo'] = $minutosRetardo > 0;
 
         return $base;
+    }
+
+    /**
+     * Minutos de tolerancia para checar entrada tarde sin marcar retardo.
+     * Regresa null si la tolerancia es ilimitada (nunca marca retardo).
+     *
+     * Prioridad:
+     *  1. Sin permiso extraordinario activo, o puede_entrar_tarde = false
+     *     → tolerancia default (self::TOLERANCIA_ENTRADA_MINUTOS = 15 min).
+     *  2. tolerancia_ilimitada = true → sin límite, nunca marca retardo.
+     *  3. hora_limite configurada → tope absoluto definido por RH, se
+     *     convierte a minutos de tolerancia sobre la hora programada del turno.
+     *  4. tolerancia_minutos configurada → se usa tal cual.
+     */
+    private function toleranciaEntradaMinutos(UserFirebirdIdentity $identity, Carbon $horaProgramada, Carbon $now): ?int
+    {
+        $permisoExtra = $identity->permisoExtraordinario;
+
+        if (!$permisoExtra || !$permisoExtra->activo || !$permisoExtra->puede_entrar_tarde) {
+            return self::TOLERANCIA_ENTRADA_MINUTOS;
+        }
+
+        if ($permisoExtra->tolerancia_ilimitada) {
+            return null;
+        }
+
+        if ($permisoExtra->hora_limite) {
+            $horaLimite = Carbon::parse($now->toDateString() . ' ' . $permisoExtra->hora_limite->format('H:i:s'));
+            $minutosDesdeProgramada = $horaProgramada->diffInMinutes($horaLimite, false);
+
+            if ($minutosDesdeProgramada > 0) {
+                return $minutosDesdeProgramada;
+            }
+        }
+
+        return $permisoExtra->tolerancia_minutos ?? self::TOLERANCIA_ENTRADA_MINUTOS;
     }
 
 
@@ -556,7 +629,8 @@ class ChecadorScanService
         return (string) $valor;
     }
 
-    private function calcularPuntualidadSalida(Carbon $now, ?array $horariosHoy, ?ChecadorPermiso $permiso, UserFirebirdIdentity $identity, string $hoy, ?int $registroId): array
+    // firma nueva: agregar $puedeSalirLibre
+    private function calcularPuntualidadSalida(Carbon $now, ?array $horariosHoy, ?ChecadorPermiso $permiso, UserFirebirdIdentity $identity, string $hoy, ?int $registroId, bool $puedeSalirLibre = false): array
     {
         $base = ['hora_programada' => null, 'minutos_retardo' => 0, 'es_retardo' => false, 'minutos_anticipacion' => 0, 'horas_extra' => 0];
 
@@ -577,7 +651,7 @@ class ChecadorScanService
         $minutosHastaSalida = $now->diffInMinutes($horaSalidaProgramada, false);
         $base['hora_programada'] = $horariosHoy['hora_salida'];
 
-        if ($minutosHastaSalida > 0) {
+        if ($minutosHastaSalida > 0 && !$puedeSalirLibre) {
             $base['minutos_anticipacion'] = max(0, $minutosHastaSalida - self::TOLERANCIA_SALIDA_MINUTOS);
         } elseif ($minutosHastaSalida < 0) {
             $minutosExcedente = (int) round(abs($minutosHastaSalida));
