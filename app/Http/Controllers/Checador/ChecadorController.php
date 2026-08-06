@@ -46,7 +46,10 @@ class ChecadorController extends Controller
         $resultado = $empleados->map(function ($empleado) {
             $clave = trim((string) $empleado->CLAVE);
 
-            $identity = UserFirebirdIdentity::where('firebird_user_clave', $clave)->first();
+            $identity = UserFirebirdIdentity::where('firebird_user_clave', $clave)
+            ->aptasParaChecador()
+                ->first();
+
 
             return [
                 'firebird_clave' => $clave,
@@ -93,14 +96,14 @@ class ChecadorController extends Controller
             return (new ChecadorRegistroResource($resultado))
                 ->response()
                 ->setStatusCode(201);
-      } catch (\Illuminate\Database\QueryException $e) {
-    Log::error('DB_ERROR_CHECADA', ['error' => $e->getMessage()]);
-    return response()->json(['message' => 'Error interno al procesar la operación'], 500);
-} catch (\RuntimeException $e) {
-    $codigo = $e->getCode();
-    $status = (is_int($codigo) && $codigo >= 100 && $codigo < 600) ? $codigo : 500;
-    return response()->json(['message' => $e->getMessage()], $status);
-}
+        } catch (\Illuminate\Database\QueryException $e) {
+            Log::error('DB_ERROR_CHECADA', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Error interno al procesar la operación'], 500);
+        } catch (\RuntimeException $e) {
+            $codigo = $e->getCode();
+            $status = (is_int($codigo) && $codigo >= 100 && $codigo < 600) ? $codigo : 500;
+            return response()->json(['message' => $e->getMessage()], $status);
+        }
     }
 
     /**

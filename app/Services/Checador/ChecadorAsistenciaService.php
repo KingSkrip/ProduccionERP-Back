@@ -37,6 +37,7 @@ class ChecadorAsistenciaService
     ) {
         $query = UserFirebirdIdentity::query()
             ->where('firebird_tb_tabla', 'like', 'TB%')
+            ->aptasParaChecador()      
             ->with(['firebirdUser', 'turnoActivo.turno.turnoDias'])
             ->orderBy('firebird_empresa')
             ->orderBy('firebird_user_clave');

@@ -167,14 +167,26 @@ class DataDashboardController extends Controller
 
             // 🎫 QR fijo de checador (mismo token siempre, mientras esté activo)
             $qrData = null;
-            $qr = $this->qrService->generar($identity->id); // genera si no existe, reutiliza si ya existe
-            $qrData = (new ChecadorAccessQrCodeResource($qr))->resolve();
 
-            Log::info('🎫 ME_QR_CHECADOR', [
-                'identity_id' => $identity->id,
-                'qr_token' => $qr->token,
-                'qr_creado' => $qr->wasRecentlyCreated,
-            ]);
+            if (!$identity->excluir_checador) {
+                try {
+                    $qr = $this->qrService->generar($identity->id);
+                    $qrData = (new ChecadorAccessQrCodeResource($qr))->resolve();
+
+                    Log::info('🎫 ME_QR_CHECADOR', [
+                        'identity_id' => $identity->id,
+                        'qr_token' => $qr->token,
+                        'qr_creado' => $qr->wasRecentlyCreated,
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::warning('⚠️ ME_QR_NO_GENERADO', [
+                        'identity_id' => $identity->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            } else {
+                Log::info('🚫 ME_QR_EXCLUIDO', ['identity_id' => $identity->id]);
+            }
 
             Log::info('🎭 ME_ROLES_TURNO', [
                 'roles_count' => $roles->count(),
@@ -232,7 +244,7 @@ class DataDashboardController extends Controller
                         ->filter(fn($row) => trim((string)$row->CLAVE_TRAB) === (string)$tbClaveNorm)
                         ->values();
 
-                   $tb = $firebirdNoi->getOperationalTable('TB')
+                    $tb = $firebirdNoi->getOperationalTable('TB')
                         ->keyBy(fn($row) => trim((string)$row->CLAVE));
                     $tbRow = $tb[$tbClaveNorm] ?? null;
 

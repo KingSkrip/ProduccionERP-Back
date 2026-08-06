@@ -48,9 +48,17 @@ class ChecadorScanService
             ->first();
     }
 
+
     public function generar(int $identityId): ChecadorAccessQrCode
     {
         $identity = UserFirebirdIdentity::with('firebirdUser')->findOrFail($identityId);
+
+        if ($identity->excluir_checador) {
+            throw new RuntimeException(
+                'Esta cuenta es de sistema y no puede generar QR de checador.',
+                422
+            );
+        }
 
         $qr = ChecadorAccessQrCode::obtenerOCrearParaIdentity(
             $identityId,
@@ -100,6 +108,10 @@ class ChecadorScanService
             throw new RuntimeException('Identidad asociada al QR no encontrada', 404);
         }
 
+        if ($identity->excluir_checador) {
+            throw new RuntimeException('Esta cuenta no puede registrar checadas.', 422);
+        }
+
         $resultado = $this->procesarChecada($identity, $qr->firebird_empresa, 'qr', $meta);
         $qr->update(['ultima_lectura' => Carbon::now()]);
         $resultado['usuario_nombre'] = $qr->payload['nombre'] ?? $resultado['usuario_nombre'];
@@ -112,6 +124,10 @@ class ChecadorScanService
         $identity = UserFirebirdIdentity::with(['firebirdUser', 'turnoActivo.turno.turnoDias', 'permisoExtraordinario'])->find($identityId);
         if (!$identity) {
             throw new RuntimeException('Identidad no encontrada', 404);
+        }
+
+        if ($identity->excluir_checador) {
+            throw new RuntimeException('Esta cuenta no puede registrar checadas.', 422);
         }
 
         $resultado = $this->procesarChecada($identity, $identity->firebird_empresa, 'manual', $meta);

@@ -168,4 +168,9 @@ class UserFirebirdIdentity extends Model
     {
         return $this->hasOne(ChecadorPermisoExtraordinario::class, 'user_firebird_identity_id');
     }
+
+    public function scopeAptasParaChecador($query)
+    {
+        return $query->where('excluir_checador', false);
+    }
 }

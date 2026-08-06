@@ -28,30 +28,38 @@ class ChecadorQrService
      * Genera (o reutiliza) el QR fijo de una identidad.
      * El token NUNCA cambia mientras el QR esté activo.
      */
-    public function generar(int $identityId): ChecadorAccessQrCode
-    {
-        $identity = UserFirebirdIdentity::with('firebirdUser')->findOrFail($identityId);
 
-        $payloadInicial = [
-            'nombre' => $identity->firebirdUser->NOMBRE ?? null,
-            // 🔜 aquí se agregan más campos con el tiempo sin tocar el token
-        ];
 
-        $qr = ChecadorAccessQrCode::obtenerOCrearParaIdentity(
-            $identityId,
-            $payloadInicial,
-            $identity->firebird_empresa
-        );
+    
+// app/Services/Checador/ChecadorQrService.php
 
-        Log::info('🎫 QR_GENERADO_O_REUTILIZADO', [
-            'identity_id' => $identityId,
-            'qr_id' => $qr->id,
-            'token' => $qr->token,
-            'creado' => $qr->wasRecentlyCreated,
-        ]);
+public function generar(int $identityId): ChecadorAccessQrCode
+{
+    $identity = UserFirebirdIdentity::with('firebirdUser')->findOrFail($identityId);
 
-        return $qr;
+    if ($identity->excluir_checador) {
+        throw new \RuntimeException('Esta cuenta es de sistema y no puede generar QR de checador.', 422);
     }
+
+    $payloadInicial = [
+        'nombre' => $identity->firebirdUser->NOMBRE ?? null,
+    ];
+
+    $qr = ChecadorAccessQrCode::obtenerOCrearParaIdentity(
+        $identityId,
+        $payloadInicial,
+        $identity->firebird_empresa
+    );
+
+    Log::info('🎫 QR_GENERADO_O_REUTILIZADO', [
+        'identity_id' => $identityId,
+        'qr_id' => $qr->id,
+        'token' => $qr->token,
+        'creado' => $qr->wasRecentlyCreated,
+    ]);
+
+    return $qr;
+}
 
     /**
      * Revoca el QR actual (ej. usuario perdió su gafete/credencial).
