@@ -6,12 +6,12 @@ use App\Helpers\ValidationMessages;
 use App\Http\Controllers\Controller;
 use App\Models\Rol;
 use Carbon\Carbon;
+use Exception;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
-use Exception;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Throwable;
 
 class RolesController extends Controller
@@ -22,22 +22,23 @@ class RolesController extends Controller
     public function index()
     {
         try {
-            $roles = Rol::orderBy('CLAVE', 'DESC')->get();
+            $roles = Rol::all();
+
             return response()->json([
                 'ok' => true,
-                'data' => $roles
-            ], 200);
+                'data' => $roles,
+            ]);
         } catch (Throwable $e) {
-            Log::error("Error al obtener roles: " . $e->getMessage());
-            return response()->json(['ok' => false, 'msg' => 'Error interno al obtener roles'], 500);
+            return response()->json([
+                'ok' => false,
+                'msg' => $e->getMessage(),
+            ], 500);
         }
     }
 
     /**
      * Crear un nuevo rol
      */
-
-
     public function store(Request $request)
     {
         $validator = Validator::make(
@@ -51,7 +52,7 @@ class RolesController extends Controller
         if ($validator->fails()) {
             return response()->json([
                 'ok' => false,
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -63,7 +64,7 @@ class RolesController extends Controller
 
             // Insert manual con GUARD_NAME por defecto
             DB::table('ROLES')->insert([
-                'NOMBRE'     => $nombreMayusculas,
+                'NOMBRE' => $nombreMayusculas,
                 'GUARD_NAME' => 'web',
                 'CREATED_AT' => $now,
             ]);
@@ -77,17 +78,17 @@ class RolesController extends Controller
             return response()->json([
                 'ok' => true,
                 'msg' => 'Rol creado correctamente',
-                'data' => $rol
+                'data' => $rol,
             ], 201);
         } catch (Throwable $e) {
-            Log::error("Error al crear rol: " . $e->getMessage());
+            Log::error('Error al crear rol: '.$e->getMessage());
+
             return response()->json([
                 'ok' => false,
-                'msg' => 'Error interno al crear rol: ' . $e->getMessage()
+                'msg' => 'Error interno al crear rol: '.$e->getMessage(),
             ], 500);
         }
     }
-
 
     /**
      * Obtener un rol específico
@@ -99,7 +100,7 @@ class RolesController extends Controller
 
             return response()->json([
                 'ok' => true,
-                'data' => $rol
+                'data' => $rol,
             ], 200);
         } catch (Exception $e) {
             return response()->json(['ok' => false, 'msg' => 'Rol no encontrado'], 404);
@@ -117,7 +118,7 @@ class RolesController extends Controller
             $validator = Validator::make(
                 $request->all(),
                 [
-                    'NOMBRE'     => 'required|string|max:120|unique:ROLES,NOMBRE,' . $id . ',CLAVE',
+                    'NOMBRE' => 'required|string|max:120|unique:ROLES,NOMBRE,'.$id.',CLAVE',
                     'GUARD_NAME' => 'required|string|max:120',
                 ],
                 ValidationMessages::Messages()
@@ -125,15 +126,15 @@ class RolesController extends Controller
 
             if ($validator->fails()) {
                 return response()->json([
-                    'ok'   => false,
-                    'errors' => $validator->errors()
+                    'ok' => false,
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
             DB::beginTransaction();
 
             $rol->update([
-                'NOMBRE'     => $request->NOMBRE,
+                'NOMBRE' => $request->NOMBRE,
                 'GUARD_NAME' => $request->GUARD_NAME,
             ]);
 
@@ -142,13 +143,14 @@ class RolesController extends Controller
             return response()->json([
                 'ok' => true,
                 'msg' => 'Rol actualizado correctamente',
-                'data' => $rol
+                'data' => $rol,
             ], 200);
         } catch (ModelNotFoundException $e) {
             return response()->json(['ok' => false, 'msg' => 'Rol no encontrado'], 404);
         } catch (Throwable $e) {
             DB::rollBack();
-            Log::error("Error al actualizar rol: " . $e->getMessage());
+            Log::error('Error al actualizar rol: '.$e->getMessage());
+
             return response()->json(['ok' => false, 'msg' => 'Error interno al actualizar rol'], 500);
         }
     }
@@ -169,13 +171,14 @@ class RolesController extends Controller
 
             return response()->json([
                 'ok' => true,
-                'msg' => 'Rol eliminado correctamente'
+                'msg' => 'Rol eliminado correctamente',
             ], 200);
         } catch (ModelNotFoundException $e) {
             return response()->json(['ok' => false, 'msg' => 'Rol no encontrado'], 404);
         } catch (Throwable $e) {
             DB::rollBack();
-            Log::error("Error al eliminar rol: " . $e->getMessage());
+            Log::error('Error al eliminar rol: '.$e->getMessage());
+
             return response()->json(['ok' => false, 'msg' => 'Error interno al eliminar rol'], 500);
         }
     }

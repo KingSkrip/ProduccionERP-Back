@@ -1,15 +1,25 @@
 <?php
 
 use App\Http\Controllers\Agenda\AgendaController;
-use App\Http\Controllers\Scanner\ScannerEmbarquesController;
-use App\Http\Controllers\Agenda\AgendarJuntasController;
+use App\Http\Controllers\Agentes\EstadosCuentaAgentesController;
+use App\Http\Controllers\Agentes\PedidosAgentesController;
+use App\Http\Controllers\Area\AreaController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Catalogos\CatalogosController;
+use App\Http\Controllers\Checador\ChecadorAsistenciaController;
+use App\Http\Controllers\Checador\ChecadorController;
+use App\Http\Controllers\Checador\ChecadorIdentidadController;
+use App\Http\Controllers\Checador\ChecadorPermisoController;
+use App\Http\Controllers\Checador\ChecadorQrController;
+use App\Http\Controllers\Clientes\EstadosCuentaController;
+use App\Http\Controllers\Clientes\PedidosController;
 use App\Http\Controllers\Colaboradores\SoliVacacionesController;
 use App\Http\Controllers\MailboxController;
 use App\Http\Controllers\Personalizacion\Dashboard\DataDashboardController;
 use App\Http\Controllers\Personalizacion\Perfil\PerfilController;
+use App\Http\Controllers\Puestos\PuestoController;
 use App\Http\Controllers\RH\Nominas\EmpresaUno\EmpresaUnoController;
+use App\Http\Controllers\Scanner\ScannerEmbarquesController;
 use App\Http\Controllers\SuperAdmin\AutorizacionPedidos\AutorizacionPedidosController;
 use App\Http\Controllers\SuperAdmin\GestionarUsuarios\AllUsersController;
 use App\Http\Controllers\SuperAdmin\GestionarUsuarios\Colaborador\ColaboradorController;
@@ -17,20 +27,9 @@ use App\Http\Controllers\SuperAdmin\GestionarUsuarios\RH\RHController;
 use App\Http\Controllers\SuperAdmin\GestionarUsuarios\SuAdmin\SuAdminController;
 use App\Http\Controllers\SuperAdmin\ReportesProduccion\ReportesProduccionController;
 use App\Http\Controllers\SuperAdmin\Roles\RolesController;
-use App\Http\Controllers\Clientes\EstadosCuentaController;
-use App\Http\Controllers\Clientes\PedidosController;
-use Illuminate\Http\Request;
-use App\Http\Controllers\Agentes\EstadosCuentaAgentesController;
-use App\Http\Controllers\Agentes\PedidosAgentesController;
-use App\Http\Controllers\Area\AreaController;
-use App\Http\Controllers\Checador\ChecadorAsistenciaController;
-use App\Http\Controllers\Checador\ChecadorController;
-use App\Http\Controllers\Checador\ChecadorPermisoController;
-use App\Http\Controllers\Checador\ChecadorQrController;
-use App\Http\Controllers\Checador\ChecadorIdentidadController;
-use App\Http\Controllers\Puestos\PuestoController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\Turnos\TurnoController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::options('/{any}', function () {
@@ -38,32 +37,30 @@ Route::options('/{any}', function () {
 })->where('any', '.*');
 
 Route::prefix('auth')->group(function () {
-    //INICIAR SESION
+    // INICIAR SESION
     Route::post('sign-in', [AuthController::class, 'signIn']);
     Route::post('sign-in-with-token', [AuthController::class, 'signInWithToken']);
-    //REGISTRARSE
+    // REGISTRARSE
     Route::post('sign-up', [AuthController::class, 'signUp']);
-    //CERRAR SESION
+    // CERRAR SESION
     Route::post('sign-out', [AuthController::class, 'signOut']);
-    //OLVIDE CONTRASEÑA
+    // OLVIDE CONTRASEÑA
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
-    //REINIICAR CONTRASEÑA
+    // REINIICAR CONTRASEÑA
     Route::post('reset-password', [AuthController::class, 'resetPassword']);
-    //DESBLOQUEAR SESION
+    // DESBLOQUEAR SESION
     Route::post('unlock-session', [AuthController::class, 'unlockSession']);
 });
 
-//DASHBOARD PERSONAL
+// DASHBOARD PERSONAL
 Route::prefix('dash')->group(function () {
     Route::get('me', [DataDashboardController::class, 'me']);
     Route::post('update-status', [DataDashboardController::class, 'updateStatus']);
 });
 
-//EDITAR PERFIL PERSONAL
+// EDITAR PERFIL PERSONAL
 
-
-
-//GESTIONAR SUADMINS
+// GESTIONAR SUADMINS
 Route::prefix('superadmin')->middleware('jwt.auth')->group(function () {
     Route::get('data', [SuAdminController::class, 'index'])->name('superadmin.suadmin.index');
     Route::post('suadmin', [SuAdminController::class, 'store'])->name('superadmin.suadmin.store');
@@ -72,7 +69,7 @@ Route::prefix('superadmin')->middleware('jwt.auth')->group(function () {
     Route::delete('suadmin/{id}', [SuAdminController::class, 'destroy'])->name('superadmin.suadmin.destroy');
 });
 
-//GESTIONAR RH
+// GESTIONAR RH
 Route::prefix('rh')->middleware('jwt.auth')->group(function () {
     Route::get('data', [RHController::class, 'index'])->name('superadmin.rh.index');
     Route::post('suadmin', [RHController::class, 'store'])->name('superadmin.rh.store');
@@ -81,7 +78,7 @@ Route::prefix('rh')->middleware('jwt.auth')->group(function () {
     Route::delete('suadmin/{id}', [RHController::class, 'destroy'])->name('superadmin.rh.destroy');
 });
 
-//GESTIONAR COLABORADOR
+// GESTIONAR COLABORADOR
 Route::prefix('colaborador')->middleware('jwt.auth')->group(function () {
     Route::get('data', [ColaboradorController::class, 'index'])->name('superadmin.colaborador.index');
     Route::post('suadmin', [ColaboradorController::class, 'store'])->name('superadmin.colaborador.store');
@@ -89,12 +86,10 @@ Route::prefix('colaborador')->middleware('jwt.auth')->group(function () {
     Route::post('{id}/update', [ColaboradorController::class, 'update'])->name('superadmin.colaborador.update');
     Route::delete('{id}', [ColaboradorController::class, 'destroy'])->name('superadmin.colaborador.destroy');
 
-
-
     Route::put('usuarios/{id}/status', [ColaboradorController::class, 'updateStatus']);
 });
 
-//GESTIONAR ROLES
+// GESTIONAR ROLES
 Route::prefix('roles')->middleware('jwt.auth')->group(function () {
     Route::get('data', [RolesController::class, 'index'])->name('superadmin.roles.index');
     Route::post('createrol', [RolesController::class, 'store'])->name('superadmin.roles.store');
@@ -103,8 +98,7 @@ Route::prefix('roles')->middleware('jwt.auth')->group(function () {
     Route::delete('rol/{id}', [RolesController::class, 'destroy'])->name('superadmin.roles.destroy');
 });
 
-
-//CATALOGOS
+// CATALOGOS
 Route::prefix('catalogos')->middleware('jwt.auth')->group(function () {
     Route::get('getAll', [CatalogosController::class, 'getAllCatalogos']);
     Route::get('getdepartamentos', [CatalogosController::class, 'getDepartamentos']);
@@ -113,12 +107,9 @@ Route::prefix('catalogos')->middleware('jwt.auth')->group(function () {
     Route::get('getstatuses', [CatalogosController::class, 'getStatuses']);
 });
 
-
-
 Route::prefix('rh/E_ONE')->middleware('jwt.auth')->group(function () {
     Route::get('empresa1/empleados', [EmpresaUnoController::class, 'index'])->name('EONE.index');
 });
-
 
 Route::prefix('colaboradores')->middleware('jwt.auth')->group(function () {
     Route::get('vacaciones', [SoliVacacionesController::class, 'index']);
@@ -130,14 +121,10 @@ Route::prefix('colaboradores')->middleware('jwt.auth')->group(function () {
     Route::delete('vacaciones/{id}/delete', [SoliVacacionesController::class, 'destroy']);
 });
 
-
-
 Route::middleware(['jwt.auth'])->prefix('firebird')->group(function () {
     Route::get('pedidos', [AutorizacionPedidosController::class, 'index']);
     Route::put('pedidos/{id}/autorizar-credito', [AutorizacionPedidosController::class, 'update']);
 });
-
-
 
 Route::prefix('reportes-produccion')->group(function () {
     Route::get('/', [ReportesProduccionController::class, 'index']);
@@ -165,7 +152,6 @@ Route::prefix('reportes-produccion')->group(function () {
     });
 });
 
-
 Route::prefix('tasks')->middleware('jwt.auth')->group(function () {
     Route::get('/', [TaskController::class, 'index']);              // listar
     Route::post('/store', [TaskController::class, 'store']);        // crear
@@ -173,8 +159,6 @@ Route::prefix('tasks')->middleware('jwt.auth')->group(function () {
     Route::put('/{id}/update', [TaskController::class, 'update']);  // actualizar
     Route::delete('/{id}/delete', [TaskController::class, 'destroy']); // borrar
 });
-
-
 
 Route::middleware('jwt.auth')->group(function () {
     Route::get('users/all', [AllUsersController::class, 'index']);
@@ -184,15 +168,15 @@ Route::middleware('jwt.auth')->group(function () {
     // LISTADOS (GET) - Estos estaban faltando
     // ============================================
 
-    Route::get('/mailbox/general',      [MailboxController::class, 'general']);
-    Route::get('/mailbox/enviados',     [MailboxController::class, 'sent']);
-    Route::get('/mailbox/borradores',   [MailboxController::class, 'drafts']);
-    Route::get('/mailbox/eliminados',   [MailboxController::class, 'trash']);
-    Route::get('/mailbox/spam',         [MailboxController::class, 'spam']);
+    Route::get('/mailbox/general', [MailboxController::class, 'general']);
+    Route::get('/mailbox/enviados', [MailboxController::class, 'sent']);
+    Route::get('/mailbox/borradores', [MailboxController::class, 'drafts']);
+    Route::get('/mailbox/eliminados', [MailboxController::class, 'trash']);
+    Route::get('/mailbox/spam', [MailboxController::class, 'spam']);
 
     // 🔥 ESTAS SON LAS QUE FALTABAN - FILTROS PERSONALIZADOS
-    Route::get('/mailbox/important',    [MailboxController::class, 'important']);
-    Route::get('/mailbox/starred',      [MailboxController::class, 'starred']);
+    Route::get('/mailbox/important', [MailboxController::class, 'important']);
+    Route::get('/mailbox/starred', [MailboxController::class, 'starred']);
 
     Route::patch('mailbox/workorder/{workorderId}/iniciar-ticket', [MailboxController::class, 'iniciarTicket']);
     Route::patch('mailbox/workorder/{workorderId}/finalizar-ticket', [MailboxController::class, 'finalizarTicket']);
@@ -208,20 +192,18 @@ Route::middleware('jwt.auth')->group(function () {
     // ============================================
 
     // Por ID de MailboxItem
-    Route::patch('/mailbox/{id}/read',      [MailboxController::class, 'markRead']);
-    Route::patch('/mailbox/{id}/star',      [MailboxController::class, 'toggleStar']);
+    Route::patch('/mailbox/{id}/read', [MailboxController::class, 'markRead']);
+    Route::patch('/mailbox/{id}/star', [MailboxController::class, 'toggleStar']);
     Route::patch('/mailbox/{id}/important', [MailboxController::class, 'toggleImportant']);
-    Route::patch('/mailbox/{id}/move',      [MailboxController::class, 'move']);
+    Route::patch('/mailbox/{id}/move', [MailboxController::class, 'move']);
 
     // Por ID de Workorder (cuando no existe MailboxItem)
-    Route::patch('mailbox/workorder/{workorderId}/read',      [MailboxController::class, 'markReadByWorkorder']);
-    Route::patch('mailbox/workorder/{workorderId}/star',      [MailboxController::class, 'toggleStarByWorkorder']);
+    Route::patch('mailbox/workorder/{workorderId}/read', [MailboxController::class, 'markReadByWorkorder']);
+    Route::patch('mailbox/workorder/{workorderId}/star', [MailboxController::class, 'toggleStarByWorkorder']);
     Route::patch('mailbox/workorder/{workorderId}/important', [MailboxController::class, 'toggleImportantByWorkorder']);
-    Route::patch('mailbox/workorder/{workorderId}/move',      [MailboxController::class, 'moveByWorkorder']);
+    Route::patch('mailbox/workorder/{workorderId}/move', [MailboxController::class, 'moveByWorkorder']);
     Route::get('mailbox/workorder/{id}', [MailboxController::class, 'showWorkorder']);
     Route::post('/mailbox/reply', [MailboxController::class, 'replyes']);
-
-
 
     Route::get('perfil', [PerfilController::class, 'show'])->name('hola');
     Route::post('perfil', [PerfilController::class, 'updatePerfil']);
@@ -241,9 +223,6 @@ Route::prefix('estados-cuenta')->middleware('jwt.auth')->group(function () {
     Route::patch('/{id}/estado', [EstadosCuentaController::class, 'actualizarEstado']);
     Route::delete('/{id}', [EstadosCuentaController::class, 'destroy']);
 });
-
-
-
 
 Route::prefix('clientes/pedidos')->middleware('jwt.auth')->group(function () {
     Route::get('/', [PedidosController::class, 'index']);
@@ -287,28 +266,27 @@ Route::get('usuarios-permitidos', [AgendaController::class, 'UsuariosPermitidosP
 Route::get('usuarios-permitidosAllUsers', [AgendaController::class, 'UsuariosPermitidosParaAllUsers']);
 // Route::post('/proveedor', [AgendaController::class, 'storeProveedor']);
 
-
 Route::prefix('citas')->group(function () {
     Route::post('/proveedor', [AgendaController::class, 'storeProveedor']);
-    Route::get('index/proveedor',         [AgendaController::class, 'indexProveedor']);
+    Route::get('index/proveedor', [AgendaController::class, 'indexProveedor']);
     Route::patch('/{id}/estado', [AgendaController::class, 'updateEstado']);
-    Route::put('/proveedor/update',  [AgendaController::class, 'updateProveedor']);
+    Route::put('/proveedor/update', [AgendaController::class, 'updateProveedor']);
     Route::delete('/proveedor/destroy', [AgendaController::class, 'destroyProveedor']);
     Route::get('/admin/todas', [AgendaController::class, 'indexAdmin']);
 });
 
 // Juntas
 Route::prefix('juntas')->group(function () {
-    Route::get('/',                       [AgendaController::class, 'indexJunta']);
-    Route::post('/',                      [AgendaController::class, 'storeJunta']);
-    Route::patch('/{id}/estado',          [AgendaController::class, 'updateEstadoJunta']);
+    Route::get('/', [AgendaController::class, 'indexJunta']);
+    Route::post('/', [AgendaController::class, 'storeJunta']);
+    Route::patch('/{id}/estado', [AgendaController::class, 'updateEstadoJunta']);
     Route::patch('/{id}/asistencia', [AgendaController::class, 'updateAsistencia']);
-    Route::put('/{id}',                   [AgendaController::class, 'updateJunta']);
-    Route::delete('/{id}',               [AgendaController::class, 'destroyJunta']);
+    Route::put('/{id}', [AgendaController::class, 'updateJunta']);
+    Route::delete('/{id}', [AgendaController::class, 'destroyJunta']);
 });
 
 Route::prefix('scanner')->middleware('jwt.auth')->group(function () {
-    Route::get('/embarques',  [ScannerEmbarquesController::class, 'index']);
+    Route::get('/embarques', [ScannerEmbarquesController::class, 'index']);
     Route::post('/embarques', [ScannerEmbarquesController::class, 'scan']);
     Route::post('/inventario', [ScannerEmbarquesController::class, 'verificarInventario']);
 });
@@ -325,7 +303,6 @@ Route::prefix('checador')->middleware('jwt.auth')->group(function () {
     Route::get('/buscar-empleado', [ChecadorController::class, 'buscarEmpleado']);
     Route::post('/registrar-manual', [ChecadorController::class, 'registrarManual']);
     Route::get('/hoy', [ChecadorController::class, 'hoy']);
-
 
     // Permisos
     Route::get('/permisos/catalogo', [ChecadorPermisoController::class, 'catalogo']);
@@ -357,11 +334,11 @@ Route::prefix('checador')->middleware('jwt.auth')->group(function () {
     Route::get('/empleados/lista', [ChecadorAsistenciaController::class, 'listaEmpleados']);
 });
 
-
 Route::get('mi-ip', function (Request $request) {
     $ip = $request->header('X-Real-IP')
         ?? $request->header('X-Forwarded-For')
         ?? $request->ip();
+
     return response()->json(['ip' => $ip]);
 });
 
@@ -407,7 +384,7 @@ Route::prefix('turnos')->middleware('jwt.auth')->group(function () {
 });
 
 /**
- * SIEMPRE QUE SE AGREGE UNA NUEVA RUTA HAY QUE AGREGARLA A  
+ * SIEMPRE QUE SE AGREGE UNA NUEVA RUTA HAY QUE AGREGARLA A
  * app/Http/Middleware/EncryptJsonResponse.php
  * PARA ENCRIPTAR LA PETICION
  */
