@@ -2,15 +2,17 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 class FirebirdEmpresaManualService
 {
     protected string $empresa = '04';
+
     protected string $empresaManual = '04';
+
     protected string $databasePrefix = 'SRVNOI'; // 🔥 NUEVO: Prefijo configurable
 
     public function __construct(?string $empresaManual = '04', ?string $databasePrefix = null)
@@ -64,47 +66,36 @@ class FirebirdEmpresaManualService
         // ]);
     }
 
+    protected ?\Illuminate\Database\Connection $cachedConnection = null;
 
     /* ==========================================================
      | 🔌 Conexión dinámica
      ========================================================== */
     public function getConnection()
     {
-        // 🔥 AHORA USA EL PREFIJO CORRECTO
-        $databaseName = "{$this->databasePrefix}{$this->empresa}";
+        if ($this->cachedConnection !== null) {
+            return $this->cachedConnection;
+        }
 
-        // Log::info('🔥 Firebird dinámica', [
-        //     'empresa' => $this->empresa,
-        //     'database' => $databaseName,
-        //     'prefix' => $this->databasePrefix,
-        //     'host' => env('FB_HOST'),
-        //     'port' => env('FB_PORT'),
-        //     'user' => env('FB_USERNAME'),
-        // ]);
+        $databaseName = "{$this->databasePrefix}{$this->empresa}";
 
         config([
             'database.connections.firebird_dinamica' => [
-                'driver'   => 'firebird',
-                'host'     => env('FB_HOST'),
-                'port'     => env('FB_PORT'),
+                'driver' => 'firebird',
+                'host' => env('FB_HOST'),
+                'port' => env('FB_PORT'),
                 'database' => $databaseName,
                 'username' => env('FB_USERNAME'),
                 'password' => env('FB_PASSWORD'),
-                'charset'  => env('FB_CHARSET', 'UTF8'),
-                'dialect'  => 3,
+                'charset' => env('FB_CHARSET', 'UTF8'),
+                'dialect' => 3,
                 'quote_identifiers' => false,
-            ]
+            ],
         ]);
 
         DB::purge('firebird_dinamica');
 
-        $connection = DB::connection('firebird_dinamica');
-
-        // Log::info('✅ Conectado a Firebird', [
-        //     'database' => $connection->getConfig('database'),
-        // ]);
-
-        return $connection;
+        return $this->cachedConnection = DB::connection('firebird_dinamica');
     }
 
     /* ==========================================================
@@ -114,7 +105,7 @@ class FirebirdEmpresaManualService
     {
         $this->validateTableName($baseTable);
 
-        $table = strtoupper($baseTable) . $this->empresa;
+        $table = strtoupper($baseTable).$this->empresa;
 
         // Log::info('🔍 Obteniendo MasterTable', [
         //     'baseTable' => $baseTable,
@@ -138,7 +129,7 @@ class FirebirdEmpresaManualService
         } catch (\Exception $e) {
             Log::error('❌ Error al obtener MasterTable', [
                 'tabla' => $table,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
             throw $e;
         }
@@ -170,7 +161,7 @@ class FirebirdEmpresaManualService
             $lastSunday = $date->copy()->subDays($daysSinceSunday);
 
             $formattedDate = $lastSunday->format('dmy');
-            $table = strtoupper($prefix) . $formattedDate . $this->empresa;
+            $table = strtoupper($prefix).$formattedDate.$this->empresa;
 
             // Log::info("🔍 Intento {$i}", [
             //     'fecha_usada' => $lastSunday->toDateString(),
@@ -195,7 +186,7 @@ class FirebirdEmpresaManualService
                 Log::warning('❌ Tabla no existe, retrocediendo 7 días', [
                     'tabla' => $table,
                     'fecha_fallida' => $lastSunday->toDateString(),
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
 
                 // ⏪ retroceder 1 semana
@@ -206,7 +197,7 @@ class FirebirdEmpresaManualService
         Log::error('🛑 No se encontró ninguna tabla válida', [
             'prefix' => $prefix,
             'empresa' => $this->empresa,
-            'maxWeeksBack' => $maxWeeksBack
+            'maxWeeksBack' => $maxWeeksBack,
         ]);
 
         return collect();
@@ -221,7 +212,7 @@ class FirebirdEmpresaManualService
 
         return collect(
             $this->getConnection()->select(
-                "SELECT * FROM " . strtoupper($table)
+                'SELECT * FROM '.strtoupper($table)
             )
         );
     }
@@ -231,7 +222,7 @@ class FirebirdEmpresaManualService
      ========================================================== */
     protected function validateTableName(string $name)
     {
-        if (!preg_match('/^[A-Z0-9_]+$/', strtoupper($name))) {
+        if (! preg_match('/^[A-Z0-9_]+$/', strtoupper($name))) {
             throw new InvalidArgumentException('Nombre de tabla inválido');
         }
     }
@@ -275,5 +266,102 @@ class FirebirdEmpresaManualService
         }
 
         return null;
+    }
+
+    public function getOperationalRowByClave(
+        string $prefix,
+        string $claveTrab,
+        string $column = 'CLAVE_TRAB',
+        ?string $date = null,
+        int $maxWeeksBack = 8
+    ) {
+        $this->validateTableName($prefix);
+        $this->validateTableName($column);
+
+        $date = $date ? Carbon::parse($date) : Carbon::today();
+
+        for ($i = 0; $i <= $maxWeeksBack; $i++) {
+            $daysSinceSunday = ($date->dayOfWeek - Carbon::SUNDAY + 7) % 7;
+            $lastSunday = $date->copy()->subDays($daysSinceSunday);
+            $table = strtoupper($prefix).$lastSunday->format('dmy').$this->empresa;
+
+            try {
+                return collect(
+                    $this->getConnection()->select(
+                        "SELECT * FROM {$table} WHERE {$column} = ?",
+                        [trim($claveTrab)]
+                    )
+                )->first();
+            } catch (\Throwable $e) {
+                Log::warning('❌ Tabla no existe, retrocediendo 7 días', [
+                    'tabla' => $table,
+                    'error' => $e->getMessage(),
+                ]);
+                $date->subDays(7);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Igual que arriba pero para tablas donde puede haber varias filas por trabajador (ej. AC).
+     */
+    public function getOperationalRowsByClave(
+        string $prefix,
+        string $claveTrab,
+        string $column = 'CLAVE_TRAB',
+        ?string $date = null,
+        int $maxWeeksBack = 8
+    ) {
+        $this->validateTableName($prefix);
+        $this->validateTableName($column);
+
+        $date = $date ? Carbon::parse($date) : Carbon::today();
+
+        for ($i = 0; $i <= $maxWeeksBack; $i++) {
+            $daysSinceSunday = ($date->dayOfWeek - Carbon::SUNDAY + 7) % 7;
+            $lastSunday = $date->copy()->subDays($daysSinceSunday);
+            $table = strtoupper($prefix).$lastSunday->format('dmy').$this->empresa;
+
+            try {
+                return collect(
+                    $this->getConnection()->select(
+                        "SELECT * FROM {$table} WHERE {$column} = ?",
+                        [trim($claveTrab)]
+                    )
+                );
+            } catch (\Throwable $e) {
+                $date->subDays(7);
+            }
+        }
+
+        return collect();
+    }
+
+    /**
+     * Trae UNA fila de una tabla maestra (ej. HISTVAC) filtrando por clave directo en Firebird.
+     */
+    public function getMasterRowByClave(string $baseTable, string $claveTrab, string $column = 'CLAVE')
+    {
+        $this->validateTableName($baseTable);
+        $this->validateTableName($column);
+
+        $table = strtoupper($baseTable).$this->empresa;
+
+        try {
+            return collect(
+                $this->getConnection()->select(
+                    "SELECT * FROM {$table} WHERE {$column} = ?",
+                    [trim($claveTrab)]
+                )
+            )->first();
+        } catch (\Exception $e) {
+            Log::error('❌ Error al obtener MasterRow', [
+                'tabla' => $table,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
     }
 }

@@ -2,528 +2,731 @@
 
 namespace App\Http\Controllers\SuperAdmin\GestionarUsuarios\Colaborador;
 
-use App\Helpers\ValidationMessages;
 use App\Http\Controllers\Controller;
-use App\Http\Resources\UsuarioFullResource;
 use App\Http\Resources\UsuarioResource;
-use App\Models\Direccion;
+use App\Models\Firebird\Users;
 use App\Models\ModelHasRole;
-use App\Models\UserEmpleo;
-use App\Models\UserFiscal;
-use App\Models\UserNomina;
-use App\Models\Firebird;
-use App\Models\UserSeguridadSocial;
+use App\Models\UserFirebirdIdentity;
+use App\Models\UserPuesto;
+use App\Models\UserTurno;
+use App\Services\FirebirdEmpresaManualService;
 use Exception;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class ColaboradorController extends Controller
 {
     /**
-     * Lista los colaboradores (ROLE_CLAVE = 1)
+     * ROLE_CLAVE que identifica a "colaboradores" en la tabla roles (ver dump: id=1 'COLABORADOR')
+     * ⚠️ CONFIRMAR: si el filtro de "colaboradores" debe ser este id fijo o debe venir por request.
      */
-    public function index()
+    private const ROLE_COLABORADOR = 1;
+
+    /**
+     * Lista colaboradores (identidades MySQL con rol COLABORADOR) + overlay de datos Firebird (USUARIOS/TB/DEPTO/PUESTO)
+     */
+    // public function index(Request $request)
+    // {
+    //     try {
+    //         $perPage = (int) $request->query('per_page', 20);
+
+    //         $identities = UserFirebirdIdentity::whereHas('roles', function ($q) {
+    //             $q->where('role_id', self::ROLE_COLABORADOR);
+    //         })
+    //             ->with([
+    //                 'roles.role',
+    //                 'roles.subrol',
+    //                 'puestoActivo.puesto',
+    //                 'puestoActivo.area',
+    //                 'puestoActivo.jefe',
+    //                 'turnoActivo.turno.turnoDias',
+    //                 'turnoActivo.status',
+    //             ])
+    //             ->paginate($perPage);
+
+    //         $payload = $this->overlayFirebirdData(collect($identities->items()));
+
+    //         return response()->json([
+    //             'message' => 'Colaboradores obtenidos exitosamente',
+    //             'data' => $payload,
+    //             'meta' => [
+    //                 'current_page' => $identities->currentPage(),
+    //                 'last_page' => $identities->lastPage(),
+    //                 'total' => $identities->total(),
+    //                 'per_page' => $identities->perPage(),
+    //             ],
+    //         ], 200);
+    //     } catch (Exception $e) {
+    //         Log::error('Error en index ColaboradorController: '.$e->getMessage());
+
+    //         return response()->json([
+    //             'message' => 'Error al obtener colaboradores',
+    //             'error' => $e->getMessage(),
+    //         ], 500);
+    //     }
+    // }
+
+
+    public function index(Request $request)
     {
         try {
-            $userId = auth()->id();
+            $perPage = (int) $request->query('per_page', 20);
 
-            $usuarios = Users::with([
-                'direccion',
-                'departamento',
-                'roles',
-                'nomina',
-                'empleos',
-                'fiscal',
-                'seguridadSocial'
-            ])
-                ->whereHas('roles', function ($query) {
-                    $query->where('ROLE_CLAVE', 1);
-                })
-                ->where('id', '!=', $userId)
-                ->get();
+            $identities = UserFirebirdIdentity::whereHas('roles', function ($q) {
+                $q->where('role_id', self::ROLE_COLABORADOR);
+            })
+                ->with([
+                    'roles.role',
+                    'roles.subrol',
+                    'puestoActivo.puesto',
+                    'puestoActivo.area',
+                    'puestoActivo.jefe',
+                    'turnoActivo.turno.turnoDias',
+                    'turnoActivo.status',
+                ])
+                ->paginate($perPage);
+
+            $payload = $this->overlayFirebirdData(collect($identities->items()));
 
             return response()->json([
                 'message' => 'Colaboradores obtenidos exitosamente',
-                'data' => UsuarioFullResource::collection($usuarios)
+                'data' => $payload,
+                'jefes' => $this->buildPosiblesJefes(), // 👈 nuevo
+                'meta' => [
+                    'current_page' => $identities->currentPage(),
+                    'last_page' => $identities->lastPage(),
+                    'total' => $identities->total(),
+                    'per_page' => $identities->perPage(),
+                ],
             ], 200);
         } catch (Exception $e) {
-            Log::error('Error en index Colaborador: ' . $e->getMessage());
+            Log::error('Error en index ColaboradorController: '.$e->getMessage());
+
             return response()->json([
                 'message' => 'Error al obtener colaboradores',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
 
     /**
-     * Crear colaborador con todos los datos relacionados
+     * Catálogo de posibles jefes / jefes auxiliares — TODAS las identidades,
+     * sin filtrar por rol COLABORADOR (un jefe puede no ser "colaborador").
      */
-    public function store(Request $request)
+    private function buildPosiblesJefes(): Collection
     {
-        DB::beginTransaction();
+        $identities = UserFirebirdIdentity::all();
 
-        try {
-            // Validación principal
-            $validator = Validator::make(
-                $request->all(),
-                [
-                    'name' => 'required|string|max:255',
-                    'email' => 'required|email|unique:users,correo',
-                    'password' => 'required|string|min:6',
-                    'usuario' => 'required|string|max:255',
-                    'telefono' => 'required|string|max:15|unique:users,telefono',
-                    'curp' => 'required|string|max:18|unique:users,curp',
-                    'departamento_id' => 'required|exists:departamentos,id',
-                    'photo' => 'required|file|image|mimes:jpeg,jpg,png,gif',
+        $firebirdIds = $identities->pluck('firebird_user_clave')->filter()->unique()->values();
+        $firebirdUsersById = Users::whereIn('ID', $firebirdIds)->get()->keyBy('ID');
 
-                    // JSON obligatorios
-                    'direccion' => 'required|json',
-                    'empleo' => 'required|json',
-                    'fiscal' => 'required|json',
-                    'seguridad_social' => 'required|json',
-                    'nomina' => 'required|json',
-                ],
-                ValidationMessages::messages()
-            );
+        return $identities->map(function (UserFirebirdIdentity $identity) use ($firebirdUsersById) {
+            $firebirdUser = $firebirdUsersById->get($identity->firebird_user_clave);
 
-
-            if ($validator->fails()) {
-                return response()->json([
-                    'message' => 'Datos inválidos',
-                    'errors' => $validator->errors()
-                ], 422);
+            if (! $firebirdUser) {
+                return null;
             }
 
-            // 1. Crear Dirección (si existe)
-            $direccionId = null;
-            if ($request->has('direccion')) {
-                $direccionData = json_decode($request->direccion, true);
-                if (!empty(array_filter($direccionData))) {
-                    $direccion = Direccion::create($direccionData);
-                    $direccionId = $direccion->id;
-                }
-            }
-
-            // 2. Foto
-            $photoPath = 'photos/users.jpg';
-            if ($request->hasFile('photo')) {
-                if (!file_exists(public_path('photos'))) {
-                    mkdir(public_path('photos'), 0777, true);
-                }
-                $file = $request->file('photo');
-                $filename = 'photo_' . time() . '.' . $file->getClientOriginalExtension();
-                $file->move(public_path('photos'), $filename);
-                $photoPath = 'photos/' . $filename;
-            }
-
-            // 3. Crear Usuario
-            $usuario = Users::create([
-                'nombre' => $request->name,
-                'usuario' => $request->input('usuario', 'COL'),
-                'correo' => $request->email,
-                'password' => Hash::make($request->password),
-                'telefono' => $request->telefono,
-                'curp' => $request->curp,
-                'departamento_id' => $request->departamento_id,
-                'direccion_id' => $direccionId,
-                'photo' => $photoPath,
-                'status_id' => 1,
-            ]);
-
-            // 4. Asignar rol colaborador (1)
-            ModelHasRole::create([
-                'ROLE_CLAVE' => 1,
-                'MODEL_CLAVE' => $usuario->id,
-                'MODEL_TYPE' => Users::class,
-            ]);
-
-            // 5. Crear Empleo (si existe)
-            if ($request->has('empleo')) {
-                $empleoData = json_decode($request->empleo, true);
-                if (!empty(array_filter($empleoData))) {
-                    UserEmpleo::create([
-                        'user_id' => $usuario->id,
-                        'puesto' => $empleoData['puesto'] ?? null,
-                        'fecha_inicio' => $empleoData['fecha_inicio'] ?? null,
-                        'fecha_fin' => $empleoData['fecha_fin'] ?? null,
-                        'comentarios' => $empleoData['comentarios'] ?? null,
-                    ]);
-                }
-            }
-
-            // 6. Crear Datos Fiscales (si existen)
-            if ($request->has('fiscal')) {
-                $fiscalData = json_decode($request->fiscal, true);
-                if (!empty(array_filter($fiscalData))) {
-                    UserFiscal::create([
-                        'user_id' => $usuario->id,
-                        'rfc' => $fiscalData['rfc'] ?? null,
-                        'curp' => $request->curp, // Usamos el CURP del usuario
-                        'regimen_fiscal' => $fiscalData['regimen_fiscal'] ?? null,
-                    ]);
-                }
-            }
-
-            // 7. Crear Seguridad Social (si existe)
-            if ($request->has('seguridad_social')) {
-                $ssData = json_decode($request->seguridad_social, true);
-                if (!empty(array_filter($ssData))) {
-                    UserSeguridadSocial::create([
-                        'user_id' => $usuario->id,
-                        'numero_imss' => $ssData['numero_imss'] ?? null,
-                        'fecha_alta' => $ssData['fecha_alta'] ?? null,
-                        'tipo_seguro' => $ssData['tipo_seguro'] ?? null,
-                    ]);
-                }
-            }
-
-            // 8. Crear Nómina (si existe)
-            if ($request->has('nomina')) {
-                $nominaData = json_decode($request->nomina, true);
-                if (!empty(array_filter($nominaData))) {
-                    UserNomina::create([
-                        'user_id' => $usuario->id,
-                        'numero_tarjeta' => $nominaData['numero_tarjeta'] ?? null,
-                        'banco' => $nominaData['banco'] ?? null,
-                        'clabe_interbancaria' => $nominaData['clabe_interbancaria'] ?? null,
-                        'salario_base' => $nominaData['salario_base'] ?? null,
-                        'frecuencia_pago' => $nominaData['frecuencia_pago'] ?? null,
-                    ]);
-                }
-            }
-
-            DB::commit();
-
-            // Cargar relaciones para la respuesta
-            $usuario->load([
-                'direccion',
-                'departamento',
-                'roles',
-                'nomina',
-                'empleos',
-                'fiscal',
-                'seguridadSocial'
-            ]);
-
-            return response()->json([
-                'message' => 'Colaborador creado exitosamente',
-                'user' => new UsuarioResource($usuario)
-            ], 201);
-        } catch (Exception $e) {
-            DB::rollBack();
-            Log::error('Error en store Colaborador: ' . $e->getMessage());
-            Log::error($e->getTraceAsString());
-
-            return response()->json([
-                'message' => 'Error al crear colaborador',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+            return [
+                'id' => $identity->id,
+                'name' => $firebirdUser->NOMBRE ? trim((string) $firebirdUser->NOMBRE) : null,
+            ];
+        })->filter()->values();
     }
-
+    
     /**
-     * Editar colaborador
+     * Ver un colaborador (por id de users_firebird_identities)
      */
     public function edit($id)
     {
         try {
-            $usuario = Users::with([
-                'direccion',
-                'departamento',
-                'roles',
-                'nomina',
-                'empleos',
-                'fiscal',
-                'seguridadSocial'
+            $identity = UserFirebirdIdentity::with([
+                'roles.role',
+                'roles.subrol',
+                'puestoActivo.puesto',
+                'puestoActivo.area',
+                'puestoActivo.jefe',
+                // 🔧 TODO: mismo comentario que en index() — activar si existe la relación
+                // 'turnoActivo.turno.turnoDias',
+                // 'turnoActivo.status',
             ])->findOrFail($id);
+
+            $payload = $this->overlayFirebirdData(collect([$identity]))->first();
 
             return response()->json([
                 'message' => 'Datos obtenidos',
-                'user' => new UsuarioResource($usuario)
+                'user' => $payload,
             ], 200);
         } catch (Exception $e) {
-            Log::error('Error en edit Colaborador: ' . $e->getMessage());
+            Log::error('Error en edit ColaboradorController: '.$e->getMessage());
 
             return response()->json([
                 'message' => 'Colaborador no encontrado',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 404);
         }
     }
 
     /**
-     * Actualizar colaborador con todos los datos relacionados
+     * Catálogo de TB disponibles (empleados NOI) para enlazar a un usuario nuevo.
+     * Filtra los que ya están enlazados en users_firebird_identities para esa empresa.
+     *
+     * GET /colaborador/tb-disponibles?empresa=04&fecha=2026-08-10
      */
-    public function update(Request $request, $id)
+    public function tbDisponibles(Request $request)
     {
-        DB::beginTransaction();
+        $request->validate([
+            'empresa' => 'required|string|size:2',
+        ]);
 
         try {
-            // Validación
-            $validator = Validator::make(
-                $request->all(),
-                [
-                    'name' => 'required|string|max:255',
-                    'email' => 'required|email|unique:users,correo,' . $id . ',id',
-                    'telefono' => 'nullable|string|max:15',
-                    'curp' => 'nullable|string|max:18',
-                    'departamento_id' => 'nullable|exists:departamentos,id',
-                    'usuario' => 'nullable|string|max:255',
-                    'current_password' => 'required_with:password|string',
-                    'password' => 'nullable|string|min:6',
-                    'photo' => 'nullable',
+            $empresa = $request->query('empresa');
+            $fecha = $request->query('fecha');
 
-                    'direccion' => 'nullable|json',
-                    'empleo' => 'nullable|json',
-                    'fiscal' => 'nullable|json',
-                    'seguridad_social' => 'nullable|json',
-                    'nomina' => 'nullable|json',
-                ],
-                ValidationMessages::messages()
-            );
+            $firebirdNoi = new FirebirdEmpresaManualService($empresa, 'SRVNOI');
+            $tbRows = $firebirdNoi->getOperationalTable('TB', $fecha);
 
-            if ($validator->fails()) {
-                return response()->json([
-                    'message' => 'Datos inválidos',
-                    'errors' => $validator->errors()
-                ], 422);
-            }
+            $yaEnlazados = UserFirebirdIdentity::where('firebird_empresa', $empresa)
+                ->whereNotNull('firebird_tb_clave')
+                ->pluck('firebird_tb_clave')
+                ->map(fn ($v) => (string) $v)
+                ->all();
 
-            $usuario = Users::findOrFail($id);
-
-            // 1. Actualizar/Crear Dirección
-            if ($request->has('direccion')) {
-                $direccionData = json_decode($request->direccion, true);
-                if (!empty(array_filter($direccionData))) {
-                    if ($usuario->direccion_id) {
-                        Direccion::where('id', $usuario->direccion_id)->update($direccionData);
-                    } else {
-                        $direccion = Direccion::create($direccionData);
-                        $usuario->direccion_id = $direccion->id;
-                    }
-                }
-            }
-
-            // 2. Foto
-            $photoPath = $usuario->photo;
-            if ($request->hasFile('photo')) {
-                if (!file_exists(public_path('photos'))) {
-                    mkdir(public_path('photos'), 0777, true);
-                }
-                $file = $request->file('photo');
-                $filename = 'photo_' . $id . '_' . time() . '.' . $file->getClientOriginalExtension();
-                $file->move(public_path('photos'), $filename);
-                $photoPath = 'photos/' . $filename;
-
-                // Eliminar foto anterior
-                $defaultPhoto = 'photos/users.jpg';
-                if ($usuario->photo && $usuario->photo !== $defaultPhoto) {
-                    $oldPhoto = public_path($usuario->photo);
-                    if (file_exists($oldPhoto)) {
-                        @unlink($oldPhoto);
-                    }
-                }
-            }
-
-            // 3. Cambio de contraseña
-            if ($request->filled('password')) {
-                $loggedUser = auth()->user();
-                if (!Hash::check($request->current_password, $loggedUser->password)) {
-                    DB::rollBack();
-                    return response()->json(['message' => 'Contraseña actual incorrecta'], 403);
-                }
-                $usuario->password = Hash::make($request->password);
-            }
-
-            // 4. Actualizar datos básicos del usuario
-            $usuario->update([
-                'nombre' => $request->name,
-                'correo' => $request->email,
-                'telefono' => $request->telefono,
-                'curp' => $request->curp,
-                'departamento_id' => $request->departamento_id ?? $usuario->departamento_id,
-                'usuario' => $request->usuario ?? $usuario->usuario,
-                'photo' => $photoPath,
-            ]);
-
-            // 5. Actualizar/Crear Empleo
-            if ($request->has('empleo')) {
-                $empleoData = json_decode($request->empleo, true);
-                if (!empty(array_filter($empleoData))) {
-                    UserEmpleo::updateOrCreate(
-                        ['user_id' => $usuario->id],
-                        $empleoData
-                    );
-                }
-            }
-
-            // 6. Actualizar/Crear Datos Fiscales
-            if ($request->has('fiscal')) {
-                $fiscalData = json_decode($request->fiscal, true);
-                if (!empty(array_filter($fiscalData))) {
-                    $fiscalData['curp'] = $request->curp; // Sincronizar CURP
-                    UserFiscal::updateOrCreate(
-                        ['user_id' => $usuario->id],
-                        $fiscalData
-                    );
-                }
-            }
-
-            // 7. Actualizar/Crear Seguridad Social
-            if ($request->has('seguridad_social')) {
-                $ssData = json_decode($request->seguridad_social, true);
-                if (!empty(array_filter($ssData))) {
-                    UserSeguridadSocial::updateOrCreate(
-                        ['user_id' => $usuario->id],
-                        $ssData
-                    );
-                }
-            }
-
-            // 8. Actualizar/Crear Nómina
-            if ($request->has('nomina')) {
-                $nominaData = json_decode($request->nomina, true);
-                if (!empty(array_filter($nominaData))) {
-                    UserNomina::updateOrCreate(
-                        ['user_id' => $usuario->id],
-                        $nominaData
-                    );
-                }
-            }
-
-            DB::commit();
-
-            // Cargar relaciones para la respuesta
-            $usuario->load([
-                'direccion',
-                'departamento',
-                'roles',
-                'nomina',
-                'empleos',
-                'fiscal',
-                'seguridadSocial'
-            ]);
+            $disponibles = $tbRows
+                ->reject(fn ($row) => in_array((string) trim((string) $row->CLAVE), $yaEnlazados))
+                ->map(fn ($row) => [
+                    'clave' => trim((string) $row->CLAVE),
+                    'nombre' => $row->NOMBRE ?? null,
+                    'depto' => $row->DEPTO ?? null,
+                    'puesto' => $row->PUESTO ?? null,
+                    // ⚠️ CONFIRMAR nombre de tabla TB real usada por identity (ej. TB19072604) para guardar en firebird_tb_tabla
+                ])
+                ->values();
 
             return response()->json([
-                'message' => 'Colaborador actualizado correctamente',
-                'user' => new UsuarioResource($usuario)
+                'message' => 'Catálogo TB obtenido',
+                'data' => $disponibles,
             ], 200);
         } catch (Exception $e) {
-            DB::rollBack();
-            Log::error('Error en update Colaborador: ' . $e->getMessage());
-            Log::error($e->getTraceAsString());
+            Log::error('Error en tbDisponibles: '.$e->getMessage());
 
             return response()->json([
-                'message' => 'Error al actualizar colaborador',
-                'error' => $e->getMessage()
+                'message' => 'Error al obtener catálogo TB',
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
 
     /**
-     * Eliminar colaborador
+     * Crear colaborador de punta a punta:
+     * 1) USUARIOS (Firebird)
+     * 2) users_firebird_identities (MySQL) — con o sin TB enlazado
+     * 3) model_has_roles (rol/subrol)
+     * 4) user_puestos (opcional)
+     * 5) user_turnos (opcional)
+     */
+    public function store(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'email' => 'required|email',
+            'usuario' => 'required|string|max:255',
+            'password' => 'required|string|min:6',
+            'photo' => 'nullable|file|image|mimes:jpeg,jpg,png,gif',
+
+            // Enlace opcional a TB existente (alta normal). Si viene, los 3 son requeridos juntos.
+            'empresa' => 'nullable|string|size:2|required_with:tb_clave,tb_tabla',
+            'tb_clave' => 'nullable|string|required_with:empresa,tb_tabla',
+            'tb_tabla' => 'nullable|string|required_with:empresa,tb_clave',
+
+            // Rol / subrol
+            'role_id' => 'required|exists:roles,id',
+            'subrol_id' => 'nullable|exists:subroles,id',
+
+            // Puesto (opcional)
+            'puesto_id' => 'nullable|exists:puestos,id',
+            'area_id' => 'nullable|exists:areas,id',
+            'jefe_id' => 'nullable|exists:users_firebird_identities,id',
+            'jefe_aux_id' => 'nullable|exists:users_firebird_identities,id',
+            'fecha_inicio_puesto' => 'nullable|date',
+
+            // Turno (opcional)
+            'turno_id' => 'nullable|exists:turnos,id',
+
+            'excluir_checador' => 'nullable|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Datos inválidos',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        // --- Validar que el TB elegido no esté ya enlazado a otra identidad ---
+        if ($request->filled('tb_clave')) {
+            $yaUsado = UserFirebirdIdentity::where('firebird_empresa', $request->empresa)
+                ->where('firebird_tb_clave', $request->tb_clave)
+                ->exists();
+
+            if ($yaUsado) {
+                return response()->json([
+                    'message' => 'Ese registro de TB ya está enlazado a otro usuario',
+                ], 422);
+            }
+        }
+
+        // --- 1) Foto (si viene) ---
+        $photoPath = 'photos/users.jpg';
+        if ($request->hasFile('photo')) {
+            if (! file_exists(public_path('photos'))) {
+                mkdir(public_path('photos'), 0777, true);
+            }
+            $file = $request->file('photo');
+            $filename = 'photo_'.time().'.'.$file->getClientOriginalExtension();
+            $file->move(public_path('photos'), $filename);
+            $photoPath = 'photos/'.$filename;
+        }
+
+        // --- 2) Alta en Firebird (USUARIOS) — FUERA de la transacción MySQL ---
+        try {
+            $firebirdUser = Users::create([
+                'NOMBRE' => $request->name,
+                'CORREO' => $request->email,
+                'USUARIO' => $request->usuario,
+                'PASSWORD2' => $request->password, // el mutator hace bcrypt() automáticamente
+                'PHOTO' => $photoPath,
+                'STATUS' => 1, // ⚠️ CONFIRMAR formato real (1/2 vs 'A'/'B') en Firebird USUARIOS.STATUS
+            ]);
+        } catch (Exception $e) {
+            Log::error('Error creando USUARIOS en Firebird: '.$e->getMessage());
+
+            return response()->json([
+                'message' => 'Error al crear el usuario en Firebird',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+
+        // --- 3) Todo lo demás en MySQL, con rollback manual del paso Firebird si falla ---
+        DB::beginTransaction();
+
+        try {
+            $identity = UserFirebirdIdentity::create([
+                'firebird_user_clave' => $firebirdUser->ID,
+                'firebird_tb_clave' => $request->tb_clave,
+                'firebird_tb_tabla' => $request->tb_tabla,
+                'firebird_empresa' => $request->empresa,
+                'excluir_checador' => $request->boolean('excluir_checador', false),
+            ]);
+
+            ModelHasRole::create([
+                'role_id' => $request->role_id,
+                'subrol_id' => $request->subrol_id,
+                'firebird_identity_id' => $identity->id,
+                'model_type' => 'firebird_identity',
+            ]);
+
+            if ($request->filled('puesto_id')) {
+                UserPuesto::updateOrCreate(
+                    ['user_firebird_identity_id' => $identity->id],
+                    [
+                        'puesto_id' => $request->puesto_id,
+                        'area_id' => $request->area_id,
+                        'jefe_id' => $request->jefe_id,
+                        'jefe_aux_id' => $request->jefe_aux_id,
+                        'fecha_inicio' => $request->fecha_inicio_puesto ?? now()->toDateString(),
+                        'activo' => true,
+                    ]
+                );
+            }
+
+            if ($request->filled('turno_id')) {
+                UserTurno::updateOrCreate(
+                    ['user_firebird_identity_id' => $identity->id, 'status_id' => 1],
+                    ['turno_id' => $request->turno_id]
+                );
+            }
+
+            DB::commit();
+
+            $identity->load(['roles.role', 'roles.subrol', 'puestoActivo.puesto', 'puestoActivo.area']);
+            $payload = $this->overlayFirebirdData(collect([$identity]))->first();
+
+            return response()->json([
+                'message' => 'Colaborador creado exitosamente',
+                'user' => $payload,
+            ], 201);
+        } catch (Exception $e) {
+            DB::rollBack();
+
+            // Rollback manual del insert en Firebird, porque no comparte transacción con MySQL
+            try {
+                $firebirdUser->delete();
+            } catch (Exception $cleanupError) {
+                Log::error('No se pudo revertir el usuario creado en Firebird tras fallo en MySQL', [
+                    'firebird_id' => $firebirdUser->ID,
+                    'error' => $cleanupError->getMessage(),
+                ]);
+            }
+
+            Log::error('Error en store ColaboradorController (MySQL): '.$e->getMessage());
+            Log::error($e->getTraceAsString());
+
+            return response()->json([
+                'message' => 'Error al crear colaborador',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Actualizar colaborador: datos básicos en Firebird + rol/subrol/puesto/turno en MySQL
+     */
+    public function update(Request $request, $id)
+    {
+        $validator = Validator::make($request->all(), [
+            'name' => 'nullable|string|max:255',
+            'email' => 'nullable|email',
+            'usuario' => 'nullable|string|max:255',
+            'password' => 'nullable|string|min:6',
+            'current_password' => 'required_with:password|string',
+            'photo' => 'nullable|file|image|mimes:jpeg,jpg,png,gif',
+
+            'role_id' => 'nullable|exists:roles,id',
+            'subrol_id' => 'nullable|exists:subroles,id',
+
+            'puesto_id' => 'nullable|exists:puestos,id',
+            'area_id' => 'nullable|exists:areas,id',
+            'jefe_id' => 'nullable|exists:users_firebird_identities,id',
+            'jefe_aux_id' => 'nullable|exists:users_firebird_identities,id',
+
+            'turno_id' => 'nullable|exists:turnos,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Datos inválidos',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            $identity = UserFirebirdIdentity::findOrFail($id);
+            $firebirdUser = Users::findOrFail($identity->firebird_user_clave);
+        } catch (Exception $e) {
+            return response()->json(['message' => 'Colaborador no encontrado'], 404);
+        }
+
+        // --- Cambio de password (requiere validar contra la del usuario logueado, igual que antes) ---
+        if ($request->filled('password')) {
+            $loggedFirebirdUser = Users::find(auth()->id());
+            if (! $loggedFirebirdUser || ! \Illuminate\Support\Facades\Hash::check($request->current_password, $loggedFirebirdUser->PASSWORD2)) {
+                return response()->json(['message' => 'Contraseña actual incorrecta'], 403);
+            }
+        }
+
+        // --- Foto ---
+        $photoPath = $firebirdUser->PHOTO;
+        if ($request->hasFile('photo')) {
+            if (! file_exists(public_path('photos'))) {
+                mkdir(public_path('photos'), 0777, true);
+            }
+            $file = $request->file('photo');
+            $filename = 'photo_'.$id.'_'.time().'.'.$file->getClientOriginalExtension();
+            $file->move(public_path('photos'), $filename);
+            $photoPath = 'photos/'.$filename;
+
+            $defaultPhoto = 'photos/users.jpg';
+            if ($firebirdUser->PHOTO && $firebirdUser->PHOTO !== $defaultPhoto) {
+                $old = public_path($firebirdUser->PHOTO);
+                if (file_exists($old)) {
+                    @unlink($old);
+                }
+            }
+        }
+
+        try {
+            // 1) Firebird: datos básicos (fuera de transacción MySQL, no hay forma de revertir en cross-db,
+            //    así que este paso va primero y si falla no tocamos MySQL)
+            $firebirdUser->update(array_filter([
+                'NOMBRE' => $request->name,
+                'CORREO' => $request->email,
+                'USUARIO' => $request->usuario,
+                'PHOTO' => $photoPath,
+                'PASSWORD2' => $request->filled('password') ? $request->password : null,
+            ], fn ($v) => ! is_null($v)));
+
+            DB::beginTransaction();
+
+            if ($request->filled('role_id')) {
+                ModelHasRole::updateOrCreate(
+                    ['firebird_identity_id' => $identity->id],
+                    ['role_id' => $request->role_id, 'subrol_id' => $request->subrol_id, 'model_type' => 'firebird_identity']
+                );
+            }
+
+            if ($request->filled('puesto_id')) {
+                UserPuesto::updateOrCreate(
+                    ['user_firebird_identity_id' => $identity->id],
+                    [
+                        'puesto_id' => $request->puesto_id,
+                        'area_id' => $request->area_id,
+                        'jefe_id' => $request->jefe_id,
+                        'jefe_aux_id' => $request->jefe_aux_id,
+                        'activo' => true,
+                    ]
+                );
+            }
+
+            if ($request->filled('turno_id')) {
+                UserTurno::updateOrCreate(
+                    ['user_firebird_identity_id' => $identity->id, 'status_id' => 1],
+                    ['turno_id' => $request->turno_id]
+                );
+            }
+
+            DB::commit();
+
+            $identity->load(['roles.role', 'roles.subrol', 'puestoActivo.puesto', 'puestoActivo.area']);
+            $payload = $this->overlayFirebirdData(collect([$identity]))->first();
+
+            return response()->json([
+                'message' => 'Colaborador actualizado correctamente',
+                'user' => $payload,
+            ], 200);
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Error en update ColaboradorController: '.$e->getMessage());
+            Log::error($e->getTraceAsString());
+
+            return response()->json([
+                'message' => 'Error al actualizar colaborador',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Actualizar status (activo/inactivo).
+     * ⚠️ CONFIRMAR: formato de USUARIOS.STATUS en Firebird (aquí asumo 1=activo, 2=inactivo).
+     */
+    public function updateStatus(Request $request, $id)
+    {
+        $request->validate([
+            'status_id' => 'required|in:1,2',
+        ]);
+
+        try {
+            $identity = UserFirebirdIdentity::findOrFail($id);
+            $firebirdUser = Users::findOrFail($identity->firebird_user_clave);
+
+            $firebirdUser->STATUS = $request->status_id;
+            $firebirdUser->save();
+
+            return response()->json([
+                'message' => 'Status actualizado correctamente',
+            ], 200);
+        } catch (Exception $e) {
+            Log::error('Error en updateStatus ColaboradorController: '.$e->getMessage());
+
+            return response()->json([
+                'message' => 'Error al actualizar status',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Eliminar colaborador: quita rol/puesto/turno/identity en MySQL.
+     * No borra el registro histórico de USUARIOS en Firebird (solo lo desvincula) —
+     * ⚠️ CONFIRMAR si en tu caso sí se debe borrar/dar de baja también en Firebird.
      */
     public function destroy($id)
     {
         DB::beginTransaction();
 
         try {
-            $loggedUserId = auth()->id();
+            $identity = UserFirebirdIdentity::findOrFail($id);
 
-            if ((int)$loggedUserId === (int)$id) {
-                return response()->json([
-                    'message' => 'No puedes eliminar tu propio usuario.'
-                ], 403);
-            }
-
-            $usuario = Users::with(['direccion'])->findOrFail($id);
-
-            // Eliminar roles
-            ModelHasRole::where('MODEL_CLAVE', $id)
-                ->where('MODEL_TYPE', Users::class)
-                ->delete();
-
-            // Eliminar datos relacionados
-            UserEmpleo::where('user_id', $id)->delete();
-            UserFiscal::where('user_id', $id)->delete();
-            UserSeguridadSocial::where('user_id', $id)->delete();
-            UserNomina::where('user_id', $id)->delete();
-
-            // Eliminar dirección
-            if ($usuario->direccion_id) {
-                Direccion::where('id', $usuario->direccion_id)->delete();
-            }
-
-            // Eliminar foto
-            $defaultPhoto = 'photos/users.jpg';
-            if ($usuario->photo && $usuario->photo !== $defaultPhoto) {
-                $photo = public_path($usuario->photo);
-                if (file_exists($photo)) {
-                    @unlink($photo);
-                }
-            }
-
-            // Eliminar usuario
-            $usuario->delete();
+            ModelHasRole::where('firebird_identity_id', $identity->id)->delete();
+            UserPuesto::where('user_firebird_identity_id', $identity->id)->delete();
+            UserTurno::where('user_firebird_identity_id', $identity->id)->delete();
+            $identity->delete();
 
             DB::commit();
 
-            return response()->json([
-                'message' => 'Colaborador eliminado correctamente'
-            ], 200);
-        } catch (ModelNotFoundException $e) {
-            DB::rollBack();
-            return response()->json([
-                'message' => 'Colaborador no encontrado',
-                'error' => $e->getMessage()
-            ], 404);
+            return response()->json(['message' => 'Colaborador eliminado correctamente'], 200);
         } catch (Exception $e) {
             DB::rollBack();
-            Log::error('Error en destroy Colaborador: ' . $e->getMessage());
+            Log::error('Error en destroy ColaboradorController: '.$e->getMessage());
+
             return response()->json([
                 'message' => 'Error al eliminar colaborador',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-    public function updateStatus(Request $request, $id)
+    /**
+     * Toma una colección de UserFirebirdIdentity (ya con roles/puestoActivo cargados)
+     * y le pega encima los datos de Firebird: USUARIOS + TB + DEPTOS + PUESTOS,
+     * agrupando las consultas por empresa para no golpear Firebird registro por registro.
+     */
+    private function overlayFirebirdData(Collection $identities): Collection
     {
-        $request->validate([
-            'status_id' => 'required|in:1,2', // Asegura que solo valores válidos
-        ]);
+        // 1) Traer todos los USUARIOS (Firebird) de una sola pasada
+        $firebirdIds = $identities->pluck('firebird_user_clave')->filter()->unique()->values();
+        $firebirdUsersById = Users::whereIn('ID', $firebirdIds)->get()->keyBy('ID');
 
-        $usuario = Users::find($id);
+        // 2) Agrupar por empresa para reusar la conexión dinámica de Firebird NOI
+        $porEmpresa = $identities->filter(fn ($i) => $i->firebird_empresa && $i->firebird_tb_clave)
+            ->groupBy('firebird_empresa');
 
-        if (!$usuario) {
-            return response()->json([
-                'message' => 'Usuario no encontrado'
-            ], 404);
+        $tbByEmpresaClave = [];
+        $deptoByEmpresa = [];
+        $puestoByEmpresa = [];
+
+        foreach ($porEmpresa as $empresa => $grupo) {
+            try {
+                $firebirdNoi = new FirebirdEmpresaManualService($empresa, 'SRVNOI');
+
+                $tbRows = $firebirdNoi->getOperationalTable('TB');
+                $tbByEmpresaClave[$empresa] = $tbRows->keyBy(fn ($row) => trim((string) $row->CLAVE));
+
+                $deptoByEmpresa[$empresa] = $firebirdNoi->getMasterTable('DEPTOS')->keyBy(fn ($row) => trim((string) $row->CLAVE));
+                $puestoByEmpresa[$empresa] = $firebirdNoi->getMasterTable('PUESTOS')->keyBy(fn ($row) => trim((string) $row->CLAVE));
+            } catch (Exception $e) {
+                Log::error('Error consultando Firebird NOI para overlay', [
+                    'empresa' => $empresa,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
-        $usuario->status_id = $request->status_id;
-        $usuario->save();
+        // 3) Armar el payload final por identidad
+        return $identities->map(function (UserFirebirdIdentity $identity) use (
+            $firebirdUsersById,
+            $tbByEmpresaClave,
+            $deptoByEmpresa,
+            $puestoByEmpresa
+        ) {
+            $firebirdUser = $firebirdUsersById->get($identity->firebird_user_clave);
 
-        return response()->json([
-            'message' => 'Status actualizado correctamente',
-            'usuario' => $usuario
-        ]);
+            $tbRow = null;
+            $deptoRow = null;
+            $puestoRow = null;
+
+            if ($identity->firebird_empresa && $identity->firebird_tb_clave) {
+                $claveNorm = trim((string) $identity->firebird_tb_clave);
+                $tbRow = $tbByEmpresaClave[$identity->firebird_empresa][$claveNorm] ?? null;
+
+                if ($tbRow) {
+                    $deptoClave = isset($tbRow->DEPTO) ? trim((string) $tbRow->DEPTO) : null;
+                    $puestoClave = isset($tbRow->PUESTO) ? trim((string) $tbRow->PUESTO) : null;
+
+                    $deptoRow = $deptoClave ? ($deptoByEmpresa[$identity->firebird_empresa][$deptoClave] ?? null) : null;
+                    $puestoRow = $puestoClave ? ($puestoByEmpresa[$identity->firebird_empresa][$puestoClave] ?? null) : null;
+                }
+            }
+
+            if (! $firebirdUser) {
+                Log::warning('Identity sin USUARIOS correspondiente en Firebird', [
+                    'identity_id' => $identity->id,
+                    'firebird_user_clave' => $identity->firebird_user_clave,
+                ]);
+
+                return [
+                    'identity_id' => $identity->id,
+                    'firebird_user_clave' => $identity->firebird_user_clave,
+                    'error' => 'usuario_firebird_no_encontrado',
+                ];
+            }
+
+            $resource = (new UsuarioResource($firebirdUser, [
+                'identity_id' => $identity->id,
+                'roles' => $identity->roles ?? collect(),
+                'user_puesto' => $identity->puestoActivo ?? null,
+                'firebird_tb_clave' => $identity->firebird_tb_clave,
+                'firebird_empresa' => $identity->firebird_empresa,
+                'TB' => $tbRow,
+                'DEPTO_NOI' => $deptoRow,
+                'PUESTO_NOI' => $puestoRow,
+                'turnoActivo' => $identity->turnoActivo ?? null,
+            ]))->resolve();
+
+            // ============================================================
+            // 🔧 PARCHE LOCAL — NO TOCAR UsuarioResource.php (lo usan otros
+            // controladores y romperíamos ese contrato compartido).
+            //
+            // UsuarioResource solo expone nombres anidados:
+            //   USER_PUESTO.PUESTO.NOMBRE / AREA.NOMBRE / JEFE.NOMBRE
+            // pero el formulario de Angular (colaboradorlist.component.ts)
+            // necesita los IDs crudos para preseleccionar los <mat-select>
+            // de Puesto / Área / Jefe / Jefe auxiliar:
+            //   puestoActivo?.puesto_id, puestoActivo?.area_id, puestoActivo?.jefe_id
+            //
+            // Los inyectamos aquí, DESPUÉS de resolve(), solo para el payload
+            // que devuelve ColaboradorController. Esto no afecta a ningún
+            // otro controlador que use UsuarioResource.
+            // ============================================================
+            if ($identity->puestoActivo && isset($resource['USER_PUESTO'])) {
+                $resource['USER_PUESTO']['puesto_id'] = $identity->puestoActivo->puesto_id;
+                $resource['USER_PUESTO']['area_id'] = $identity->puestoActivo->area_id;
+                $resource['USER_PUESTO']['jefe_id'] = $identity->puestoActivo->jefe_id;
+                $resource['USER_PUESTO']['jefe_aux_id'] = $identity->puestoActivo->jefe_aux_id;
+            }
+
+            // 🔧 TODO turno: activar junto con las líneas comentadas de arriba
+            // una vez confirmada la relación turnoActivo() en el modelo.
+            if ($identity->turnoActivo && isset($resource['TURNO_ASIGNADO'])) {
+                $resource['TURNO_ASIGNADO']['turno_id'] = $identity->turnoActivo->turno_id;
+            }
+
+            return $resource;
+        });
+    }
+
+    public function catalogoJefes()
+    {
+        $identities = UserFirebirdIdentity::with(['puestoActivo'])->get();
+        $firebirdIds = $identities->pluck('firebird_user_clave')->filter()->unique();
+        $firebirdUsers = Users::whereIn('ID', $firebirdIds)->get()->keyBy('ID');
+
+        $data = $identities->map(function ($identity) use ($firebirdUsers) {
+            $fu = $firebirdUsers->get($identity->firebird_user_clave);
+
+            return [
+                'id' => $identity->id,
+                'name' => $fu?->NOMBRE ? trim($fu->NOMBRE) : null,
+            ];
+        })->filter(fn ($u) => $u['name']);
+
+        return response()->json(['message' => 'Catálogo de jefes', 'data' => $data->values()]);
+    }
+
+
+    /**
+     * Catálogo de posibles jefes / jefes auxiliares.
+     * A diferencia de index(), NO filtra por rol COLABORADOR — cualquier
+     * identidad puede ser jefe (admins, RH, etc.), así que se traen todas.
+     */
+public function posiblesJefes()
+    {
+        try {
+            return response()->json([
+                'message' => 'Catálogo de jefes obtenido',
+                'data' => $this->buildPosiblesJefes(),
+            ], 200);
+        } catch (Exception $e) {
+            Log::error('Error en posiblesJefes ColaboradorController: '.$e->getMessage());
+
+            return response()->json([
+                'message' => 'Error al obtener catálogo de jefes',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 }

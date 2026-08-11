@@ -87,6 +87,8 @@ Route::prefix('colaborador')->middleware('jwt.auth')->group(function () {
     Route::delete('{id}', [ColaboradorController::class, 'destroy'])->name('superadmin.colaborador.destroy');
 
     Route::put('usuarios/{id}/status', [ColaboradorController::class, 'updateStatus']);
+
+       Route::get('/posibles-jefes', [ColaboradorController::class, 'posiblesJefes']);
 });
 
 // GESTIONAR ROLES
@@ -105,6 +107,12 @@ Route::prefix('catalogos')->middleware('jwt.auth')->group(function () {
     Route::get('getroles', [CatalogosController::class, 'getRoles']);
     Route::get('getsubroles', [CatalogosController::class, 'getSubroles']);
     Route::get('getstatuses', [CatalogosController::class, 'getStatuses']);
+
+    Route::get('getpermissions', [CatalogosController::class, 'getPermissions']);
+    Route::get('getsubpermissions', [CatalogosController::class, 'getSubPermissions']);
+
+    Route::get('catalogo-jefes', [ColaboradorController::class, 'catalogoJefes']);
+    Route::get('getpermisos', [CatalogosController::class, 'getPermisos']);
 });
 
 Route::prefix('rh/E_ONE')->middleware('jwt.auth')->group(function () {
@@ -119,6 +127,9 @@ Route::prefix('colaboradores')->middleware('jwt.auth')->group(function () {
     Route::get('vacaciones/{id}/edit', [SoliVacacionesController::class, 'edit']);
     Route::put('vacaciones/{id}/update', [SoliVacacionesController::class, 'update']);
     Route::delete('vacaciones/{id}/delete', [SoliVacacionesController::class, 'destroy']);
+
+ 
+
 });
 
 Route::middleware(['jwt.auth'])->prefix('firebird')->group(function () {

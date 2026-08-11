@@ -5,10 +5,9 @@ namespace App\Http\Controllers\Catalogos;
 use App\Http\Controllers\Controller;
 use App\Models\Departamento;
 use App\Models\Rol;
-use App\Models\Subrole;
 use App\Models\Status;
+use App\Models\Subrole;
 use Exception;
-use Illuminate\Http\Request;
 
 class CatalogosController extends Controller
 {
@@ -23,17 +22,16 @@ class CatalogosController extends Controller
                 'message' => 'Catálogos cargados correctamente.',
                 'data' => [
                     'departamentos' => Departamento::select('id', 'nombre')->get(),
-                    'roles'         => Rol::select('id', 'nombre', 'GUARD_NAME')->get(),
-                    'subroles'      => Subrole::select('id', 'nombre', 'GUARD_NAME')->get(),
-                    'statuses'      => Status::select('id', 'nombre', 'descripcion')->get(),
-                ]
+                    'roles' => Rol::select('id', 'nombre', 'GUARD_NAME')->get(),
+                    'subroles' => Subrole::select('id', 'nombre', 'GUARD_NAME')->get(),
+                    'statuses' => Status::select('id', 'nombre', 'descripcion')->get(),
+                ],
             ], 200);
         } catch (Exception $e) {
-
             return response()->json([
                 'success' => false,
                 'message' => 'Error al cargar los catálogos.',
-                'error'   => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -49,17 +47,16 @@ class CatalogosController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Departamentos cargados correctamente.',
-                'data'    => $data
+                'data' => $data,
             ]);
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al cargar departamentos.',
-                'error'   => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
-
 
     /**
      * Catálogo: Roles
@@ -72,17 +69,16 @@ class CatalogosController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Roles cargados correctamente.',
-                'data'    => $data
+                'data' => $data,
             ]);
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al cargar roles.',
-                'error'   => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
-
 
     /**
      * Catálogo: Subroles
@@ -95,17 +91,16 @@ class CatalogosController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Subroles cargados correctamente.',
-                'data'    => $data
+                'data' => $data,
             ]);
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al cargar subroles.',
-                'error'   => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
-
 
     /**
      * Catálogo: Status
@@ -118,14 +113,61 @@ class CatalogosController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Statuses cargados correctamente.',
-                'data'    => $data
+                'data' => $data,
             ]);
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Error al cargar statuses.',
-                'error'   => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
+
+    public function getPermissions()
+    {
+        try {
+            $data = Rol::select('id', 'nombre', 'GUARD_NAME')->get(); // or whatever model backs "permissions"
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Permisos cargados correctamente.',
+                'data' => $data,
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al cargar permisos.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function getSubPermissions()
+    {
+        try {
+            $data = Subrole::select('id', 'nombre', 'GUARD_NAME')->get();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Subpermisos cargados correctamente.',
+                'data' => $data,
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al cargar subpermisos.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+ public function getPermisos()
+{
+    return response()->json([
+        'message' => 'Catálogo de permisos obtenido',
+        'permissions' => Rol::all(['id', 'nombre']),
+        'sub_permissions' => Subrole::all(['id', 'nombre']),
+    ], 200);
+}
 }

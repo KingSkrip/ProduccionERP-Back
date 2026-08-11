@@ -31,11 +31,11 @@ class DataDashboardController extends Controller
     private $jwtSecret;
     private $jwtAlgorithm = 'HS256';
     protected FirebirdConnectionService $firebirdService;
-    protected ChecadorQrService $qrService; // 👈 3. DECLARAR PROPIEDAD
+    protected ChecadorQrService $qrService;
 
     public function __construct(
         FirebirdConnectionService $firebirdService,
-        ChecadorQrService $qrService // 👈 4. INYECTAR EN CONSTRUCTOR
+        ChecadorQrService $qrService
     ) {
         $this->jwtSecret = config('jwt.secret');
         $this->firebirdService = $firebirdService;
@@ -69,25 +69,11 @@ class DataDashboardController extends Controller
 
             $sub = (int) $decoded->sub;
 
-            Log::info('🧾 ME_JWT_SUB', [
-                'sub' => $sub,
-                'type' => gettype($sub),
-            ]);
-
             if (!$sub) {
                 return response()->json(['message' => 'Token inválido (sin sub)'], 401);
             }
 
             $usuario = Users::find($sub);
-
-            Log::info('👤 ME_FIREBIRD_USER_BY_ID', [
-                'found' => (bool) $usuario,
-                'sub' => $sub,
-                'firebird_id' => $usuario->ID ?? null,
-                'firebird_clave' => $usuario->CLAVE ?? null,
-                'correo' => $usuario->CORREO ?? null,
-                'nombre' => $usuario->NOMBRE ?? null,
-            ]);
 
             if (!$usuario) {
                 $usuarioPorClave = Users::where('CLAVE', $sub)->first();
@@ -108,34 +94,12 @@ class DataDashboardController extends Controller
 
             $identity = UserFirebirdIdentity::where('firebird_user_clave', (int)$usuario->ID)->first();
 
-            Log::info('📌 ME_MYSQL_IDENTITY_LOOKUP', [
-                'found' => (bool) $identity,
-                'lookup_by' => 'firebird_user_clave = USUARIOS.ID',
-                'firebird_user_id' => $usuario->ID,
-                'identity_id' => $identity->id ?? null,
-                'identity_firebird_user_clave' => $identity->firebird_user_clave ?? null,
-                'identity_firebird_tb_clave' => $identity->firebird_tb_clave ?? null,
-                'identity_firebird_clie_clave' => $identity->firebird_clie_clave ?? null,
-                'identity_tb_tabla' => $identity->firebird_tb_tabla ?? null,
-                'identity_clie_tabla' => $identity->firebird_clie_tabla ?? null,
-                'firebird_vend_clave' => null,
-                'identity_empresa' => $identity->firebird_empresa ?? null,
-            ]);
-
             if (!$identity) {
                 $identityLegacy = UserFirebirdIdentity::where('firebird_user_clave', (int)$usuario->CLAVE)->first();
 
                 Log::warning('🧯 ME_IDENTITY_LEGACY_FALLBACK', [
-                    'found' => (bool) $identityLegacy,
-                    'lookup_by' => 'firebird_user_clave = USUARIOS.CLAVE (legacy)',
                     'usuarios_clave' => $usuario->CLAVE,
                     'identity_id' => $identityLegacy->id ?? null,
-                    'identity_tb_clave' => $identityLegacy->firebird_tb_clave ?? null,
-                    'identity_clie_clave' => $identityLegacy->firebird_clie_clave ?? null,
-                    'identity_empresa' => $identityLegacy->firebird_empresa ?? null,
-                    'identity_tb_tabla' => $identityLegacy->firebird_tb_tabla ?? null,
-                    'identity_clie_tabla' => $identityLegacy->firebird_clie_tabla ?? null,
-                    'firebird_vend_clave' => null,
                 ]);
 
                 $identity = $identityLegacy;
@@ -149,12 +113,6 @@ class DataDashboardController extends Controller
             $esCliente = $identity->firebird_clie_clave !== null;
             $esVendedor = $identity->firebird_vend_clave !== null;
             $esProveedor = $identity->firebird_prov_clave !== null;
-
-            Log::info('🔍 ME_USER_TYPE_DETECTION', [
-                'es_empleado' => $esEmpleado,
-                'es_cliente'  => $esCliente,
-                'es_vendedor' => $esVendedor,
-            ]);
 
             $roles = $identity->roles()->get();
             $turnoActivo = null;
@@ -172,26 +130,13 @@ class DataDashboardController extends Controller
                 try {
                     $qr = $this->qrService->generar($identity->id);
                     $qrData = (new ChecadorAccessQrCodeResource($qr))->resolve();
-
-                    Log::info('🎫 ME_QR_CHECADOR', [
-                        'identity_id' => $identity->id,
-                        'qr_token' => $qr->token,
-                        'qr_creado' => $qr->wasRecentlyCreated,
-                    ]);
                 } catch (\Throwable $e) {
                     Log::warning('⚠️ ME_QR_NO_GENERADO', [
                         'identity_id' => $identity->id,
                         'error' => $e->getMessage(),
                     ]);
                 }
-            } else {
-                Log::info('🚫 ME_QR_EXCLUIDO', ['identity_id' => $identity->id]);
             }
-
-            Log::info('🎭 ME_ROLES_TURNO', [
-                'roles_count' => $roles->count(),
-                'turno_activo' => (bool) $turnoActivo,
-            ]);
 
             $departamentos = collect();
             $slRow = null;
@@ -209,79 +154,33 @@ class DataDashboardController extends Controller
                 $tbClaveNorm = is_string($tbClave) ? trim($tbClave) : $tbClave;
                 $empresaNoi = $identity->firebird_empresa ?? '04';
 
-                Log::info('🧠 ME_EMPLEADO_KEYS_RESOLVED', [
-                    'auth_uses' => 'USUARIOS.ID (JWT sub)',
-                    'noi_uses' => 'TB.CLAVE (identity.firebird_tb_clave)',
-                    'firebird_id' => $usuario->ID,
-                    'usuarios_clave' => $usuario->CLAVE,
-                    'tb_clave' => $tbClave,
-                    'tb_clave_norm' => $tbClaveNorm,
-                    'empresaNoi' => $empresaNoi,
-                ]);
-
                 try {
                     $firebirdNoi = new FirebirdEmpresaManualService($empresaNoi, 'SRVNOI');
 
-                    $departamentos = $firebirdNoi->getMasterTable('DEPTOS')->keyBy('CLAVE');
+                    // 🔥 DEPTOS se pide UNA sola vez y se reutiliza para el lookup de depto del empleado
+                    $departamentos = $firebirdNoi->getMasterTable('DEPTOS')->keyBy(fn($row) => trim((string)$row->CLAVE));
 
-                    $sl = $firebirdNoi->getOperationalTable('SL')
-                        ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
-                    $slRow = $sl[$tbClaveNorm] ?? null;
-
-                    $vc = $firebirdNoi->getOperationalTable('VC')
-                        ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
-                    $vcRow = $vc[$tbClaveNorm] ?? null;
-
-                    $hvc = $firebirdNoi->getMasterTable('HISTVAC')
-                        ->keyBy(fn($row) => trim((string)$row->CVETRAB));
-                    $hvcRow = $hvc[$tbClaveNorm] ?? null;
-
-                    $mf = $firebirdNoi->getOperationalTable('MF')
-                        ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
-                    $mfRow = $mf[$tbClaveNorm] ?? null;
-
-                    $acRows = $firebirdNoi->getOperationalTable('AC')
-                        ->filter(fn($row) => trim((string)$row->CLAVE_TRAB) === (string)$tbClaveNorm)
-                        ->values();
-
-                    $tb = $firebirdNoi->getOperationalTable('TB')
-                        ->keyBy(fn($row) => trim((string)$row->CLAVE));
-                    $tbRow = $tb[$tbClaveNorm] ?? null;
+                    // 🔥 Filtramos por clave DIRECTO en Firebird (WHERE) en vez de traer la tabla completa y hacer keyBy en PHP
+                    $slRow  = $firebirdNoi->getOperationalRowByClave('SL', $tbClaveNorm, 'CLAVE_TRAB');
+                    $vcRow  = $firebirdNoi->getOperationalRowByClave('VC', $tbClaveNorm, 'CLAVE_TRAB');
+                    $hvcRow = $firebirdNoi->getMasterRowByClave('HISTVAC', $tbClaveNorm, 'CVETRAB');
+                    $mfRow  = $firebirdNoi->getOperationalRowByClave('MF', $tbClaveNorm, 'CLAVE_TRAB');
+                    $acRows = $firebirdNoi->getOperationalRowsByClave('AC', $tbClaveNorm, 'CLAVE_TRAB');
+                    $tbRow  = $firebirdNoi->getOperationalRowByClave('TB', $tbClaveNorm, 'CLAVE');
 
                     // 🚫 Bloquear sesión si el empleado está dado de baja (STATUS = 'B')
                     // if ($tbRow && isset($tbRow->STATUS) && trim((string)$tbRow->STATUS) === 'B') {
-                    //     Log::warning('🚫 ME_BLOCKED_STATUS_BAJA', [
-                    //         'firebird_id' => $usuario->ID,
-                    //         'tb_clave'    => $tbClaveNorm,
-                    //         'status'      => $tbRow->STATUS,
-                    //     ]);
-
                     //     return response()->json([
                     //         'message' => 'Tu usuario ha sido dado de baja y no puedes ingresar.'
                     //     ], 403);
                     // }
 
                     if ($tbRow) {
-                        // 🏢 DEPTO
+                        // 🏢 DEPTO (usa $departamentos ya cargado arriba, sin volver a pedirlo a Firebird)
                         $deptoClave = isset($tbRow->DEPTO) ? trim((string)$tbRow->DEPTO) : null;
 
                         if ($deptoClave) {
-                            try {
-                                $deptos = $firebirdNoi->getMasterTable('DEPTOS')
-                                    ->keyBy(fn($row) => trim((string)$row->CLAVE));
-                                $deptoRow = $deptos[$deptoClave] ?? null;
-
-                                Log::info('🏢 ME_DEPTO_LOOKUP', [
-                                    'depto_clave'  => $deptoClave,
-                                    'depto_found'  => (bool) $deptoRow,
-                                    'depto_nombre' => $deptoRow->NOMBRE ?? null,
-                                ]);
-                            } catch (\Throwable $e) {
-                                Log::error('⚠️ ME_DEPTO_LOOKUP_ERROR', [
-                                    'depto_clave' => $deptoClave,
-                                    'error'       => $e->getMessage(),
-                                ]);
-                            }
+                            $deptoRow = $departamentos[$deptoClave] ?? null;
                         }
 
                         // 👔 PUESTO
@@ -292,12 +191,6 @@ class DataDashboardController extends Controller
                                 $puestos = $firebirdNoi->getMasterTable('PUESTOS')
                                     ->keyBy(fn($row) => trim((string)$row->CLAVE));
                                 $puestoRow = $puestos[$puestoClave] ?? null;
-
-                                Log::info('👔 ME_PUESTO_LOOKUP', [
-                                    'puesto_clave'  => $puestoClave,
-                                    'puesto_found'  => (bool) $puestoRow,
-                                    'puesto_nombre' => $puestoRow->NOMBRE ?? null,
-                                ]);
                             } catch (\Throwable $e) {
                                 Log::error('⚠️ ME_PUESTO_LOOKUP_ERROR', [
                                     'puesto_clave' => $puestoClave,
@@ -306,18 +199,6 @@ class DataDashboardController extends Controller
                             }
                         }
                     }
-                    Log::info('✅ ME_EMPLEADO_NOI_DATA', [
-                        'tb_clave' => $tbClaveNorm,
-                        'found' => [
-                            'tb' => (bool) $tbRow,
-                            'sl' => (bool) $slRow,
-                            'vc' => (bool) $vcRow,
-                            'hvc' => (bool) $hvcRow,
-                            'mf' => (bool) $mfRow,
-                            'ac_count' => $acRows->count(),
-                        ],
-                        'depto_count' => $departamentos->count(),
-                    ]);
                 } catch (\Throwable $e) {
                     Log::error('⚠️ ME_EMPLEADO_NOI_ERROR', [
                         'empresaNoi' => $empresaNoi,
@@ -330,14 +211,6 @@ class DataDashboardController extends Controller
             if ($esCliente) {
                 $clieClave = $identity->firebird_clie_clave;
 
-                Log::info('🧠 ME_CLIENTE_KEYS_RESOLVED', [
-                    'auth_uses' => 'USUARIOS.ID (JWT sub)',
-                    'clie_uses' => 'CLIE03.CLAVE (identity.firebird_clie_clave)',
-                    'firebird_id' => $usuario->ID,
-                    'clie_clave' => $clieClave,
-                    'clie_tabla' => $identity->firebird_clie_tabla ?? null,
-                ]);
-
                 if ($clieClave) {
                     try {
                         $connection = $this->firebirdService->getProductionConnection();
@@ -346,12 +219,6 @@ class DataDashboardController extends Controller
                             "SELECT * FROM CLIE03 WHERE CLAVE = ?",
                             [$clieClave]
                         );
-
-                        Log::info('✅ ME_CLIENTE_CLIE03_DATA', [
-                            'clie_clave' => $clieClave,
-                            'clie_found' => $clieRow ? true : false,
-                            'clie_nombre' => $clieRow->NOMBRE ?? null,
-                        ]);
                     } catch (\Throwable $e) {
                         Log::error('⚠️ ME_CLIENTE_DATA_ERROR', [
                             'clie_clave' => $clieClave,
@@ -370,14 +237,6 @@ class DataDashboardController extends Controller
             if ($esVendedor) {
                 $vendClave = $identity->firebird_vend_clave;
 
-                Log::info('🧠 ME_VENDEDOR_KEYS_RESOLVED', [
-                    'auth_uses'  => 'USUARIOS.ID (JWT sub)',
-                    'vend_uses'  => 'VEND03.CVE_VEND (identity.firebird_vend_clave)',
-                    'firebird_id' => $usuario->ID,
-                    'vend_clave'  => $vendClave,
-                    'vend_tabla'  => $identity->firebird_vend_tabla ?? null,
-                ]);
-
                 if ($vendClave) {
                     try {
                         $connection = $this->firebirdService->getProductionConnection();
@@ -385,11 +244,6 @@ class DataDashboardController extends Controller
                             "SELECT * FROM VEND03 WHERE CVE_VEND = ?",
                             [$vendClave]
                         );
-                        Log::info('✅ ME_VENDEDOR_VEND03_DATA', [
-                            'vend_clave'  => $vendClave,
-                            'vend_found'  => (bool) $vendRow,
-                            'vend_nombre' => $vendRow->NOMBRE ?? null,
-                        ]);
                     } catch (\Throwable $e) {
                         Log::error('⚠️ ME_VENDEDOR_DATA_ERROR', [
                             'vend_clave' => $vendClave,
@@ -408,14 +262,6 @@ class DataDashboardController extends Controller
             if ($esProveedor) {
                 $provClave = $identity->firebird_prov_clave;
 
-                Log::info('🧠 ME_PROVEEDOR_KEYS_RESOLVED', [
-                    'auth_uses'  => 'USUARIOS.ID (JWT sub)',
-                    'prov_uses'  => 'PROV03.CLAVE (identity.firebird_prov_clave)',
-                    'firebird_id' => $usuario->ID,
-                    'prov_clave'  => $provClave,
-                    'prov_tabla'  => $identity->firebird_prov_tabla ?? null,
-                ]);
-
                 if ($provClave) {
                     try {
                         $connection = $this->firebirdService->getProductionConnection();
@@ -423,12 +269,6 @@ class DataDashboardController extends Controller
                             "SELECT * FROM PROV03 WHERE CLAVE = ?",
                             [$provClave]
                         );
-
-                        Log::info('✅ ME_PROVEEDOR_PROV03_DATA', [
-                            'prov_clave'  => $provClave,
-                            'prov_found'  => (bool) $provRow,
-                            'prov_nombre' => $provRow->NOMBRE ?? null,
-                        ]);
                     } catch (\Throwable $e) {
                         Log::error('⚠️ ME_PROVEEDOR_DATA_ERROR', [
                             'prov_clave' => $provClave,
@@ -464,7 +304,7 @@ class DataDashboardController extends Controller
                     'TB'                  => $tbRow,
                     'CLIE'                => $clieRow,
                     'VEND'                => $vendRow,
-                    'qr'                  => $qrData, // 👈 5. AGREGAR AL CONTEXTO
+                    'qr'                  => $qrData,
                     'firebird_tb_clave'   => $identity->firebird_tb_clave ?? null,
                     'firebird_clie_clave' => $identity->firebird_clie_clave ?? null,
                     'firebird_vend_clave' => $identity->firebird_vend_clave ?? null,
@@ -481,7 +321,7 @@ class DataDashboardController extends Controller
                 ])
             ], 200);
         } catch (SignatureInvalidException $e) {
-            Log::warning('Firma inválida', ['token_prefix' => substr($token, 0, 20)]);
+            Log::warning('Firma inválida', ['token_prefix' => substr($token ?? '', 0, 20)]);
             return response()->json(['message' => 'Token inválido'], 401);
         } catch (ExpiredException $e) {
             Log::warning('🔴 ME_TOKEN_EXPIRED', ['error' => $e->getMessage()]);

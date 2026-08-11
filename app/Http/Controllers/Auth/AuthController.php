@@ -4,13 +4,6 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Checador\ChecadorAccessQrCodeResource;
-use Exception;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
-use Firebase\JWT\JWT;
-use Firebase\JWT\Key;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Validator;
 use App\Http\Resources\UsuarioResource;
 use App\Mail\ForgotPasswordMail;
 use App\Models\Firebird\Users;
@@ -18,19 +11,30 @@ use App\Models\ModelHasRole;
 use App\Models\UserFirebirdIdentity;
 use App\Models\UserPuesto;
 use App\Services\Checador\ChecadorQrService;
+use App\Services\FirebirdConnectionService;
 use App\Services\FirebirdEmpresaManualService;
 use Carbon\Carbon;
+use Exception;
+use Firebase\JWT\JWT;
+use Firebase\JWT\Key;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
-use App\Services\FirebirdConnectionService;
 
 class AuthController extends Controller
 {
     private $jwtSecret;
+
     private $jwtAlgorithm = 'HS256';
+
     private $jwtExpiration = 86400;
+
     protected FirebirdConnectionService $firebirdService;
+
     protected ChecadorQrService $qrService;
 
     public function __construct(
@@ -52,7 +56,7 @@ class AuthController extends Controller
         try {
             $request->validate([
                 'email' => 'required|email',
-                'password' => 'required|string'
+                'password' => 'required|string',
             ]);
 
             $email = strtolower(trim($request->email));
@@ -74,8 +78,9 @@ class AuthController extends Controller
                 'nombre' => $usuario->NOMBRE ?? null,
             ]);
 
-            if (!$usuario) {
+            if (! $usuario) {
                 Log::warning('❌ LOGIN_FAIL_USER_NOT_FOUND', ['email' => $email]);
+
                 return response()->json(['message' => 'Credenciales incorrectas'], 401);
             }
 
@@ -85,14 +90,15 @@ class AuthController extends Controller
             Log::info('🔐 FIREBIRD_PASSWORD_CHECK', [
                 'firebird_id' => $usuario->ID,
                 'match' => $match,
-                'hash_length' => isset($usuario->PASSWORD2) ? strlen((string)$usuario->PASSWORD2) : null,
+                'hash_length' => isset($usuario->PASSWORD2) ? strlen((string) $usuario->PASSWORD2) : null,
             ]);
 
-            if (!$match) {
+            if (! $match) {
                 Log::warning('❌ LOGIN_FAIL_BAD_PASSWORD', [
                     'firebird_id' => $usuario->ID,
-                    'email' => $email
+                    'email' => $email,
                 ]);
+
                 return response()->json(['message' => 'Credenciales incorrectas'], 401);
             }
 
@@ -106,11 +112,11 @@ class AuthController extends Controller
             ]);
 
             // 🔹 Pivote MySQL (roles/empresa)
-            $identity = UserFirebirdIdentity::where('firebird_user_clave', (int)$usuario->ID)->first();
+            $identity = UserFirebirdIdentity::where('firebird_user_clave', (int) $usuario->ID)->first();
 
             // 🧯 Fallback legacy
-            if (!$identity) {
-                $identityLegacy = UserFirebirdIdentity::where('firebird_user_clave', (int)$usuario->CLAVE)->first();
+            if (! $identity) {
+                $identityLegacy = UserFirebirdIdentity::where('firebird_user_clave', (int) $usuario->CLAVE)->first();
                 $identity = $identityLegacy;
             }
 
@@ -134,25 +140,25 @@ class AuthController extends Controller
                 $qrData = (new ChecadorAccessQrCodeResource($qr))->resolve();
             }
 
-$userPuesto = null;
-$esJefeAuxiliar = false; 
+            $userPuesto = null;
+            $esJefeAuxiliar = false;
 
-if ($identity) {
-    $identity = UserFirebirdIdentity::where('firebird_user_clave', (int)$usuario->ID)
-        ->with([
-            'puestoActivo.puesto',
-            'puestoActivo.area',
-            'puestoActivo.jefe.firebirdUser',
-        ])
-        ->first();
+            if ($identity) {
+                $identity = UserFirebirdIdentity::where('firebird_user_clave', (int) $usuario->ID)
+                    ->with([
+                        'puestoActivo.puesto',
+                        'puestoActivo.area',
+                        'puestoActivo.jefe.firebirdUser',
+                    ])
+                    ->first();
 
-    $userPuesto = $identity->puestoActivo ?? null;
+                $userPuesto = $identity->puestoActivo ?? null;
 
-    // 👇 nuevo: ¿eres jefe_aux_id de ALGÚN puesto activo (de otro colaborador)?
-    $esJefeAuxiliar = UserPuesto::where('jefe_aux_id', $identity->id)
-        ->where('activo', 1)
-        ->exists();
-}
+                // 👇 nuevo: ¿eres jefe_aux_id de ALGÚN puesto activo (de otro colaborador)?
+                $esJefeAuxiliar = UserPuesto::where('jefe_aux_id', $identity->id)
+                    ->where('activo', 1)
+                    ->exists();
+            }
 
             Log::info('🎭 MYSQL_ROLES', [
                 'identity_id' => $identity->id ?? null,
@@ -173,14 +179,14 @@ if ($identity) {
 
             // ✅ JWT payload blindado con claims estándar
             $payload = [
-                'sub'     => $userId,
+                'sub' => $userId,
                 // 'correo'  => $usuario->CORREO,
                 // 'usuario' => $usuario->USUARIO,
-                'iat'     => time(),
-                'exp'     => time() + $this->jwtExpiration,
-                'iss'     => config('app.url'),
-                'aud'     => 'fibrasan',
-                'jti'     => Str::random(32),
+                'iat' => time(),
+                'exp' => time() + $this->jwtExpiration,
+                'iss' => config('app.url'),
+                'aud' => 'fibrasan',
+                'jti' => Str::random(32),
             ];
 
             Log::info('✅ JWT_SUB_IS_ID', [
@@ -190,11 +196,12 @@ if ($identity) {
 
             $key = config('jwt.secret');
 
-            if (!is_string($key) || empty($key)) {
+            if (! is_string($key) || empty($key)) {
                 Log::error('JWT secret missing or empty', [
                     'jwt_secret_env' => env('JWT_SECRET'),
                     'jwt_secret_config' => $key,
                 ]);
+
                 return response()->json(['message' => 'Error de configuración interna'], 500);
             }
 
@@ -231,10 +238,9 @@ if ($identity) {
                     try {
                         $firebirdNoi = new FirebirdEmpresaManualService($empresaNoi, 'SRVNOI');
 
-
                         // TB (base) - usando TB.CLAVE
                         $tb = $firebirdNoi->getOperationalTable('TB')
-                            ->keyBy(fn($row) => trim((string)$row->CLAVE));
+                            ->keyBy(fn ($row) => trim((string) $row->CLAVE));
                         $tbRow = $tb[$tbClaveNorm] ?? null;
 
                         Log::info('📘 NOI_TB_LOOKUP', [
@@ -259,24 +265,24 @@ if ($identity) {
                         if ($tbRow) {
 
                             // 🏢 DEPTO -> tabla maestra DEPTOS + empresa (ej. DEPTOS04)
-                            $deptoClave = isset($tbRow->DEPTO) ? trim((string)$tbRow->DEPTO) : null;
+                            $deptoClave = isset($tbRow->DEPTO) ? trim((string) $tbRow->DEPTO) : null;
 
                             if ($deptoClave) {
                                 try {
                                     $deptos = $firebirdNoi->getMasterTable('DEPTOS') // 🔥 antes: getOperationalTable
-                                        ->keyBy(fn($row) => trim((string)$row->CLAVE));
+                                        ->keyBy(fn ($row) => trim((string) $row->CLAVE));
                                     $deptoRow = $deptos[$deptoClave] ?? null;
 
                                     Log::info('🏢 NOI_DEPTO_LOOKUP', [
-                                        'empresa'      => $empresaNoi,
-                                        'depto_clave'  => $deptoClave,
-                                        'depto_found'  => (bool) $deptoRow,
+                                        'empresa' => $empresaNoi,
+                                        'depto_clave' => $deptoClave,
+                                        'depto_found' => (bool) $deptoRow,
                                         'depto_nombre' => $deptoRow->NOMBRE ?? null,
                                     ]);
                                 } catch (\Throwable $e) {
                                     Log::error('⚠️ NOI_DEPTO_LOOKUP_ERROR', [
                                         'depto_clave' => $deptoClave,
-                                        'error'       => $e->getMessage(),
+                                        'error' => $e->getMessage(),
                                     ]);
                                 }
                             } else {
@@ -286,24 +292,24 @@ if ($identity) {
                             }
 
                             // 👔 PUESTO -> tabla maestra PUESTOS + empresa (ej. PUESTOS04)
-                            $puestoClave = isset($tbRow->PUESTO) ? trim((string)$tbRow->PUESTO) : null;
+                            $puestoClave = isset($tbRow->PUESTO) ? trim((string) $tbRow->PUESTO) : null;
 
                             if ($puestoClave) {
                                 try {
                                     $puestos = $firebirdNoi->getMasterTable('PUESTOS') // 🔥 antes: getOperationalTable
-                                        ->keyBy(fn($row) => trim((string)$row->CLAVE));
+                                        ->keyBy(fn ($row) => trim((string) $row->CLAVE));
                                     $puestoRow = $puestos[$puestoClave] ?? null;
 
                                     Log::info('👔 NOI_PUESTO_LOOKUP', [
-                                        'empresa'       => $empresaNoi,
-                                        'puesto_clave'  => $puestoClave,
-                                        'puesto_found'  => (bool) $puestoRow,
+                                        'empresa' => $empresaNoi,
+                                        'puesto_clave' => $puestoClave,
+                                        'puesto_found' => (bool) $puestoRow,
                                         'puesto_nombre' => $puestoRow->NOMBRE ?? null,
                                     ]);
                                 } catch (\Throwable $e) {
                                     Log::error('⚠️ NOI_PUESTO_LOOKUP_ERROR', [
                                         'puesto_clave' => $puestoClave,
-                                        'error'        => $e->getMessage(),
+                                        'error' => $e->getMessage(),
                                     ]);
                                 }
                             } else {
@@ -315,7 +321,7 @@ if ($identity) {
 
                         // SL - usando TB.CLAVE
                         $sl = $firebirdNoi->getOperationalTable('SL')
-                            ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
+                            ->keyBy(fn ($row) => trim((string) $row->CLAVE_TRAB));
                         $slRow = $sl[$tbClaveNorm] ?? null;
 
                         Log::info('💰 NOI_SL_LOOKUP', [
@@ -325,7 +331,7 @@ if ($identity) {
 
                         // VC - usando TB.CLAVE
                         $vc = $firebirdNoi->getOperationalTable('VC')
-                            ->keyBy(fn($row) => trim((string)$row->CLAVE_TRAB));
+                            ->keyBy(fn ($row) => trim((string) $row->CLAVE_TRAB));
                         $vcRow = $vc[$tbClaveNorm] ?? null;
 
                         Log::info('🏖️ NOI_VC_LOOKUP', [
@@ -375,7 +381,7 @@ if ($identity) {
                 if ($clieClave) {
                     try {
                         $clieRow = $connection->selectOne(
-                            "SELECT * FROM CLIE03 WHERE CLAVE = ?",
+                            'SELECT * FROM CLIE03 WHERE CLAVE = ?',
                             [$clieClave]
                         );
 
@@ -414,7 +420,7 @@ if ($identity) {
                 if ($vendClave) {
                     try {
                         $vendRow = $connection->selectOne(
-                            "SELECT * FROM VEND03 WHERE CVE_VEND = ?",
+                            'SELECT * FROM VEND03 WHERE CVE_VEND = ?',
                             [$vendClave]
                         );
 
@@ -426,7 +432,7 @@ if ($identity) {
                     } catch (\Throwable $e) {
                         Log::error('⚠️ VENDEDOR_DATA_ERROR', [
                             'vend_clave' => $vendClave,
-                            'error'      => $e->getMessage(),
+                            'error' => $e->getMessage(),
                         ]);
                     }
                 } else {
@@ -440,7 +446,7 @@ if ($identity) {
             // =====================================================
             // 📦 PROVEEDORES: Datos de PROV03
             // =====================================================
-            $provRow  = null;
+            $provRow = null;
             if ($esProveedor) {
                 $provClave = $identity->firebird_prov_clave ?? null;
 
@@ -452,19 +458,19 @@ if ($identity) {
                 if ($provClave) {
                     try {
                         $provRow = $connection->selectOne(
-                            "SELECT * FROM PROV03 WHERE CLAVE = ?",
+                            'SELECT * FROM PROV03 WHERE CLAVE = ?',
                             [$provClave]
                         );
 
                         Log::info('📦 PROV03_LOOKUP', [
-                            'prov_clave'  => $provClave,
-                            'prov_found'  => (bool) $provRow,
+                            'prov_clave' => $provClave,
+                            'prov_found' => (bool) $provRow,
                             'prov_nombre' => $provRow->NOMBRE ?? null,
                         ]);
                     } catch (\Throwable $e) {
                         Log::error('⚠️ PROVEEDOR_DATA_ERROR', [
                             'prov_clave' => $provClave,
-                            'error'      => $e->getMessage(),
+                            'error' => $e->getMessage(),
                         ]);
                     }
                 } else {
@@ -476,9 +482,8 @@ if ($identity) {
             }
             Log::info('✅ LOGIN_SUCCESS', [
                 'firebird_id' => $userId,
-                'tipo_usuario' =>
-                $esEmpleado ? 'EMPLEADO' : ($esCliente ? 'CLIENTE' : ($esVendedor ? 'VENDEDOR'  : ($esProveedor ? 'PROVEEDOR' : 'INDEFINIDO'))), // 🆕
-                'identity_id'  => $identity->id ?? null,
+                'tipo_usuario' => $esEmpleado ? 'EMPLEADO' : ($esCliente ? 'CLIENTE' : ($esVendedor ? 'VENDEDOR' : ($esProveedor ? 'PROVEEDOR' : 'INDEFINIDO'))), // 🆕
+                'identity_id' => $identity->id ?? null,
             ]);
 
             return response()->json([
@@ -486,29 +491,29 @@ if ($identity) {
                 'user' => new UsuarioResource($usuario, [
                     'user_puesto' => $userPuesto,
                     'es_jefe_auxiliar' => $esJefeAuxiliar,
-                    'identity_id'         => $identity->id ?? null,
-                    'departamentos'       => $departamentos,
-                    'sl'                  => $slRow,
-                    'vacaciones'          => $vcRow,
+                    'identity_id' => $identity->id ?? null,
+                    'departamentos' => $departamentos,
+                    'sl' => $slRow,
+                    'vacaciones' => $vcRow,
                     'historialvacaciones' => $hvcRow,
-                    'faltas'              => $mfRow,
-                    'acumuladosperiodos'  => $acRows,
-                    'roles'               => $roles,
-                    'TB'                  => $tbRow,
-                    'CLIE'                => $clieRow,
-                    'VEND'                => $vendRow,
-                    'qr'                  => $qrData,
-                    'firebird_user_id'    => $userId,
+                    'faltas' => $mfRow,
+                    'acumuladosperiodos' => $acRows,
+                    'roles' => $roles,
+                    'TB' => $tbRow,
+                    'CLIE' => $clieRow,
+                    'VEND' => $vendRow,
+                    'qr' => $qrData,
+                    'firebird_user_id' => $userId,
                     'firebird_user_clave' => $identity->firebird_tb_clave ?? null,
                     'firebird_clie_clave' => $identity->firebird_clie_clave ?? null,
                     'firebird_vend_clave' => $identity->firebird_vend_clave ?? null,
-                    'PROV'                => $provRow,
+                    'PROV' => $provRow,
                     'firebird_prov_clave' => $identity->firebird_prov_clave ?? null,
-                    'tipo_usuario'        => $esEmpleado ? 'empleado' : ($esCliente ? 'cliente' : ($esVendedor ? 'vendedor' : ($esProveedor ? 'proveedor' :  null))),
-                    'turnoActivo'         => $turnoActivo,
-                    'DEPTO_NOI'  => $deptoRow,
+                    'tipo_usuario' => $esEmpleado ? 'empleado' : ($esCliente ? 'cliente' : ($esVendedor ? 'vendedor' : ($esProveedor ? 'proveedor' : null))),
+                    'turnoActivo' => $turnoActivo,
+                    'DEPTO_NOI' => $deptoRow,
                     'PUESTO_NOI' => $puestoRow,
-                ])
+                ]),
             ], 200);
         } catch (\Throwable $e) {
             Log::error('💥 Error en signIn()', [
@@ -517,7 +522,7 @@ if ($identity) {
             ]);
 
             return response()->json([
-                'message' => 'Error al iniciar sesión'
+                'message' => 'Error al iniciar sesión',
             ], 500);
         }
     }
@@ -531,9 +536,9 @@ if ($identity) {
         try {
             $token = $request->input('encrypt');
 
-            if (!$token) {
+            if (! $token) {
                 return response()->json([
-                    'message' => 'Token no proporcionado'
+                    'message' => 'Token no proporcionado',
                 ], 401);
             }
 
@@ -542,9 +547,9 @@ if ($identity) {
             $usuario = Users::find($decoded->sub);
 
             // 🔥 CORRECCIÓN: Solo verificar si existe el usuario
-            if (!$usuario) {
+            if (! $usuario) {
                 return response()->json([
-                    'message' => 'Usuario no válido'
+                    'message' => 'Usuario no válido',
                 ], 401);
             }
 
@@ -560,16 +565,17 @@ if ($identity) {
                     'depto' => $usuario->DEPTO,
                     'departamento' => $usuario->DEPARTAMENTO,
                     'direccion_id' => $usuario->direccion_id,
-                    'photo' => $usuario->PHOTO
+                    'photo' => $usuario->PHOTO,
                 ],
                 'encrypt' => $newToken,
-                'token_type'  => 'Bearer',
-                'expires_in'  => 86400
+                'token_type' => 'Bearer',
+                'expires_in' => 86400,
             ], 200);
         } catch (Exception $e) {
-            Log::error('Error en signInWithToken: ' . $e->getMessage());
+            Log::error('Error en signInWithToken: '.$e->getMessage());
+
             return response()->json([
-                'message' => 'Token inválido o expirado'
+                'message' => 'Token inválido o expirado',
             ], 401);
         }
     }
@@ -631,10 +637,11 @@ if ($identity) {
                     'id' => $usuario->CLAVE,
                     'name' => $usuario->NOMBRE,
                     'email' => $usuario->CORREO,
-                ]
+                ],
             ], 201);
         } catch (Exception $e) {
-            Log::error('Error en signUp: ' . $e->getMessage());
+            Log::error('Error en signUp: '.$e->getMessage());
+
             return response()->json(['message' => 'Error al crear usuario'], 500);
         }
     }
@@ -646,12 +653,13 @@ if ($identity) {
     {
         try {
             return response()->json([
-                'message' => 'Sesión cerrada exitosamente'
+                'message' => 'Sesión cerrada exitosamente',
             ], 200);
         } catch (Exception $e) {
-            Log::error('Error en signOut: ' . $e->getMessage());
+            Log::error('Error en signOut: '.$e->getMessage());
+
             return response()->json([
-                'message' => 'Error al cerrar sesión'
+                'message' => 'Error al cerrar sesión',
             ], 500);
         }
     }
@@ -663,7 +671,7 @@ if ($identity) {
     {
         try {
             $validator = Validator::make($request->all(), [
-                'email' => 'required|email'
+                'email' => 'required|email',
             ]);
 
             if ($validator->fails()) {
@@ -672,7 +680,7 @@ if ($identity) {
 
             $usuario = Users::where('correo', $request->email)->first();
 
-            if (!$usuario) {
+            if (! $usuario) {
                 return response()->json(['message' => 'Si el email existe, recibirás instrucciones'], 200);
             }
 
@@ -691,7 +699,8 @@ if ($identity) {
 
             return response()->json(['message' => 'Si el email existe, recibirás instrucciones'], 200);
         } catch (Exception $e) {
-            Log::error('Error en forgotPassword: ' . $e->getMessage());
+            Log::error('Error en forgotPassword: '.$e->getMessage());
+
             return response()->json(['message' => 'Error al procesar solicitud'], 500);
         }
     }
@@ -704,7 +713,7 @@ if ($identity) {
         try {
             $validator = Validator::make($request->all(), [
                 'token' => 'required|string',
-                'password' => 'required|string|min:6'
+                'password' => 'required|string|min:6',
             ]);
 
             if ($validator->fails()) {
@@ -713,13 +722,13 @@ if ($identity) {
 
             $record = DB::table('password_resets')->where('token', $request->token)->first();
 
-            if (!$record) {
+            if (! $record) {
                 return response()->json(['message' => 'Token inválido o expirado'], 400);
             }
 
             $usuario = Users::find($record->usuario_id);
 
-            if (!$usuario) {
+            if (! $usuario) {
                 return response()->json(['message' => 'Usuario no encontrado'], 404);
             }
 
@@ -730,7 +739,8 @@ if ($identity) {
 
             return response()->json(['message' => 'Contraseña actualizada exitosamente'], 200);
         } catch (Exception $e) {
-            Log::error('Error en resetPassword: ' . $e->getMessage());
+            Log::error('Error en resetPassword: '.$e->getMessage());
+
             return response()->json(['message' => 'Error al restablecer contraseña'], 500);
         }
     }
@@ -744,7 +754,7 @@ if ($identity) {
         try {
             $validator = Validator::make($request->all(), [
                 'email' => 'required|email',
-                'password' => 'required|string'
+                'password' => 'required|string',
             ]);
 
             if ($validator->fails()) {
@@ -754,7 +764,7 @@ if ($identity) {
             $usuario = Users::where('correo', $request->email)->first();
 
             // 🔥 CORRECCIÓN: Validar contra 'password' en minúscula
-            if (!$usuario || !Hash::check($request->password, $usuario->password)) {
+            if (! $usuario || ! Hash::check($request->password, $usuario->password)) {
                 return response()->json(['message' => 'Credenciales incorrectas'], 401);
             }
 
@@ -762,7 +772,8 @@ if ($identity) {
 
             return response()->json(['encrypt' => $token], 200);
         } catch (Exception $e) {
-            Log::error('Error en unlockSession: ' . $e->getMessage());
+            Log::error('Error en unlockSession: '.$e->getMessage());
+
             return response()->json(['message' => 'Error al desbloquear sesión'], 500);
         }
     }

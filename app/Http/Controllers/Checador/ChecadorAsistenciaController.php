@@ -49,6 +49,7 @@ class ChecadorAsistenciaController extends Controller
             $busqueda,
         ));
     }
+    
     public function excelSemana(Request $request, int $identityId)
     {
         $identity = UserFirebirdIdentity::findOrFail($identityId);
