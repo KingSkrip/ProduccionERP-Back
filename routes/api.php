@@ -14,6 +14,7 @@ use App\Http\Controllers\Checador\ChecadorQrController;
 use App\Http\Controllers\Clientes\EstadosCuentaController;
 use App\Http\Controllers\Clientes\PedidosController;
 use App\Http\Controllers\Colaboradores\SoliVacacionesController;
+use App\Http\Controllers\Inventario\InventarioController;
 use App\Http\Controllers\MailboxController;
 use App\Http\Controllers\Personalizacion\Dashboard\DataDashboardController;
 use App\Http\Controllers\Personalizacion\Perfil\PerfilController;
@@ -392,6 +393,16 @@ Route::prefix('turnos')->middleware('jwt.auth')->group(function () {
 
     Route::apiResource('', TurnoController::class)
         ->parameters(['' => 'id']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Inventario
+|--------------------------------------------------------------------------
+*/
+Route::prefix('inventario')->middleware('jwt.auth')->group(function () {
+
+Route::get('/', [InventarioController::class, 'index']);
 });
 
 /**
