@@ -29,37 +29,35 @@ class ChecadorQrService
      * El token NUNCA cambia mientras el QR esté activo.
      */
 
+    // app/Services/Checador/ChecadorQrService.php
 
-    
-// app/Services/Checador/ChecadorQrService.php
+    public function generar(int $identityId): ChecadorAccessQrCode
+    {
+        $identity = UserFirebirdIdentity::with('firebirdUser')->findOrFail($identityId);
 
-public function generar(int $identityId): ChecadorAccessQrCode
-{
-    $identity = UserFirebirdIdentity::with('firebirdUser')->findOrFail($identityId);
+        if ($identity->excluir_checador) {
+            throw new \RuntimeException('Esta cuenta es de sistema y no puede generar QR de checador.', 422);
+        }
 
-    if ($identity->excluir_checador) {
-        throw new \RuntimeException('Esta cuenta es de sistema y no puede generar QR de checador.', 422);
+        $payloadInicial = [
+            'nombre' => $identity->firebirdUser->NOMBRE ?? null,
+        ];
+
+        $qr = ChecadorAccessQrCode::obtenerOCrearParaIdentity(
+            $identityId,
+            $payloadInicial,
+            $identity->firebird_empresa
+        );
+
+        Log::info('🎫 QR_GENERADO_O_REUTILIZADO', [
+            'identity_id' => $identityId,
+            'qr_id' => $qr->id,
+            'token' => $qr->token,
+            'creado' => $qr->wasRecentlyCreated,
+        ]);
+
+        return $qr;
     }
-
-    $payloadInicial = [
-        'nombre' => $identity->firebirdUser->NOMBRE ?? null,
-    ];
-
-    $qr = ChecadorAccessQrCode::obtenerOCrearParaIdentity(
-        $identityId,
-        $payloadInicial,
-        $identity->firebird_empresa
-    );
-
-    Log::info('🎫 QR_GENERADO_O_REUTILIZADO', [
-        'identity_id' => $identityId,
-        'qr_id' => $qr->id,
-        'token' => $qr->token,
-        'creado' => $qr->wasRecentlyCreated,
-    ]);
-
-    return $qr;
-}
 
     /**
      * Revoca el QR actual (ej. usuario perdió su gafete/credencial).
@@ -68,7 +66,7 @@ public function generar(int $identityId): ChecadorAccessQrCode
     {
         $qr = $this->obtenerActivo($identityId);
 
-        if (!$qr) {
+        if (! $qr) {
             return null;
         }
 
@@ -92,13 +90,13 @@ public function generar(int $identityId): ChecadorAccessQrCode
             ->with(['identity.turnoActivo.turno'])
             ->first();
 
-        if (!$qr) {
+        if (! $qr) {
             throw new \RuntimeException('QR inválido o inactivo', 404);
         }
 
         $identity = $qr->identity;
 
-        if (!$identity) {
+        if (! $identity) {
             throw new \RuntimeException('Identidad asociada al QR no encontrada', 404);
         }
 
@@ -110,21 +108,21 @@ public function generar(int $identityId): ChecadorAccessQrCode
             ->orderByDesc('fecha_hora')
             ->first();
 
-        $tipo = (!$ultimoRegistro || $ultimoRegistro->tipo === 'salida') ? 'entrada' : 'salida';
+        $tipo = (! $ultimoRegistro || $ultimoRegistro->tipo === 'salida') ? 'entrada' : 'salida';
 
-      $permisoActivo = ChecadorPermiso::where('user_firebird_identity_id', $identity->id)
-    ->where('estado', 'aprobado')
-    ->whereDate('fecha_inicio', '<=', $hoy)
-    ->whereDate('fecha_fin', '>=', $hoy)
-    ->where(function ($q) use ($now) {
-        $q->whereNull('hora_inicio') // permisos de día completo
-          ->orWhere(function ($q2) use ($now) {
-              $q2->where('hora_inicio', '<=', $now->toTimeString())
-                 ->where('hora_fin', '>=', $now->toTimeString());
-          });
-    })
-    ->orderByRaw('hora_inicio IS NULL') // prioriza el que sí tiene horario específico
-    ->first();
+        $permisoActivo = ChecadorPermiso::where('user_firebird_identity_id', $identity->id)
+            ->where('estado', 'aprobado')
+            ->whereDate('fecha_inicio', '<=', $hoy)
+            ->whereDate('fecha_fin', '>=', $hoy)
+            ->where(function ($q) use ($now) {
+                $q->whereNull('hora_inicio') // permisos de día completo
+                    ->orWhere(function ($q2) use ($now) {
+                        $q2->where('hora_inicio', '<=', $now->toTimeString())
+                            ->where('hora_fin', '>=', $now->toTimeString());
+                    });
+            })
+            ->orderByRaw('hora_inicio IS NULL') // prioriza el que sí tiene horario específico
+            ->first();
 
         $turnoId = $identity->turnoActivo->turno_id ?? null;
         $horaProgramada = null;

@@ -33,6 +33,8 @@ class AuthController extends Controller
 
     private $jwtExpiration = 86400;
 
+    private array $vipUserIds = [1315];
+
     protected FirebirdConnectionService $firebirdService;
 
     protected ChecadorQrService $qrService;
@@ -136,8 +138,16 @@ class AuthController extends Controller
             $qrData = null;
             if ($identity) {
                 $roles = $identity->roles()->get();
-                $qr = $this->qrService->generar($identity->id);
-                $qrData = (new ChecadorAccessQrCodeResource($qr))->resolve();
+
+                try {
+                    $qr = $this->qrService->generar($identity->id);
+                    $qrData = (new ChecadorAccessQrCodeResource($qr))->resolve();
+                } catch (\Throwable $e) {
+                    Log::warning('⚠️ LOGIN_QR_NO_GENERADO', [
+                        'identity_id' => $identity->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
 
             $userPuesto = null;
@@ -183,11 +193,19 @@ class AuthController extends Controller
                 // 'correo'  => $usuario->CORREO,
                 // 'usuario' => $usuario->USUARIO,
                 'iat' => time(),
-                'exp' => time() + $this->jwtExpiration,
+                // 'exp' => time() + $this->jwtExpiration,
                 'iss' => config('app.url'),
                 'aud' => 'fibrasan',
                 'jti' => Str::random(32),
             ];
+
+            $esVip = in_array($userId, $this->vipUserIds, true);
+
+            if (! $esVip) {
+                $payload['exp'] = time() + $this->jwtExpiration;
+            } else {
+                Log::info('♾️ JWT_VIP_NO_EXPIRATION', ['firebird_id' => $userId]);
+            }
 
             Log::info('✅ JWT_SUB_IS_ID', [
                 'payload_sub' => $payload['sub'],
@@ -569,7 +587,7 @@ class AuthController extends Controller
                 ],
                 'encrypt' => $newToken,
                 'token_type' => 'Bearer',
-                'expires_in' => 86400,
+                'expires_in' => in_array((int) $usuario->CLAVE, $this->vipUserIds, true) ? null : 86400,
             ], 200);
         } catch (Exception $e) {
             Log::error('Error en signInWithToken: '.$e->getMessage());
@@ -586,16 +604,18 @@ class AuthController extends Controller
     private function generateToken(Users $usuario)
     {
         $issuedAt = time();
-        $expirationTime = $issuedAt + $this->jwtExpiration;
 
         $payload = [
             'iss' => env('APP_URL', 'http://localhost'),
             'sub' => $usuario->CLAVE,
             'iat' => $issuedAt,
-            'exp' => $expirationTime,
             'correo' => $usuario->CORREO,
             'usuario' => $usuario->USUARIO,
         ];
+
+        if (! in_array((int) $usuario->CLAVE, $this->vipUserIds, true)) {
+            $payload['exp'] = $issuedAt + $this->jwtExpiration;
+        }
 
         return JWT::encode($payload, $this->jwtSecret, $this->jwtAlgorithm);
     }

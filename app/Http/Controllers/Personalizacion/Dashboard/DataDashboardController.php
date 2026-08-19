@@ -19,6 +19,7 @@ use Firebase\JWT\Key;
 use Firebase\JWT\SignatureInvalidException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 use UnexpectedValueException;
 
 class DataDashboardController extends Controller
@@ -65,7 +66,7 @@ class DataDashboardController extends Controller
                 return response()->json(['message' => 'Token inválido (sub inválido)'], 401);
             }
 
-            if (! isset($decoded->exp) || $decoded->exp < time()) {
+            if (isset($decoded->exp) && $decoded->exp < time()) {
                 return response()->json(['message' => 'Token expirado'], 401);
             }
 
@@ -368,15 +369,16 @@ class DataDashboardController extends Controller
             Log::warning('JWT malformado o inválido', ['error' => $e->getMessage()]);
 
             return response()->json(['message' => 'Token inválido'], 401);
-        } catch (\Throwable $e) {
-            Log::error('🔴 ME_FATAL_ERROR', [
-                'error' => $e->getMessage(),
-            ]);
+} catch (Throwable $e) {
+    Log::error('🔴 ME_FATAL_ERROR', [
+        'error' => $e->getMessage(),
+        'trace' => $e->getTraceAsString(),
+    ]);
 
-            return response()->json([
-                'message' => 'Error de autenticación',
-            ], 401);
-        }
+    return response()->json([
+        'message' => 'Error interno, intenta de nuevo',
+    ], 500); // 👈 no 401
+}
     }
 
     /**
