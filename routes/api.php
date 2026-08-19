@@ -403,7 +403,7 @@ Route::prefix('turnos')->middleware('jwt.auth')->group(function () {
 Route::prefix('inventario')->middleware('jwt.auth')->group(function () {
 
 Route::get('/', [InventarioController::class, 'index']);
-Route::post('/escanear', [InventarioController::class, 'escanearinventario']);
+Route::post('/escanearinventario', [InventarioController::class, 'escanear']);
 });
 
 /**
