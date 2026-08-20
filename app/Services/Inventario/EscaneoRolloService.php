@@ -60,12 +60,12 @@ class EscaneoRolloService
      * Paso 1 del recorrido: escaneo en PESADO.
      * TODO: pegar aquí el SQL real — mismo patrón que escanearAcabado().
      */
-   public function escanearPesado(string $codigoRaw): array
-{
-    $clave = $this->normalizarClave($codigoRaw);
+    public function escanearPesado(string $codigoRaw): array
+    {
+        $clave = $this->normalizarClave($codigoRaw);
 
-    // ── Paso 1: PSDTABPZASTJ — obtenemos OT_PSD (no existe CLAVE aquí, es ID)
-    $sqlPaso1 = '
+        // ── Paso 1: PSDTABPZASTJ — obtenemos OT_PSD (no existe CLAVE aquí, es ID)
+        $sqlPaso1 = '
         SELECT
             PJ.ID AS ID,
             PJ.OT_PSD AS OT_PSD
@@ -73,16 +73,16 @@ class EscaneoRolloService
         WHERE PJ.ID = ?
     ';
 
-    $rowPaso1 = $this->ejecutar($sqlPaso1, [$clave], 'PESADO-PASO1', $codigoRaw, $clave);
+        $rowPaso1 = $this->ejecutar($sqlPaso1, [$clave], 'PESADO-PASO1', $codigoRaw, $clave);
 
-    if (! $rowPaso1 || empty($rowPaso1['OT_PSD'])) {
-        throw new RolloNoEncontradoException($clave);
-    }
+        if (! $rowPaso1 || empty($rowPaso1['OT_PSD'])) {
+            throw new RolloNoEncontradoException($clave);
+        }
 
-    $otPsd = $rowPaso1['OT_PSD'];
+        $otPsd = $rowPaso1['OT_PSD'];
 
-    // ── Paso 2: ORDENESTEJ — aquí SÍ viven CANT, CANTENT, ESTATUS y OP
-    $sqlPaso2 = '
+        // ── Paso 2: ORDENESTEJ — aquí SÍ viven CANT, CANTENT, ESTATUS y OP
+        $sqlPaso2 = '
         SELECT
             OT.OP AS OP,
             OT.CANT AS CANT,
@@ -92,36 +92,36 @@ class EscaneoRolloService
         WHERE OT.OT = ?
     ';
 
-    $rowPaso2 = $this->ejecutar($sqlPaso2, [$otPsd], 'PESADO-PASO2', $codigoRaw, $clave);
+        $rowPaso2 = $this->ejecutar($sqlPaso2, [$otPsd], 'PESADO-PASO2', $codigoRaw, $clave);
 
-    if (! $rowPaso2 || empty($rowPaso2['OP'])) {
-        throw new RolloNoEncontradoException($clave);
-    }
+        if (! $rowPaso2 || empty($rowPaso2['OP'])) {
+            throw new RolloNoEncontradoException($clave);
+        }
 
-    // 🔎 Filtro: solo sigue si YA terminó de pesarse (CANTENT >= CANT) y ESTATUS = 51.
-    // Si no cumple, lo tratamos como "no encontrado en PESADO" para que el
-    // recorrido pase a REVISADO.
-    $cantEnt = (float) ($rowPaso2['CANTENT'] ?? 0);
-    $cant = (float) ($rowPaso2['CANT'] ?? 0);
-    $estatus = (int) ($rowPaso2['ESTATUS'] ?? 0);
+        // 🔎 Filtro: solo sigue si YA terminó de pesarse (CANTENT >= CANT) y ESTATUS = 51.
+        // Si no cumple, lo tratamos como "no encontrado en PESADO" para que el
+        // recorrido pase a REVISADO.
+        $cantEnt = (float) ($rowPaso2['CANTENT'] ?? 0);
+        $cant = (float) ($rowPaso2['CANT'] ?? 0);
+        $estatus = (int) ($rowPaso2['ESTATUS'] ?? 0);
 
-    if ($cantEnt < $cant || $estatus !== 51) {
-        Log::info('🔄 INVENTARIO_PESADO_NO_CUMPLE_FILTRO', [
-            'codigo_qr' => $codigoRaw,
-            'clave' => $clave,
-            'cantent' => $cantEnt,
-            'cant' => $cant,
-            'estatus' => $estatus,
-        ]);
+        if ($cantEnt < $cant || $estatus !== 51) {
+            Log::info('🔄 INVENTARIO_PESADO_NO_CUMPLE_FILTRO', [
+                'codigo_qr' => $codigoRaw,
+                'clave' => $clave,
+                'cantent' => $cantEnt,
+                'cant' => $cant,
+                'estatus' => $estatus,
+            ]);
 
-        throw new RolloNoEncontradoException($clave);
-    }
+            throw new RolloNoEncontradoException($clave);
+        }
 
-    $op = $rowPaso2['OP'];
+        $op = $rowPaso2['OP'];
 
-    // ── Paso 3: mismo esqueleto que ACABADO, pero entrando por ORDENESENC.ORDEN = OP
-    // (el OP de ORDENESTEJ coincide con ORDENESENC.ORDEN, no con P.PARTIDA)
-    $sqlPaso3 = "
+        // ── Paso 3: mismo esqueleto que ACABADO, pero entrando por ORDENESENC.ORDEN = OP
+        // (el OP de ORDENESTEJ coincide con ORDENESENC.ORDEN, no con P.PARTIDA)
+        $sqlPaso3 = "
         SELECT
             P.CLAVE AS \"CVE ART\",
             P.ARTICULO AS ARTICULO,
@@ -145,28 +145,29 @@ class EscaneoRolloService
         WHERE OE.ORDEN = ?
     ";
 
-    $row = $this->ejecutar($sqlPaso3, [$op], 'PESADO-PASO3', $codigoRaw, $clave);
+        $row = $this->ejecutar($sqlPaso3, [$op], 'PESADO-PASO3', $codigoRaw, $clave);
 
-    if (! $row) {
-        throw new RolloNoEncontradoException($clave);
+        if (! $row) {
+            throw new RolloNoEncontradoException($clave);
+        }
+
+        $row['ID'] = $rowPaso1['ID'];
+        $row['ID_QR'] = str_pad((string) $rowPaso1['ID'], 10, '0', STR_PAD_LEFT);
+        $row['ORIGEN'] = 'PESADO';
+
+        return $row;
     }
 
-    $row['ID'] = $rowPaso1['ID'];
-    $row['ID_QR'] = str_pad((string) $rowPaso1['ID'], 10, '0', STR_PAD_LEFT);
-    $row['ORIGEN'] = 'PESADO';
-
-    return $row;
-}
     /**
      * Paso 2 del recorrido: escaneo en REVISADO.
      * TODO: pegar aquí el SQL real — mismo patrón que escanearAcabado().
      */
-   public function escanearRevisado(string $codigoRaw): array
-{
-    $clave = $this->normalizarClave($codigoRaw);
+    public function escanearRevisado(string $codigoRaw): array
+    {
+        $clave = $this->normalizarClave($codigoRaw);
 
-    // ── Paso 1: PSDTABPZASTJ — checamos si ya fue revisado (aquí también es ID, no CLAVE)
-    $sqlPaso1 = '
+        // ── Paso 1: PSDTABPZASTJ — checamos si ya fue revisado (aquí también es ID, no CLAVE)
+        $sqlPaso1 = '
         SELECT
             PJ.ID AS ID,
             PJ.ISREV AS ISREV,
@@ -178,38 +179,38 @@ class EscaneoRolloService
         WHERE PJ.ID = ?
     ';
 
-    $rowPaso1 = $this->ejecutar($sqlPaso1, [$clave], 'REVISADO-PASO1', $codigoRaw, $clave);
+        $rowPaso1 = $this->ejecutar($sqlPaso1, [$clave], 'REVISADO-PASO1', $codigoRaw, $clave);
 
-    if (! $rowPaso1) {
-        throw new RolloNoEncontradoException($clave);
-    }
+        if (! $rowPaso1) {
+            throw new RolloNoEncontradoException($clave);
+        }
 
-    $isRev = (int) ($rowPaso1['ISREV'] ?? 0);
-    $pesoRv = $rowPaso1['PESORV'] ?? null;
+        $isRev = (int) ($rowPaso1['ISREV'] ?? 0);
+        $pesoRv = $rowPaso1['PESORV'] ?? null;
 
-    if ($isRev !== 1 && empty($pesoRv)) {
-        Log::info('🔄 INVENTARIO_REVISADO_NO_CUMPLE_FILTRO', [
-            'codigo_qr' => $codigoRaw,
-            'clave' => $clave,
-            'isrev' => $isRev,
-            'pesorv' => $pesoRv,
-        ]);
+        if ($isRev !== 1 && empty($pesoRv)) {
+            Log::info('🔄 INVENTARIO_REVISADO_NO_CUMPLE_FILTRO', [
+                'codigo_qr' => $codigoRaw,
+                'clave' => $clave,
+                'isrev' => $isRev,
+                'pesorv' => $pesoRv,
+            ]);
 
-        throw new RolloNoEncontradoException($clave);
-    }
+            throw new RolloNoEncontradoException($clave);
+        }
 
-    $cveOrden = $rowPaso1['CVE_ORDEN'];
+        $cveOrden = $rowPaso1['CVE_ORDEN'];
 
-    if (empty($cveOrden)) {
-        throw new RolloNoEncontradoException($clave);
-    }
+        if (empty($cveOrden)) {
+            throw new RolloNoEncontradoException($clave);
+        }
 
-    $ordenSurte = $rowPaso1['CVE_ORDEN_OP'] ?? null;
-    $folioVentaDirecta = $rowPaso1['ID_FOLCDO_PL'] ?? null;
-    $yaSurtido = ! empty($ordenSurte) || ! empty($folioVentaDirecta);
+        $ordenSurte = $rowPaso1['CVE_ORDEN_OP'] ?? null;
+        $folioVentaDirecta = $rowPaso1['ID_FOLCDO_PL'] ?? null;
+        $yaSurtido = ! empty($ordenSurte) || ! empty($folioVentaDirecta);
 
-    // ── Paso 2: ORDENESENC + P_PSDENC — aquí CVE_ORDEN SÍ es igual a ORDENESENC.ID
-    $sqlPaso2 = "
+        // ── Paso 2: ORDENESENC + P_PSDENC — aquí CVE_ORDEN SÍ es igual a ORDENESENC.ID
+        $sqlPaso2 = "
         SELECT
             P.CLAVE AS \"CVE ART\",
             P.ARTICULO AS ARTICULO,
@@ -233,19 +234,20 @@ class EscaneoRolloService
         WHERE OE.ID = ?
     ";
 
-    $row = $this->ejecutar($sqlPaso2, [$cveOrden], 'REVISADO-PASO2', $codigoRaw, $clave);
+        $row = $this->ejecutar($sqlPaso2, [$cveOrden], 'REVISADO-PASO2', $codigoRaw, $clave);
 
-    if (! $row) {
-        throw new RolloNoEncontradoException($clave);
+        if (! $row) {
+            throw new RolloNoEncontradoException($clave);
+        }
+
+        $row['ID'] = $rowPaso1['ID'];
+        $row['ID_QR'] = str_pad((string) $rowPaso1['ID'], 10, '0', STR_PAD_LEFT);
+        $row['SURTIDO'] = $yaSurtido;
+        $row['ORIGEN'] = 'REVISADO';
+
+        return $row;
     }
 
-    $row['ID'] = $rowPaso1['ID'];
-    $row['ID_QR'] = str_pad((string) $rowPaso1['ID'], 10, '0', STR_PAD_LEFT);
-    $row['SURTIDO'] = $yaSurtido;
-    $row['ORIGEN'] = 'REVISADO';
-
-    return $row;
-}
     /**
      * Paso 3 del recorrido: escaneo en ACABADO.
      */
