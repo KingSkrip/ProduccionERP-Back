@@ -339,7 +339,10 @@ class EscaneoRolloService
     private function ejecutar(string $sql, array $bindings, string $paso, string $codigoRaw, int $clave): ?array
     {
         try {
-            return $this->firebird->getProductionConnection()->selectOne($sql, $bindings);
+            $resultado = $this->firebird->getProductionConnection()->selectOne($sql, $bindings);
+
+            // El driver de Firebird puede regresar stdClass en vez de array asociativo.
+            return $resultado === null ? null : (array) $resultado;
         } catch (\Throwable $e) {
             Log::error("Error al escanear rollo ({$paso}) en Firebird: ".$e->getMessage(), [
                 'codigo_qr' => $codigoRaw,
