@@ -288,6 +288,10 @@ class EscaneoRolloService
                 $datosVentaDirecta = [];
             }
 
+            // USDELIV (entrega en PSDTABPZASTJ) suele venir vacío en venta directa;
+            // en ese caso usamos el usuario de laboratorio (USELAB) resuelto en PTPLISTCDO.
+            $usuarioEntrega = $rowPaso1['USDELIV'] ?: ($datosVentaDirecta['USELAB_NOMBRE'] ?? null);
+
             return array_merge([
                 'ID' => $rowPaso1['ID'],
                 'ID_QR' => str_pad((string) $rowPaso1['ID'], 10, '0', STR_PAD_LEFT),
@@ -303,12 +307,12 @@ class EscaneoRolloService
                 'FOLIO_VENTA' => $folioVentaDirecta,
                 'ENTREGADO' => (int) ($rowPaso1['ISDELIV'] ?? 0) === 1,
                 'FECHA_ENTREGA' => $rowPaso1['FECHAYHORADELIV'],
-                'USUARIO_ENTREGA' => $rowPaso1['USDELIV'],
+                'USUARIO_ENTREGA' => $usuarioEntrega,
                 'ORIGEN' => 'REVISADO',
                 'SUBTIPO' => 'VENTA_DIRECTA',
             ], $datosAmpliados, $datosVentaDirecta);
         }
-        
+
         // Sin orden asociada y sin venta directa.
         if (empty($cveOrden)) {
             Log::info('ℹ️ INVENTARIO_REVISADO_SIN_CVE_ORDEN', [
@@ -556,12 +560,14 @@ class EscaneoRolloService
     private function buscarDatosVentaDirecta(string $folioVentaDirecta, string $codigoRaw, int $clave): ?array
     {
         $sql = '
-        SELECT
-            PL.FECHAYHORA AS FECHA_ENTREGA_CDO,
-            PL.USELAB AS USELAB
-        FROM PTPLISTCDO PL
-        WHERE PL.ID_CDO = ?
-        ';
+    SELECT
+        PL.FECHAYHORA AS FECHA_ENTREGA_CDO,
+        PL.USELAB AS USELAB,
+        U.NOMBRE AS USELAB_NOMBRE
+    FROM PTPLISTCDO PL
+    LEFT JOIN USUARIOS U ON U.CLAVE = PL.USELAB
+    WHERE PL.ID_CDO = ?
+    ';
 
         return $this->ejecutar($sql, [$folioVentaDirecta], 'REVISADO-VENTA-DIRECTA-PTPLISTCDO', $codigoRaw, $clave);
     }
