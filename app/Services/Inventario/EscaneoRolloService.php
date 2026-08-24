@@ -208,7 +208,8 @@ class EscaneoRolloService
             T.TEJIDO AS TEJIDO,
             C.COMPOSICION AS COMPOSICION,
             PA.NOM_EMP AS TEJEDOR,
-            PA.NOM_EMPREV AS REVISADOR
+            PA.NOM_EMPREV AS REVISADOR,
+            ALM.DESCR AS ALMACEN_NOMBRE
         FROM PSDTABPZASTJ PJ
         LEFT JOIN ARTICULOS ART ON PJ.CVE_ART = ART.ID
         LEFT JOIN ARTICULOSH ARTH ON PJ.CVE_ART = ARTH.CVE_ART
@@ -216,6 +217,7 @@ class EscaneoRolloService
         LEFT JOIN TEJIDO T ON T.ID = COALESCE(ART.TEJ, ART2.TEJ)
         LEFT JOIN COMPOSICION C ON C.ID = ART.COMP
         LEFT JOIN PSDTABPZASTJAUX PA ON PA.ID = PJ.ID
+        LEFT JOIN ALMACENES ALM ON ALM.CVE_ALM = PJ.ALMACEN
         WHERE PJ.ID = ?
         ';
 
@@ -274,6 +276,18 @@ class EscaneoRolloService
                 'isdeliv' => $rowPaso1['ISDELIV'] ?? null,
             ]);
 
+            $datosVentaDirecta = $this->buscarDatosVentaDirecta((string) $folioVentaDirecta, $codigoRaw, $clave);
+
+            if (! $datosVentaDirecta) {
+                Log::warning('⚠️ INVENTARIO_REVISADO_VENTA_DIRECTA_SIN_DATOS_PTPLISTCDO', [
+                    'codigo_qr' => $codigoRaw,
+                    'clave' => $clave,
+                    'folio_venta_directa' => $folioVentaDirecta,
+                ]);
+
+                $datosVentaDirecta = [];
+            }
+
             return array_merge([
                 'ID' => $rowPaso1['ID'],
                 'ID_QR' => str_pad((string) $rowPaso1['ID'], 10, '0', STR_PAD_LEFT),
@@ -281,7 +295,10 @@ class EscaneoRolloService
                 'PIEZA' => $rowPaso1['PZA'],
                 'PESO_TJ' => $rowPaso1['PESOTJ'],
                 'PESO_SL' => $rowPaso1['PESOSL'],
-                'ALMACEN' => $rowPaso1['ALMACEN'],
+                'PESO_REVISADO' => $rowPaso1['PESORV'],
+                'CVE_ORDEN' => $cveOrden,
+                'ORDEN_SURTE' => $ordenSurte,
+                'ALMACEN' => $rowPaso1['ALMACEN_NOMBRE'] ?? $rowPaso1['ALMACEN'],
                 'FOLIO_INVENTARIO' => $rowPaso1['ID_FOL_INV'],
                 'FOLIO_VENTA' => $folioVentaDirecta,
                 'ENTREGADO' => (int) ($rowPaso1['ISDELIV'] ?? 0) === 1,
@@ -289,9 +306,9 @@ class EscaneoRolloService
                 'USUARIO_ENTREGA' => $rowPaso1['USDELIV'],
                 'ORIGEN' => 'REVISADO',
                 'SUBTIPO' => 'VENTA_DIRECTA',
-            ], $datosAmpliados);
+            ], $datosAmpliados, $datosVentaDirecta);
         }
-
+        
         // Sin orden asociada y sin venta directa.
         if (empty($cveOrden)) {
             Log::info('ℹ️ INVENTARIO_REVISADO_SIN_CVE_ORDEN', [
@@ -306,7 +323,7 @@ class EscaneoRolloService
                 'PIEZA' => $rowPaso1['PZA'],
                 'PESO_TJ' => $rowPaso1['PESOTJ'],
                 'PESO_SL' => $rowPaso1['PESOSL'],
-                'ALMACEN' => $rowPaso1['ALMACEN'],
+                'ALMACEN' => $rowPaso1['ALMACEN_NOMBRE'] ?? $rowPaso1['ALMACEN'],
                 'FOLIO_INVENTARIO' => $rowPaso1['ID_FOL_INV'],
                 'ORIGEN' => 'REVISADO',
                 'SUBTIPO' => 'SIN_ORDEN',
@@ -330,11 +347,15 @@ class EscaneoRolloService
                 $rowSurtido = [];
             }
 
+            // Estatus 4 = CTRL. CALIDAD (catálogo ORDENESEST) — si la orden
+            // surtida está en control de calidad, se marca así en vez de SURTIDO.
+            $oeEstatusSurtido = (int) ($rowSurtido['OE_ESTATUS'] ?? 0);
+
             $rowSurtido['ID'] = $rowPaso1['ID'];
             $rowSurtido['ID_QR'] = str_pad((string) $rowPaso1['ID'], 10, '0', STR_PAD_LEFT);
             $rowSurtido['ORDEN_SURTE'] = $ordenSurte;
             $rowSurtido['ORIGEN'] = 'REVISADO';
-            $rowSurtido['SUBTIPO'] = 'SURTIDO';
+            $rowSurtido['SUBTIPO'] = $oeEstatusSurtido === 4 ? 'CONTROL_CALIDAD' : 'SURTIDO';
 
             return array_merge($rowSurtido, $datosAmpliados);
         }
@@ -484,7 +505,8 @@ class EscaneoRolloService
             throw new RolloNoEncontradoException($clave);
         }
 
-        $row['ORIGEN'] = 'ACABADO';
+        $oeEstatus = (int) ($row['OE_ESTATUS'] ?? 0);
+        $row['ORIGEN'] = $oeEstatus === 61 ? 'FACTURACION' : 'ACABADO';
 
         return $row;
     }
@@ -524,5 +546,23 @@ class EscaneoRolloService
 
             throw $e;
         }
+    }
+
+    /**
+     * Busca fecha de entrega y usuario de laboratorio en PTPLISTCDO
+     * para una venta directa, relacionando PTPLISTCDO.ID_CDO con
+     * PSDTABPZASTJ.ID_FOLCDO_PL.
+     */
+    private function buscarDatosVentaDirecta(string $folioVentaDirecta, string $codigoRaw, int $clave): ?array
+    {
+        $sql = '
+        SELECT
+            PL.FECHAYHORA AS FECHA_ENTREGA_CDO,
+            PL.USELAB AS USELAB
+        FROM PTPLISTCDO PL
+        WHERE PL.ID_CDO = ?
+        ';
+
+        return $this->ejecutar($sql, [$folioVentaDirecta], 'REVISADO-VENTA-DIRECTA-PTPLISTCDO', $codigoRaw, $clave);
     }
 }
