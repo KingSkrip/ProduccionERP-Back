@@ -395,28 +395,30 @@ class EscaneoRolloService
     private function buscarDatosOrden(int $cveOrden, string $codigoRaw, int $clave, string $etiquetaPaso): ?array
     {
         $sqlPsdenc = "
-        SELECT
-            P.CLAVE AS \"CVE ART\",
-            P.ARTICULO AS ARTICULO,
-            P.CLIENTE AS CLIENTE,
-            COALESCE(V.agente,'SIN AGENTE') AS AGENTE,
-            P.PEDIDO AS PEDIDO,
-            P.PARTIDA AS OP,
-            OE.PEDIDOPART AS PEDIDOPART,
-            P.\"COD. COLOR\" AS \"COD. COLOR\",
-            P.COLOR AS COLOR,
-            P.FECHA AS FECHA,
-            OE.ORDEN AS ORDEN,
-            OE.ESTATUS AS OE_ESTATUS,
-            IIF(OE.ESTATUS = 2, S.PROCESO, E.ESTATUS) AS PROCESO
-        FROM ORDENESENC OE
-        INNER JOIN P_PSDENC('03') P ON P.CVE_ORDEN = OE.ID
-        LEFT JOIN p_vendxx('03') V ON V.id = OE.agente
-        LEFT JOIN ORDENESPROC R ON R.ORDEN = OE.ORDEN AND R.ST = 1
-        LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC
-        LEFT JOIN ORDENESest E ON E.ID = OE.ESTATUS
-        WHERE OE.ID = ?
-    ";
+            SELECT
+                P.CLAVE AS \"CVE ART\",
+                P.ARTICULO AS ARTICULO,
+                P.CLIENTE AS CLIENTE,
+                COALESCE(V.agente,'SIN AGENTE') AS AGENTE,
+                P.PEDIDO AS PEDIDO,
+                P.PARTIDA AS OP,
+                OE.PEDIDOPART AS PEDIDOPART,
+                P.\"COD. COLOR\" AS \"COD. COLOR\",
+                P.COLOR AS COLOR,
+                P.FECHA AS FECHA,
+                OE.ORDEN AS ORDEN,
+                OE.ESTATUS AS OE_ESTATUS,
+                IIF(OE.ESTATUS = 2, S.PROCESO, E.ESTATUS) AS PROCESO,
+                OE.CANTIDAD AS \"CANTIDAD SOLICITADA\",
+                OE.CANTENT AS \"CANTIDAD ENTREGADA\"
+            FROM ORDENESENC OE
+            INNER JOIN P_PSDENC('03') P ON P.CVE_ORDEN = OE.ID
+            LEFT JOIN p_vendxx('03') V ON V.id = OE.agente
+            LEFT JOIN ORDENESPROC R ON R.ORDEN = OE.ORDEN AND R.ST = 1
+            LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC
+            LEFT JOIN ORDENESest E ON E.ID = OE.ESTATUS
+            WHERE OE.ID = ?
+        ";
 
         $row = $this->ejecutar($sqlPsdenc, [$cveOrden], "{$etiquetaPaso}-PSDENC", $codigoRaw, $clave);
 
@@ -492,7 +494,9 @@ class EscaneoRolloService
                     PSD.FECHAYHORADEVOL IS NOT NULL,
                     '',
                     IIF(OE.ESTATUS IN (4, 50, 51, 61, 65), 'ROLLO', 'TELA')
-                ) AS PRODUCTO
+                ) AS PRODUCTO,
+                OE.CANTIDAD AS \"CANTIDAD SOLICITADA\",
+                OE.CANTENT AS \"CANTIDAD ENTREGADA\"
             FROM PSDTABPZAS PSD
             INNER JOIN P_PSDENC('03') P ON P.CVE_PSD_ENC = PSD.CVE_ENC
             LEFT JOIN ORDENESENC OE ON OE.ID = P.CVE_ORDEN
@@ -543,7 +547,7 @@ class EscaneoRolloService
             // El driver de Firebird puede regresar stdClass en vez de array asociativo.
             return $resultado === null ? null : (array) $resultado;
         } catch (\Throwable $e) {
-            Log::error("Error al escanear rollo ({$paso}) en Firebird: ".$e->getMessage(), [
+            Log::error("Error al escanear rollo ({$paso}) en Firebird: " . $e->getMessage(), [
                 'codigo_qr' => $codigoRaw,
                 'clave' => $clave,
             ]);

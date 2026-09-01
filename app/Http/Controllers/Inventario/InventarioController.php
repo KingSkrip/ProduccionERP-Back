@@ -51,7 +51,9 @@ class InventarioController extends Controller
                     PSD.FECHAYHORADEVOL IS NOT NULL,
                     '',
                     IIF(OE.ESTATUS IN (4, 50, 51, 61, 65), 'ROLLO', 'TELA')
-                ) AS PRODUCTO
+                )  AS PRODUCTO,
+                OE.CANTIDAD AS \"CANTIDAD SOLICITADA\",
+                OE.CANTENT AS \"CANTIDAD ENTREGADA\"
             FROM PSDTABPZAS PSD
             INNER JOIN P_PSDENC('03') P ON P.CVE_PSD_ENC = PSD.CVE_ENC
             LEFT JOIN ORDENESENC OE ON OE.ID = P.CVE_ORDEN
@@ -82,7 +84,9 @@ class InventarioController extends Controller
                 PSD.ID_FOL_PL,
                 OE.ESTATUS,
                 S.PROCESO,
-                E.ESTATUS
+                E.ESTATUS,
+                OE.CANTIDAD,
+                OE.CANTENT
             ORDER BY P.ARTICULO ASC
         ";
 
