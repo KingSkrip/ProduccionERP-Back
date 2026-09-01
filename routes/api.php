@@ -1,5 +1,6 @@
 <?php
 
+use App\Events\ChecadorMovimientoRegistrado;
 use App\Http\Controllers\Agenda\AgendaController;
 use App\Http\Controllers\Agentes\EstadosCuentaAgentesController;
 use App\Http\Controllers\Agentes\PedidosAgentesController;
@@ -7,7 +8,9 @@ use App\Http\Controllers\Area\AreaController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Catalogos\CatalogosController;
 use App\Http\Controllers\Checador\ChecadorAsistenciaController;
+use App\Http\Controllers\Checador\ChecadorBroadcastAuthController;
 use App\Http\Controllers\Checador\ChecadorController;
+use App\Http\Controllers\Checador\ChecadorGuardiaController;
 use App\Http\Controllers\Checador\ChecadorIdentidadController;
 use App\Http\Controllers\Checador\ChecadorPermisoController;
 use App\Http\Controllers\Checador\ChecadorQrController;
@@ -344,6 +347,15 @@ Route::prefix('checador')->middleware('jwt.auth')->group(function () {
     Route::patch('/identidades/{identityId}/ajuste-salida', [ChecadorIdentidadController::class, 'toggleAjusteSalida']);
     Route::patch('/identidades/{identityId}/credencial', [ChecadorIdentidadController::class, 'asignarCredencial']);
     Route::get('/empleados/lista', [ChecadorAsistenciaController::class, 'listaEmpleados']);
+
+
+
+
+
+
+     Route::get('/guardia/buscar', [ChecadorGuardiaController::class, 'buscar']);
+    Route::get('/guardia/estado/{identityId}', [ChecadorGuardiaController::class, 'estado']);
+    Route::post('/guardia/registrar', [ChecadorGuardiaController::class, 'registrar']);
 });
 
 Route::get('mi-ip', function (Request $request) {
@@ -404,6 +416,30 @@ Route::prefix('inventario')->middleware('jwt.auth')->group(function () {
 
 Route::get('/', [InventarioController::class, 'index']);
 Route::post('/escanearinventario', [InventarioController::class, 'escanear']);
+});
+
+
+
+
+
+
+
+Route::get('/test-reverb', function () {
+
+    event(new ChecadorMovimientoRegistrado(
+        identityId: 999,
+        nombre: 'PRUEBA WEBSOCKET',
+        foto: null,
+        tipo: 'entrada',
+        hora: now()->format('H:i'),
+        firebirdEmpresa: '03',
+        metodo: 'test',
+    ));
+
+    return response()->json([
+        'ok' => true,
+        'message' => 'Evento enviado',
+    ]);
 });
 
 /**

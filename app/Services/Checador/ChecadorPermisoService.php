@@ -14,6 +14,7 @@ class ChecadorPermisoService
 {
     /** Duración por defecto (min) si el catálogo no trae una configurada. */
     private const DURACION_DEFAULT_MINUTOS = 60;
+
     private const CLAVES_PAGO_TIEMPO = ['EXTRA', 'PERSONAL', 'TRAMITE', 'MEDICO'];
 
     public function catalogo()
@@ -35,7 +36,7 @@ class ChecadorPermisoService
 
         $yaTienePermisoExtra = ChecadorPermiso::where('user_firebird_identity_id', $identity->id)
             ->where('estado', '!=', 'rechazado')
-            ->whereHas('catalogo', fn($q) => $q->where('clave', '!=', 'COMIDA'))
+            ->whereHas('catalogo', fn ($q) => $q->where('clave', '!=', 'COMIDA'))
             ->where(function ($q) use ($data) {
                 $q->whereBetween('fecha_inicio', [$data['fecha_inicio'], $data['fecha_fin']])
                     ->orWhereBetween('fecha_fin', [$data['fecha_inicio'], $data['fecha_fin']])
@@ -107,7 +108,7 @@ class ChecadorPermisoService
         }
 
         $permiso = ChecadorPermiso::with('identity')->find($permisoId);
-        if (!$permiso) {
+        if (! $permiso) {
             throw new RuntimeException('Permiso no encontrado', 404);
         }
         if (in_array($permiso->estado, ['aprobado', 'rechazado'], true)) {
@@ -124,8 +125,8 @@ class ChecadorPermisoService
         ]);
 
         if (
-            !empty($autorizadoresValidos)
-            && !in_array((int) $data['aprobado_por'], array_map('intval', $autorizadoresValidos), true)
+            ! empty($autorizadoresValidos)
+            && ! in_array((int) $data['aprobado_por'], array_map('intval', $autorizadoresValidos), true)
         ) {
             throw new RuntimeException('Solo el jefe o el jefe auxiliar asignado pueden resolver este permiso', 403);
         }
@@ -159,7 +160,6 @@ class ChecadorPermisoService
         return $permiso->fresh()->load('catalogo', 'aprobadorJefe');
     }
 
-
     /**
      * Genera un permiso FUNCION para la fecha de reposición SOLO si ese día
      * no es laborable en el turno del empleado (ej. sábado en turno L-V).
@@ -169,7 +169,7 @@ class ChecadorPermisoService
     private function generarPermisoReposicionSiAplica(ChecadorPermiso $permisoOriginal): void
     {
         $identity = UserFirebirdIdentity::with('turnoActivo.turno')->find($permisoOriginal->user_firebird_identity_id);
-        if (!$identity) {
+        if (! $identity) {
             return;
         }
 
@@ -188,8 +188,9 @@ class ChecadorPermisoService
     private function crearPermisoFuncionReposicion(ChecadorPermiso $permisoOriginal, string $fechaReposicion): void
     {
         $catalogoFuncion = ChecadorCatalogoPermiso::where('clave', 'FUNCION')->first();
-        if (!$catalogoFuncion) {
+        if (! $catalogoFuncion) {
             Log::warning('REPOSICION_SIN_CATALOGO_FUNCION', ['permiso_id' => $permisoOriginal->id]);
+
             return;
         }
 
@@ -227,8 +228,6 @@ class ChecadorPermisoService
         ]);
     }
 
-
-
     // ══════════════════════════════════════════════════════════════
     //  HORARIO DEL DÍA (con DB facade que faltaba)
     // ══════════════════════════════════════════════════════════════
@@ -240,7 +239,7 @@ class ChecadorPermisoService
             ->where('status_id', 1)
             ->first();
 
-        if (!$userTurno) {
+        if (! $userTurno) {
             return null;
         }
 
@@ -251,7 +250,7 @@ class ChecadorPermisoService
             ->where('dia_semana', $diaSemana)
             ->first();
 
-        if (!$turnoDia || !(bool) ($turnoDia->es_laborable ?? false)) {
+        if (! $turnoDia || ! (bool) ($turnoDia->es_laborable ?? false)) {
             return null;
         }
 
@@ -260,7 +259,7 @@ class ChecadorPermisoService
         $horaEntrada = $turnoDia->hora_entrada ?? $turno->hora_entrada ?? null;
         $horaSalida = $turnoDia->hora_salida ?? $turno->hora_salida ?? null;
 
-        if (!$horaEntrada || !$horaSalida) {
+        if (! $horaEntrada || ! $horaSalida) {
             return null;
         }
 
@@ -278,13 +277,14 @@ class ChecadorPermisoService
         ?array $horarioDia
     ): int {
         if ($noRegresa) {
-            if (!$horarioDia) {
+            if (! $horarioDia) {
                 return 0;
             }
             $desde = $horaInicioPermiso
                 ? Carbon::parse($horaInicioPermiso)
                 : Carbon::parse($horarioDia['hora_entrada']);
             $hastaSalida = Carbon::parse($horarioDia['hora_salida']);
+
             return $desde->diffInMinutes($hastaSalida);
         }
 
@@ -303,17 +303,106 @@ class ChecadorPermisoService
     // ══════════════════════════════════════════════════════════════
     //  COMIDA AUTOMÁTICA
     // ══════════════════════════════════════════════════════════════
+    /**
+     * Genera (si aplica) el permiso automático de "Hora de comida" al checar
+     * la primera entrada del día. La lógica se divide según
+     * `checador_permisos_extraordinarios`:
+     *
+     *  - puede_salir_comer = true, salir_comer_necesita_permiso = false →
+     *    se genera el permiso pero AUTO-APROBADO (no espera al jefe). Esto
+     *    incluye a quienes tienen puede_salir_cualquier_momento = true: aunque
+     *    no necesiten permiso para salir, SÍ queremos que quede registrado que
+     *    esa salida fue para comer.
+     *  - Cualquier otro caso (o sin config extraordinaria) → comportamiento
+     *    de siempre: se genera "pendiente" y espera aprobación del jefe.
+     */
+    // public function crearPermisoComidaAutomaticoSiAplica(
+    //     UserFirebirdIdentity $identity,
+    //     string $fecha,
+    //     ?array $horariosHoy
+    // ): ?ChecadorPermiso {
+    //     $permisoExtra = $identity->permisoExtraordinario;
+    //     $extraActivo = $permisoExtra && $permisoExtra->activo;
+
+    //     if (empty($horariosHoy['hora_salida'])) {
+    //         return null;
+    //     }
+
+    //     $yaExiste = ChecadorPermiso::where('user_firebird_identity_id', $identity->id)
+    //         ->whereHas('catalogo', fn($q) => $q->where('clave', 'COMIDA'))
+    //         ->whereDate('fecha_inicio', $fecha)
+    //         ->where('estado', '!=', 'rechazado')
+    //         ->exists();
+
+    //     if ($yaExiste) {
+    //         return null;
+    //     }
+
+    //     $catalogo = ChecadorCatalogoPermiso::where('clave', 'COMIDA')->first();
+    //     if (!$catalogo) {
+    //         return null;
+    //     }
+
+    //     // Sin config extraordinaria (o config inactiva) se mantiene el flujo
+    //     // normal: se genera pendiente y espera aprobación del jefe.
+    //     // Con config activa, si NO requiere permiso para salir a comer
+    //     // (incluye a quienes tienen libertad total de entrada/salida), se
+    //     // autoaprueba directo para dejar constancia de que la salida fue
+    //     // por comida.
+    //     $necesitaPermiso = $extraActivo
+    //         ? (bool) $permisoExtra->salir_comer_necesita_permiso
+    //         : true;
+
+    //     $permisoData = [
+    //         'user_firebird_identity_id' => $identity->id,
+    //         'checador_catalogo_permiso_id' => $catalogo->id,
+    //         'firebird_empresa' => $identity->firebird_empresa,
+    //         'tipo' => 'normal',
+    //         'fecha_inicio' => $fecha,
+    //         'fecha_fin' => $fecha,
+    //         'hora_inicio' => null,
+    //         'hora_fin' => null,
+    //         'no_regresa' => false,
+    //         'motivo' => 'Hora de comida',
+    //         'estado' => $necesitaPermiso ? 'pendiente' : 'aprobado',
+    //         'estado_rh' => 'no_aplica',
+    //         'estado_jefe' => $necesitaPermiso ? 'pendiente' : 'aprobado',
+    //     ];
+
+    //     if (!$necesitaPermiso) {
+    //         $permisoData['fecha_resolucion_jefe'] = now();
+    //         $permisoData['comentarios_jefe'] = 'Autoaprobado: el colaborador no requiere permiso para su hora de comida.';
+    //     }
+
+    //     $permiso = ChecadorPermiso::create($permisoData);
+
+    //     // Si sí requiere permiso pero el colaborador no tiene jefe asignado,
+    //     // se sigue auto-aprobando por el motivo de siempre.
+    //     if ($necesitaPermiso) {
+    //         $this->autoAprobarSiNoTieneJefe($permiso, $identity);
+    //     }
+
+    //     Log::info('PERMISO_COMIDA_GENERADO', [
+    //         'permiso_id' => $permiso->id,
+    //         'identity_id' => $identity->id,
+    //         'fecha' => $fecha,
+    //         'necesitaba_permiso' => $necesitaPermiso,
+    //         'estado' => $permiso->fresh()->estado,
+    //     ]);
+
+    //     return $permiso->fresh();
+    // }
 
     /**
      * Genera (si aplica) el permiso automático de "Hora de comida" al checar
-     * la primera entrada del día. La lógica ahora se divide según
+     * la primera entrada del día. La lógica se divide según
      * `checador_permisos_extraordinarios`:
      *
-     *  - puede_salir_cualquier_momento = true  → NO se genera nada: esta
-     *    gente ya tiene libertad total de entrada/salida, no necesitan que
-     *    les amarremos un permiso de comida específico.
      *  - puede_salir_comer = true, salir_comer_necesita_permiso = false →
-     *    se genera el permiso pero AUTO-APROBADO (no espera al jefe).
+     *    se genera el permiso pero AUTO-APROBADO (no espera al jefe). Esto
+     *    incluye a quienes tienen puede_salir_cualquier_momento = true: aunque
+     *    no necesiten permiso para salir, SÍ queremos que quede registrado que
+     *    esa salida fue para comer.
      *  - Cualquier otro caso (o sin config extraordinaria) → comportamiento
      *    de siempre: se genera "pendiente" y espera aprobación del jefe.
      */
@@ -325,17 +414,12 @@ class ChecadorPermisoService
         $permisoExtra = $identity->permisoExtraordinario;
         $extraActivo = $permisoExtra && $permisoExtra->activo;
 
-        // Libertad total de entrada/salida: no se le amarra permiso de comida.
-        if ($extraActivo && $permisoExtra->puede_salir_cualquier_momento) {
-            return null;
-        }
-
         if (empty($horariosHoy['hora_salida'])) {
             return null;
         }
 
         $yaExiste = ChecadorPermiso::where('user_firebird_identity_id', $identity->id)
-            ->whereHas('catalogo', fn($q) => $q->where('clave', 'COMIDA'))
+            ->whereHas('catalogo', fn ($q) => $q->where('clave', 'COMIDA'))
             ->whereDate('fecha_inicio', $fecha)
             ->where('estado', '!=', 'rechazado')
             ->exists();
@@ -345,12 +429,16 @@ class ChecadorPermisoService
         }
 
         $catalogo = ChecadorCatalogoPermiso::where('clave', 'COMIDA')->first();
-        if (!$catalogo) {
+        if (! $catalogo) {
             return null;
         }
 
         // Sin config extraordinaria (o config inactiva) se mantiene el flujo
         // normal: se genera pendiente y espera aprobación del jefe.
+        // Con config activa, si NO requiere permiso para salir a comer
+        // (incluye a quienes tienen libertad total de entrada/salida), se
+        // autoaprueba directo para dejar constancia de que la salida fue
+        // por comida.
         $necesitaPermiso = $extraActivo
             ? (bool) $permisoExtra->salir_comer_necesita_permiso
             : true;
@@ -371,7 +459,7 @@ class ChecadorPermisoService
             'estado_jefe' => $necesitaPermiso ? 'pendiente' : 'aprobado',
         ];
 
-        if (!$necesitaPermiso) {
+        if (! $necesitaPermiso) {
             $permisoData['fecha_resolucion_jefe'] = now();
             $permisoData['comentarios_jefe'] = 'Autoaprobado: el colaborador no requiere permiso para su hora de comida.';
         }
@@ -466,7 +554,6 @@ class ChecadorPermisoService
         return $identity->puestoActivo()->first()?->jefe_aux_id;
     }
 
-
     /**
      * Cierra el uso real de un permiso cuando el empleado checa su regreso
      * ("Fin de permiso"). Corrige el hora_fin "estimado" (duracion_default_minutos)
@@ -481,7 +568,7 @@ class ChecadorPermisoService
         }
 
         $horaInicioStr = $this->horaComoString($permiso->hora_inicio);
-        $horaInicio = Carbon::parse($permiso->fecha_inicio->toDateString() . ' ' . $horaInicioStr);
+        $horaInicio = Carbon::parse($permiso->fecha_inicio->toDateString().' '.$horaInicioStr);
 
         // Protección: si por algún motivo llega un registro desordenado
         // (fin antes que inicio), no muevas el hora_fin hacia atrás.

@@ -38,6 +38,8 @@ return new class extends Migration
 
             $table->boolean('activo')->default(true);
 
+            $table->boolean('salir_antes')->default(false);
+
             $table->timestamps();
 
             $table->unique('user_firebird_identity_id', 'uq_permisos_extra_user');

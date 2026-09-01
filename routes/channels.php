@@ -5,7 +5,6 @@ use App\Models\WorkOrder;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Log;
 
-
 Broadcast::routes(['middleware' => ['api', App\Http\Middleware\JwtAuth::class]]);
 
 /*
@@ -32,14 +31,14 @@ Broadcast::routes(['middleware' => ['api', App\Http\Middleware\JwtAuth::class]])
 Broadcast::channel('workorder.{workorderId}', function ($user, $workorderId) {
     $firebirdIdentity = UserFirebirdIdentity::where('firebird_user_clave', $user->id)->first();
 
-    if (!$firebirdIdentity) {
+    if (! $firebirdIdentity) {
         return false;
     }
 
     // Verificar si el usuario tiene acceso a este workorder
     $workorder = WorkOrder::find($workorderId);
 
-    if (!$workorder) {
+    if (! $workorder) {
         return false;
     }
 
@@ -59,8 +58,6 @@ Broadcast::channel('workorder.{workorderId}', function ($user, $workorderId) {
     return false;
 });
 
-
-
 Broadcast::channel('user.{identityId}', function ($user, $identityId) {
     Log::info('🚨 BROADCAST AUTH', [
         'request_user' => [
@@ -71,10 +68,11 @@ Broadcast::channel('user.{identityId}', function ($user, $identityId) {
         'requested_identity_id' => $identityId,
     ]);
 
-    $userId = $user->id ?? $user->ID;
+    $userId = $user->id ?? $user->ID ?? null;
 
-    if (!$userId) {
+    if (! $userId) {
         Log::error('❌ No user ID found');
+
         return false;
     }
 
@@ -86,12 +84,15 @@ Broadcast::channel('user.{identityId}', function ($user, $identityId) {
     // Buscar la identidad usando el ID del usuario de Firebird
     $identity = UserFirebirdIdentity::where('firebird_user_clave', $userId)->first();
 
-    if (!$identity) {
+    if (! $identity) {
         Log::error('❌ No identity found for user', [
             'user_id' => $userId,
         ]);
+
         return false;
     }
+
+    $permitido = (int) $identity->id === (int) $identityId;
 
     Log::info('✅ Identity found', [
         'identity_id' => $identity->id,
@@ -104,24 +105,66 @@ Broadcast::channel('user.{identityId}', function ($user, $identityId) {
     return (int) $identity->id === (int) $identityId;
 });
 
-
-
 // // routes/channels.php
 Broadcast::channel('scanner-embarques.{userId}', function ($user, $userId) {
     // Tu modelo Firebird usa ID mayúscula, pero el guard puede mapear distinto
     $authId = $user->ID    // Firebird model
-           ?? $user->id    // Laravel standard  
+           ?? $user->id    // Laravel standard
            ?? $user->firebird_user_id  // por si acaso
            ?? null;
 
     Log::info('🔐 Channel auth scanner-embarques', [
-        'user_ID'          => $user->ID ?? null,
-        'user_id'          => $user->id ?? null,
-        'user_fuid'        => $user->firebird_user_id ?? null,
-        'authId_resuelto'  => $authId,
-        'canal_userId'     => $userId,
-        'match'            => (int) $authId === (int) $userId,
+        'user_ID' => $user->ID ?? null,
+        'user_id' => $user->id ?? null,
+        'user_fuid' => $user->firebird_user_id ?? null,
+        'authId_resuelto' => $authId,
+        'canal_userId' => $userId,
+        'match' => (int) $authId === (int) $userId,
     ]);
 
     return (int) $authId === (int) $userId;
 });
+
+Broadcast::channel('guardia', function ($user) {
+
+    Log::info('🔐 AUTH CANAL GUARDIA', [
+        'user_class' => get_class($user),
+        'user_id' => $user->id ?? $user->ID ?? null,
+    ]);
+
+    $userId = $user->id ?? $user->ID ?? null;
+
+    if (! $userId) {
+        Log::error('❌ Guardia sin ID');
+
+        return false;
+    }
+
+    // Aquí validamos que el usuario sea guardia.
+    //
+    // POR AHORA lo dejamos en true para probar Reverb.
+    //
+    // Después metemos tu validación real de permisos/rol.
+
+    return true;
+});
+
+
+
+// Broadcast::channel('guardia', function ($user) {
+
+//     Log::info('🔐 AUTH CANAL GUARDIA', [
+//         'user_class' => get_class($user),
+//         'user_id' => $user->id ?? $user->ID ?? null,
+//     ]);
+
+//     $userId = $user->id ?? $user->ID ?? null;
+
+//     if (! $userId) {
+//         Log::error('❌ Guardia sin ID');
+
+//         return false;
+//     }
+
+//     return true;
+// });

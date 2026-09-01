@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Firebird\Users;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ChecadorRegistro extends Model
 {
@@ -42,5 +43,10 @@ class ChecadorRegistro extends Model
     public function turno()
     {
         return $this->belongsTo(Turno::class, 'turno_id');
+    }
+
+    public function permiso(): BelongsTo
+    {
+        return $this->belongsTo(ChecadorPermiso::class, 'checador_permiso_id');
     }
 }

@@ -338,7 +338,7 @@ class EscaneoRolloService
         // CASO 2: Ya tiene orden de surtido asignada.
         // ══════════════════════════════════════════════════════════
         if ($tieneSurtido) {
-            $rowSurtido = $this->buscarDatosOrden($cveOrden, $codigoRaw, $clave, 'REVISADO-SURTIDO');
+            $rowSurtido = $this->buscarDatosOrden($ordenSurte, $codigoRaw, $clave, 'REVISADO-SURTIDO');
 
             if (! $rowSurtido) {
                 Log::warning('⚠️ INVENTARIO_REVISADO_SURTIDO_SIN_DATOS_ORDEN', [

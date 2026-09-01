@@ -21,18 +21,20 @@ class ChecadorPermisoExtraordinario extends Model
         'hora_limite',
         'permiso_extraordinario_otro',
         'activo',
+        'salir_antes',
     ];
 
     protected $casts = [
-        'puede_salir_cualquier_momento'            => 'boolean',
-        'salir_cualquier_momento_necesita_permiso' => 'boolean',
-        'puede_salir_comer'                        => 'boolean',
+        'puede_salir_cualquier_momento'             => 'boolean',
+        'salir_cualquier_momento_necesita_permiso'  => 'boolean',
+        'puede_salir_comer'                         => 'boolean',
         'salir_comer_necesita_permiso'              => 'boolean',
         'puede_entrar_tarde'                        => 'boolean',
         'tolerancia_ilimitada'                      => 'boolean',
         'tolerancia_minutos'                        => 'integer',
         'hora_limite'                               => 'datetime:H:i',
         'activo'                                    => 'boolean',
+        'salir_antes'                               => 'boolean',
     ];
 
     /**
