@@ -369,16 +369,16 @@ class DataDashboardController extends Controller
             Log::warning('JWT malformado o inválido', ['error' => $e->getMessage()]);
 
             return response()->json(['message' => 'Token inválido'], 401);
-} catch (Throwable $e) {
-    Log::error('🔴 ME_FATAL_ERROR', [
-        'error' => $e->getMessage(),
-        'trace' => $e->getTraceAsString(),
-    ]);
+        } catch (Throwable $e) {
+            Log::error('🔴 ME_FATAL_ERROR', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
 
-    return response()->json([
-        'message' => 'Error interno, intenta de nuevo',
-    ], 500); // 👈 no 401
-}
+            return response()->json([
+                'message' => 'Error interno, intenta de nuevo',
+            ], 500); // 👈 no 401
+        }
     }
 
     /**

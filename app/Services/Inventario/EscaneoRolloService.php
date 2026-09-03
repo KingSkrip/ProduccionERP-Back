@@ -384,6 +384,7 @@ class EscaneoRolloService
 
         return array_merge($row, $datosAmpliados);
     }
+
     /**
      * Busca los datos de una orden intentando primero P_PSDENC (más completo,
      * disponible cuando la orden ya cruzó a acabado) y cayendo a P_ORDENESENC
