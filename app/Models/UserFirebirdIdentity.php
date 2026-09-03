@@ -24,7 +24,10 @@ class UserFirebirdIdentity extends Model
         'firebird_vend_clave',
         'firebird_vend_tabla',
         'firebird_prov_clave',
-        'firebird_prov_tabla'
+        'firebird_prov_tabla',
+        'checador_ajuste_salida_puntual',
+        'numero_credencial',
+        'excluir_checador',
     ];
 
     public function roles(): HasMany
