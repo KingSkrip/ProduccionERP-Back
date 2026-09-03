@@ -412,4 +412,27 @@ class DataDashboardController extends Controller
             return response()->json(['message' => 'Error al actualizar status'], 500);
         }
     }
+
+    public function refreshQr(Request $request)
+    {
+        $token = $request->bearerToken();
+        if (! $token) {
+            return response()->json(['message' => 'Token requerido'], 401);
+        }
+
+        try {
+            $decoded = JWT::decode($token, new Key($this->jwtSecret, 'HS256'));
+            $identityId = (int) ($decoded->identity_id ?? null);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Token inválido'], 401);
+        }
+
+        try {
+            $data = $this->qrService->generarTokenEfimero($identityId);
+
+            return response()->json($data, 200);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
 }

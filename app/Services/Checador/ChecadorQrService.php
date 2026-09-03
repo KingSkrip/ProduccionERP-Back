@@ -9,6 +9,7 @@ use App\Models\ChecadorRegistro;
 use App\Models\ChecadorSalida;
 use App\Models\UserFirebirdIdentity;
 use Carbon\Carbon;
+use Firebase\JWT\JWT;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -85,13 +86,18 @@ class ChecadorQrService
      */
     public function registrarChecada(string $token, array $meta = []): array
     {
-        $qr = ChecadorAccessQrCode::where('token', $token)
-            ->where('activo', true)
-            ->with(['identity.turnoActivo.turno'])
-            ->first();
+
+        //   $qr = $this->resolverQrDesdeToken($token);
+
+        //     $qr = ChecadorAccessQrCode::where('token', $token)
+        //         ->where('activo', true)
+        //         ->with(['identity.turnoActivo.turno'])
+        //         ->first();
+
+        $qr = $this->resolverQrDesdeToken($token);
 
         if (! $qr) {
-            throw new \RuntimeException('QR inválido o inactivo', 404);
+            throw new \RuntimeException('QR inválido, inactivo o expirado', 404);
         }
 
         $identity = $qr->identity;
@@ -200,6 +206,30 @@ class ChecadorQrService
         ];
     }
 
+    private function resolverQrDesdeToken(string $token): ?ChecadorAccessQrCode
+    {
+        // 1) Intenta como JWT efímero (formato nuevo)
+        try {
+            $decoded = JWT::decode($token, new Key(config('jwt.secret'), 'HS256'));
+
+            if (($decoded->typ ?? null) === 'checador_efimero') {
+                // exp ya lo valida la librería JWT automáticamente (lanza ExpiredException si venció)
+                return ChecadorAccessQrCode::where('id', $decoded->qr_id)
+                    ->where('activo', true)
+                    ->with(['identity.turnoActivo.turno'])
+                    ->first();
+            }
+        } catch (\Throwable $e) {
+            // No es JWT válido, seguimos al formato viejo
+        }
+
+        // 2) Fallback: token permanente clásico (compatibilidad con lo que ya funciona)
+        return ChecadorAccessQrCode::where('token', $token)
+            ->where('activo', true)
+            ->with(['identity.turnoActivo.turno'])
+            ->first();
+    }
+
     /**
      * Historial paginado de registros de una identidad.
      */
@@ -212,5 +242,32 @@ class ChecadorQrService
             ->whereBetween('fecha', [$desde, $hasta])
             ->orderByDesc('fecha_hora')
             ->paginate(50);
+    }
+
+    public function generarTokenEfimero(int $identityId): array
+    {
+        $qr = $this->obtenerActivo($identityId);
+
+        if (! $qr) {
+            throw new \RuntimeException('QR no encontrado o inactivo', 404);
+        }
+
+        $ahora = time();
+        $ttl = 60;
+
+        $payload = [
+            'qr_id' => $qr->id,
+            'identity_id' => $identityId,
+            'iat' => $ahora,
+            'exp' => $ahora + $ttl,
+            'typ' => 'checador_efimero', // para distinguirlo del token permanente
+        ];
+
+        $jwt = JWT::encode($payload, config('jwt.secret'), 'HS256');
+
+        return [
+            'token' => $jwt,
+            'expira_en' => $ttl,
+        ];
     }
 }

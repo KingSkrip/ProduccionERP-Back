@@ -60,6 +60,7 @@ Route::prefix('auth')->group(function () {
 Route::prefix('dash')->group(function () {
     Route::get('me', [DataDashboardController::class, 'me']);
     Route::post('update-status', [DataDashboardController::class, 'updateStatus']);
+    Route::post('/qr/refresh', [DataDashboardController::class, 'refreshQr']);
 });
 
 // EDITAR PERFIL PERSONAL
