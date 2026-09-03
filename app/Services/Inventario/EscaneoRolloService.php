@@ -423,6 +423,11 @@ class EscaneoRolloService
             return $row;
         }
 
+        // ── Fallback: orden aún no cruza a P_PSDENC, sigue en proceso.
+        // Se le agrega el mismo join a ORDENESENC/ORDENESPROC/PROCESOS que
+        // ya usa la rama de arriba, para resolver el proceso específico
+        // (ej. baño de tintorería) y traer las cantidades — antes solo
+        // traía P.ESTATUS crudo y nunca traía CANTIDAD/CANTENT.
         $sqlOrdenesenc = "
         SELECT
             P.ARTICULO AS ARTICULO,
@@ -436,9 +441,15 @@ class EscaneoRolloService
             P.FECHA AS FECHA,
             P.ORDEN AS ORDEN,
             P.NESTATUS AS OE_ESTATUS,
-            P.ESTATUS AS PROCESO
+            IIF(OE.ESTATUS = 2, S.PROCESO, E.ESTATUS) AS PROCESO,
+            OE.CANTIDAD AS \"CANTIDAD SOLICITADA\",
+            OE.CANTENT AS \"CANTIDAD ENTREGADA\"
         FROM P_ORDENESENC('03') P
         LEFT JOIN p_vendxx('03') V ON V.id = P.AGENTE
+        LEFT JOIN ORDENESENC OE ON OE.ID = P.CVE_ORDEN
+        LEFT JOIN ORDENESPROC R ON R.ORDEN = OE.ORDEN AND R.ST = 1
+        LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC
+        LEFT JOIN ORDENESest E ON E.ID = OE.ESTATUS
         WHERE P.CVE_ORDEN = ?
     ";
 
