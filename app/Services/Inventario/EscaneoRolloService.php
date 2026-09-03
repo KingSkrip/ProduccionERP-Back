@@ -336,6 +336,9 @@ class EscaneoRolloService
 
         // ══════════════════════════════════════════════════════════
         // CASO 2: Ya tiene orden de surtido asignada.
+        // (se checa ANTES que "sin orden", porque ordenSurte/CVE_ORDEN_OP
+        // es independiente de CVE_ORDEN — un rollo puede tener CVE_ORDEN
+        // vacío pero ya estar surtido a tintorería)
         // ══════════════════════════════════════════════════════════
         if ($tieneSurtido) {
             $rowSurtido = $this->buscarDatosOrden($ordenSurte, $codigoRaw, $clave, 'REVISADO-SURTIDO');
@@ -351,8 +354,6 @@ class EscaneoRolloService
                 $rowSurtido = [];
             }
 
-            // Estatus 4 = CTRL. CALIDAD (catálogo ORDENESEST) — si la orden
-            // surtida está en control de calidad, se marca así en vez de SURTIDO.
             $oeEstatusSurtido = (int) ($rowSurtido['OE_ESTATUS'] ?? 0);
 
             $rowSurtido['ID'] = $rowPaso1['ID'];
@@ -362,6 +363,27 @@ class EscaneoRolloService
             $rowSurtido['SUBTIPO'] = $oeEstatusSurtido === 4 ? 'CONTROL_CALIDAD' : 'SURTIDO';
 
             return array_merge($rowSurtido, $datosAmpliados);
+        }
+
+        // Sin orden asociada, sin venta directa y sin surtido.
+        if (empty($cveOrden)) {
+            Log::info('ℹ️ INVENTARIO_REVISADO_SIN_CVE_ORDEN', [
+                'codigo_qr' => $codigoRaw,
+                'clave' => $clave,
+            ]);
+
+            return array_merge([
+                'ID' => $rowPaso1['ID'],
+                'ID_QR' => str_pad((string) $rowPaso1['ID'], 10, '0', STR_PAD_LEFT),
+                'CVE_ART' => $rowPaso1['CVE_ART'],
+                'PIEZA' => $rowPaso1['PZA'],
+                'PESO_TJ' => $rowPaso1['PESOTJ'],
+                'PESO_SL' => $rowPaso1['PESOSL'],
+                'ALMACEN' => $rowPaso1['ALMACEN_NOMBRE'] ?? $rowPaso1['ALMACEN'],
+                'FOLIO_INVENTARIO' => $rowPaso1['ID_FOL_INV'],
+                'ORIGEN' => 'REVISADO',
+                'SUBTIPO' => 'SIN_ORDEN',
+            ], $datosAmpliados);
         }
 
         // ══════════════════════════════════════════════════════════
@@ -547,7 +569,7 @@ class EscaneoRolloService
             // El driver de Firebird puede regresar stdClass en vez de array asociativo.
             return $resultado === null ? null : (array) $resultado;
         } catch (\Throwable $e) {
-            Log::error("Error al escanear rollo ({$paso}) en Firebird: " . $e->getMessage(), [
+            Log::error("Error al escanear rollo ({$paso}) en Firebird: ".$e->getMessage(), [
                 'codigo_qr' => $codigoRaw,
                 'clave' => $clave,
             ]);
