@@ -188,7 +188,7 @@ class EscaneoRolloService
             PJ.ID AS ID,
             PJ.ISREV AS ISREV,
             PJ.PESORV AS PESORV,
-            PJ.CVE_ORDEN AS CVE_ORDEN,
+            COALESCE(PJ.CVE_ORDEN, TEJ.CVE_ORDEN) AS CVE_ORDEN,
             PJ.CVE_ORDEN_OP AS CVE_ORDEN_OP,
             PJ.ID_FOLCDO_PL AS ID_FOLCDO_PL,
             PJ.CVE_ART AS CVE_ART,
@@ -209,7 +209,8 @@ class EscaneoRolloService
             C.COMPOSICION AS COMPOSICION,
             PA.NOM_EMP AS TEJEDOR,
             PA.NOM_EMPREV AS REVISADOR,
-            ALM.DESCR AS ALMACEN_NOMBRE
+            ALM.DESCR AS ALMACEN_NOMBRE,
+            PJ.OT_PSD AS ORDEN_PESADO
         FROM PSDTABPZASTJ PJ
         LEFT JOIN ARTICULOS ART ON PJ.CVE_ART = ART.ID
         LEFT JOIN ARTICULOSH ARTH ON PJ.CVE_ART = ARTH.CVE_ART
@@ -218,6 +219,7 @@ class EscaneoRolloService
         LEFT JOIN COMPOSICION C ON C.ID = ART.COMP
         LEFT JOIN PSDTABPZASTJAUX PA ON PA.ID = PJ.ID
         LEFT JOIN ALMACENES03 ALM ON ALM.CVE_ALM = PJ.ALMACEN
+        LEFT JOIN ORDENESTEJ TEJ ON TEJ.OT = PJ.OT_PSD
         WHERE PJ.ID = ?
         ';
 
@@ -288,8 +290,6 @@ class EscaneoRolloService
                 $datosVentaDirecta = [];
             }
 
-            // USDELIV (entrega en PSDTABPZASTJ) suele venir vacío en venta directa;
-            // en ese caso usamos el usuario de laboratorio (USELAB) resuelto en PTPLISTCDO.
             $usuarioEntrega = $rowPaso1['USDELIV'] ?: ($datosVentaDirecta['USELAB_NOMBRE'] ?? null);
 
             return array_merge([
@@ -313,32 +313,8 @@ class EscaneoRolloService
             ], $datosAmpliados, $datosVentaDirecta);
         }
 
-        // Sin orden asociada y sin venta directa.
-        if (empty($cveOrden)) {
-            Log::info('ℹ️ INVENTARIO_REVISADO_SIN_CVE_ORDEN', [
-                'codigo_qr' => $codigoRaw,
-                'clave' => $clave,
-            ]);
-
-            return array_merge([
-                'ID' => $rowPaso1['ID'],
-                'ID_QR' => str_pad((string) $rowPaso1['ID'], 10, '0', STR_PAD_LEFT),
-                'CVE_ART' => $rowPaso1['CVE_ART'],
-                'PIEZA' => $rowPaso1['PZA'],
-                'PESO_TJ' => $rowPaso1['PESOTJ'],
-                'PESO_SL' => $rowPaso1['PESOSL'],
-                'ALMACEN' => $rowPaso1['ALMACEN_NOMBRE'] ?? $rowPaso1['ALMACEN'],
-                'FOLIO_INVENTARIO' => $rowPaso1['ID_FOL_INV'],
-                'ORIGEN' => 'REVISADO',
-                'SUBTIPO' => 'SIN_ORDEN',
-            ], $datosAmpliados);
-        }
-
         // ══════════════════════════════════════════════════════════
         // CASO 2: Ya tiene orden de surtido asignada.
-        // (se checa ANTES que "sin orden", porque ordenSurte/CVE_ORDEN_OP
-        // es independiente de CVE_ORDEN — un rollo puede tener CVE_ORDEN
-        // vacío pero ya estar surtido a tintorería)
         // ══════════════════════════════════════════════════════════
         if ($tieneSurtido) {
             $rowSurtido = $this->buscarDatosOrden($ordenSurte, $codigoRaw, $clave, 'REVISADO-SURTIDO');
@@ -408,7 +384,6 @@ class EscaneoRolloService
 
         return array_merge($row, $datosAmpliados);
     }
-
     /**
      * Busca los datos de una orden intentando primero P_PSDENC (más completo,
      * disponible cuando la orden ya cruzó a acabado) y cayendo a P_ORDENESENC
