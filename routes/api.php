@@ -8,7 +8,6 @@ use App\Http\Controllers\Area\AreaController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Catalogos\CatalogosController;
 use App\Http\Controllers\Checador\ChecadorAsistenciaController;
-use App\Http\Controllers\Checador\ChecadorBroadcastAuthController;
 use App\Http\Controllers\Checador\ChecadorController;
 use App\Http\Controllers\Checador\ChecadorGuardiaController;
 use App\Http\Controllers\Checador\ChecadorIdentidadController;
@@ -54,6 +53,9 @@ Route::prefix('auth')->group(function () {
     Route::post('reset-password', [AuthController::class, 'resetPassword']);
     // DESBLOQUEAR SESION
     Route::post('unlock-session', [AuthController::class, 'unlockSession']);
+    Route::post('session/pause', [AuthController::class, 'pauseSession']);
+    Route::post('session/resume', [AuthController::class, 'resumeSession']);
+    Route::post('session/heartbeat', [AuthController::class, 'heartbeat']);
 });
 
 // DASHBOARD PERSONAL
@@ -93,7 +95,7 @@ Route::prefix('colaborador')->middleware('jwt.auth')->group(function () {
 
     Route::put('usuarios/{id}/status', [ColaboradorController::class, 'updateStatus']);
 
-       Route::get('/posibles-jefes', [ColaboradorController::class, 'posiblesJefes']);
+    Route::get('/posibles-jefes', [ColaboradorController::class, 'posiblesJefes']);
 });
 
 // GESTIONAR ROLES
@@ -132,8 +134,6 @@ Route::prefix('colaboradores')->middleware('jwt.auth')->group(function () {
     Route::get('vacaciones/{id}/edit', [SoliVacacionesController::class, 'edit']);
     Route::put('vacaciones/{id}/update', [SoliVacacionesController::class, 'update']);
     Route::delete('vacaciones/{id}/delete', [SoliVacacionesController::class, 'destroy']);
-
- 
 
 });
 
@@ -349,14 +349,12 @@ Route::prefix('checador')->middleware('jwt.auth')->group(function () {
     Route::patch('/identidades/{identityId}/credencial', [ChecadorIdentidadController::class, 'asignarCredencial']);
     Route::get('/empleados/lista', [ChecadorAsistenciaController::class, 'listaEmpleados']);
 
-
-
-
-
-
-     Route::get('/guardia/buscar', [ChecadorGuardiaController::class, 'buscar']);
+    Route::get('/guardia/buscar', [ChecadorGuardiaController::class, 'buscar']);
     Route::get('/guardia/estado/{identityId}', [ChecadorGuardiaController::class, 'estado']);
     Route::post('/guardia/registrar', [ChecadorGuardiaController::class, 'registrar']);
+
+  
+Route::get('/qr/{identityId}/token-efimero', [ChecadorQrController::class, 'tokenEfimero']);
 });
 
 Route::get('mi-ip', function (Request $request) {
@@ -415,15 +413,9 @@ Route::prefix('turnos')->middleware('jwt.auth')->group(function () {
 */
 Route::prefix('inventario')->middleware('jwt.auth')->group(function () {
 
-Route::get('/', [InventarioController::class, 'index']);
-Route::post('/escanearinventario', [InventarioController::class, 'escanear']);
+    Route::get('/', [InventarioController::class, 'index']);
+    Route::post('/escanearinventario', [InventarioController::class, 'escanear']);
 });
-
-
-
-
-
-
 
 Route::get('/test-reverb', function () {
 

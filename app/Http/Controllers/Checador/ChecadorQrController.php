@@ -77,4 +77,17 @@ class ChecadorQrController extends Controller
 
         return response()->json($registros);
     }
+
+    // ChecadorQrController.php
+    public function tokenEfimero(int $identityId)
+    {
+        try {
+            return response()->json($this->qrService->generarTokenEfimero($identityId));
+        } catch (\RuntimeException $e) {
+            $codigo = $e->getCode();
+            $status = (is_int($codigo) && $codigo >= 100 && $codigo < 600) ? $codigo : 500;
+
+            return response()->json(['message' => $e->getMessage()], $status);
+        }
+    }
 }

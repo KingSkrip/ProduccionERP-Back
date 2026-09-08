@@ -8,8 +8,10 @@ use App\Models\ChecadorPermiso;
 use App\Models\ChecadorRegistro;
 use App\Models\ChecadorSalida;
 use App\Models\UserFirebirdIdentity;
+use App\Models\UserLoginSession;
 use Carbon\Carbon;
 use Firebase\JWT\JWT;
+use Firebase\JWT\Key;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -105,6 +107,8 @@ class ChecadorQrService
         if (! $identity) {
             throw new \RuntimeException('Identidad asociada al QR no encontrada', 404);
         }
+
+        $this->verificarSesionActiva($identity->id);
 
         $now = Carbon::now();
         $hoy = $now->toDateString();
@@ -213,7 +217,23 @@ class ChecadorQrService
             $decoded = JWT::decode($token, new Key(config('jwt.secret'), 'HS256'));
 
             if (($decoded->typ ?? null) === 'checador_efimero') {
-                // exp ya lo valida la librería JWT automáticamente (lanza ExpiredException si venció)
+                if (isset($decoded->session_jti)) {
+                    $sesionVigente = UserLoginSession::where('firebird_identity_id', $decoded->identity_id)
+                        ->where('status', 1)
+                        ->latest('login_at')
+                        ->first();
+
+                    if (! $sesionVigente || $sesionVigente->jti !== $decoded->session_jti) {
+                        Log::warning('🚫 QR_SESION_NO_COINCIDE', [
+                            'identity_id' => $decoded->identity_id,
+                            'session_jti_qr' => $decoded->session_jti,
+                            'session_jti_actual' => $sesionVigente->jti ?? null,
+                        ]);
+
+                        return null;
+                    }
+                }
+
                 return ChecadorAccessQrCode::where('id', $decoded->qr_id)
                     ->where('activo', true)
                     ->with(['identity.turnoActivo.turno'])
@@ -244,7 +264,7 @@ class ChecadorQrService
             ->paginate(50);
     }
 
-    public function generarTokenEfimero(int $identityId): array
+    public function generarTokenEfimero(int $identityId, string $sessionJti): array
     {
         $qr = $this->obtenerActivo($identityId);
 
@@ -253,21 +273,65 @@ class ChecadorQrService
         }
 
         $ahora = time();
-        $ttl = 60;
+        $ttl = 20; // igualado al intervalo de refresh del frontend
 
         $payload = [
             'qr_id' => $qr->id,
             'identity_id' => $identityId,
+            'session_jti' => $sessionJti, // 🔑
             'iat' => $ahora,
             'exp' => $ahora + $ttl,
-            'typ' => 'checador_efimero', // para distinguirlo del token permanente
+            'typ' => 'checador_efimero',
         ];
 
         $jwt = JWT::encode($payload, config('jwt.secret'), 'HS256');
 
-        return [
-            'token' => $jwt,
-            'expira_en' => $ttl,
-        ];
+        return ['token' => $jwt, 'expira_en' => $ttl];
+    }
+
+    /**
+     * 🔒 Bloquea el registro si la sesión no está activa (status = 1).
+     * Da un mensaje distinto si está pausada (2) vs cerrada/nunca inició (0).
+     */
+    private function verificarSesionActiva(int $firebirdIdentityId): void
+    {
+
+        $sesionActiva = UserLoginSession::where('firebird_identity_id', $firebirdIdentityId)
+            ->where('status', 1)
+            ->where('last_activity', '>=', Carbon::now()->subSeconds(30))
+            ->exists();
+
+        if ($sesionActiva) {
+            return;
+        }
+
+        if (UserLoginSession::where('firebird_identity_id', $firebirdIdentityId)
+            ->where('status', 1)
+            ->exists()) {
+            return; // hay al menos un dispositivo con sesión activa, todo bien
+        }
+
+        $ultimaSesion = UserLoginSession::where('firebird_identity_id', $firebirdIdentityId)
+            ->latest('id')
+            ->first();
+
+        if ($ultimaSesion && (int) $ultimaSesion->status === 2) {
+            Log::warning('🚫 CHECADA_BLOQUEADA_SESION_PAUSADA', [
+                'identity_id' => $firebirdIdentityId,
+                'session_id' => $ultimaSesion->id,
+            ]);
+
+            throw new \RuntimeException(
+                'No puedes registrar tu checada: inicia sesion en la app para escanear.',
+                409
+            );
+        }
+
+        Log::warning('🚫 CHECADA_BLOQUEADA_SIN_SESION', ['identity_id' => $firebirdIdentityId]);
+
+        throw new \RuntimeException(
+            'No puedes registrar tu checada: no tienes una sesión activa en la app. Inicia sesión primero.',
+            401
+        );
     }
 }

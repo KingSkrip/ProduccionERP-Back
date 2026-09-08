@@ -7,6 +7,7 @@ use App\Http\Resources\Checador\ChecadorAccessQrCodeResource;
 use App\Http\Resources\UsuarioResource;
 use App\Models\Firebird\Users;
 use App\Models\UserFirebirdIdentity;
+use App\Models\UserLoginSession;
 use App\Models\UserPuesto;
 use App\Services\Checador\ChecadorQrService;
 use App\Services\FirebirdConnectionService;
@@ -72,6 +73,24 @@ class DataDashboardController extends Controller
 
             if (! isset($decoded->iat) || $decoded->iat > time()) {
                 return response()->json(['message' => 'Token no válido aún'], 401);
+            }
+
+            // 🔒 Validar que la sesión siga activa (no cerrada manualmente en otro dispositivo)
+            if (isset($decoded->jti)) {
+                $session = UserLoginSession::where('jti', $decoded->jti)->first();
+
+                if ($session && $session->status === 0) {
+                    Log::warning('🚫 ME_SESSION_CERRADA', ['jti' => $decoded->jti]);
+
+                    return response()->json(['message' => 'Sesión cerrada'], 401);
+                }
+
+                // 💓 Heartbeat: actualiza última actividad sin disparar updated_at innecesarios
+                if ($session) {
+                    $session->timestamps = false; // no toques updated_at
+                    $session->last_activity = now();
+                    $session->save();
+                }
             }
 
             $sub = (int) $decoded->sub;
@@ -362,6 +381,15 @@ class DataDashboardController extends Controller
         } catch (ExpiredException $e) {
             Log::warning('🔴 ME_TOKEN_EXPIRED', ['error' => $e->getMessage()]);
 
+            // 🔒 Aunque el token expiró, cerramos la sesión asociada en BD
+            // para que no quede status=1 huérfano
+            if (! empty($token)) {
+                $jti = $this->extractJtiSinVerificar($token);
+                if ($jti) {
+                    UserLoginSession::where('jti', $jti)->where('status', 1)->first()?->cerrar();
+                }
+            }
+
             return response()->json(['message' => 'El token ha expirado'], 401);
         } catch (BeforeValidException $e) {
             return response()->json(['message' => 'Token no válido aún'], 401);
@@ -422,13 +450,37 @@ class DataDashboardController extends Controller
 
         try {
             $decoded = JWT::decode($token, new Key($this->jwtSecret, 'HS256'));
-            $identityId = (int) ($decoded->identity_id ?? null);
         } catch (\Throwable $e) {
             return response()->json(['message' => 'Token inválido'], 401);
         }
 
+        $usuario = Users::find($decoded->sub ?? null);
+        if (! $usuario) {
+            return response()->json(['message' => 'Usuario no encontrado'], 404);
+        }
+
+        $identity = UserFirebirdIdentity::where('firebird_user_clave', (int) $usuario->ID)->first()
+            ?? UserFirebirdIdentity::where('firebird_user_clave', (int) $usuario->CLAVE)->first();
+
+        if (! $identity) {
+            return response()->json(['message' => 'Identidad no encontrada'], 404);
+        }
+
+        // 🔒 No emitas QR fresco si la sesión no está activa/reciente
+        $sesion = isset($decoded->jti)
+            ? UserLoginSession::where('jti', $decoded->jti)->first()
+            : null;
+
+        if (! $sesion
+            || (int) $sesion->status !== 1
+            || ! $sesion->last_activity
+            || $sesion->last_activity->lt(now()->subSeconds(30))
+        ) {
+            return response()->json(['message' => 'Sesión inactiva, no se puede generar QR'], 409);
+        }
+
         try {
-            $data = $this->qrService->generarTokenEfimero($identityId);
+            $data = $this->qrService->generarTokenEfimero($identity->id, $sesion->jti);
 
             return response()->json($data, 200);
         } catch (\Throwable $e) {

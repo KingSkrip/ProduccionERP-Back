@@ -16,9 +16,9 @@ use App\Services\FirebirdConnectionService;
 use App\Services\FirebirdEmpresaManualService;
 use Carbon\Carbon;
 use Exception;
+use Firebase\JWT\ExpiredException;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
-use Firebase\JWT\ExpiredException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -226,21 +226,9 @@ class AuthController extends Controller
 
             $token = JWT::encode($payload, $key, 'HS256');
 
-            // 📱 Registrar sesión
+            // 📱 Registrar sesión (con lock para evitar filas duplicadas por requests concurrentes)
             $agent = new Agent;
             $agent->setUserAgent($request->userAgent());
-
-            // Busca la sesión de este usuario SIN filtrar por status,
-            // así la reactivamos aunque ya esté cerrada (status = 0)
-            $sesion = UserLoginSession::where('firebird_user_id', $userId)
-                ->latest('login_at')
-                ->first();
-
-            // Si hubiera más de una activa por basura vieja (bug anterior), cierra las demás
-            UserLoginSession::where('firebird_user_id', $userId)
-                ->where('status', 1)
-                ->when($sesion, fn ($q) => $q->where('id', '!=', $sesion->id))
-                ->update(['status' => 0, 'logout_at' => now()]);
 
             $sessionData = [
                 'firebird_identity_id' => $identity->id ?? null,
@@ -255,15 +243,30 @@ class AuthController extends Controller
                 'logout_at' => null,
             ];
 
-            if ($sesion) {
-                // 🔁 Ya existía (activa o cerrada) -> la reactiva/actualiza, NO crea fila nueva
-                $sesion->update($sessionData);
-            } else {
-                // 🆕 Este usuario nunca tuvo sesión -> crea la primera fila
-                UserLoginSession::create(array_merge($sessionData, [
-                    'firebird_user_id' => $userId,
-                ]));
-            }
+            DB::transaction(function () use ($userId, $sessionData) {
+                // 🔒 lockForUpdate: bloquea las filas de este usuario hasta que
+                // termine la transacción. Si llegan 2 logins casi al mismo tiempo,
+                // el segundo espera a que el primero termine de crear/actualizar
+                // en vez de leer "no existe" y crear una fila duplicada.
+                $sesion = UserLoginSession::where('firebird_user_id', $userId)
+                    ->lockForUpdate()
+                    ->latest('login_at')
+                    ->first();
+
+                // Cierra cualquier otra fila activa vieja (basura de antes del fix)
+                UserLoginSession::where('firebird_user_id', $userId)
+                    ->where('status', 1)
+                    ->when($sesion, fn ($q) => $q->where('id', '!=', $sesion->id))
+                    ->update(['status' => 0, 'logout_at' => now()]);
+
+                if ($sesion) {
+                    $sesion->update($sessionData);
+                } else {
+                    UserLoginSession::create(array_merge($sessionData, [
+                        'firebird_user_id' => $userId,
+                    ]));
+                }
+            });
 
             $connection = $this->firebirdService->getProductionConnection();
             $departamentos = collect();
@@ -633,21 +636,12 @@ class AuthController extends Controller
             }
 
             return response()->json([
-                'user' => [
-                    'id' => $usuario->CLAVE,
-                    'name' => $usuario->NOMBRE,
-                    'email' => $usuario->CORREO,
-                    'usuario' => $usuario->USUARIO,
-                    'status' => $usuario->STATUS,
-                    'depto' => $usuario->DEPTO,
-                    'departamento' => $usuario->DEPARTAMENTO,
-                    'direccion_id' => $usuario->direccion_id,
-                    'photo' => $usuario->PHOTO,
-                ],
+                'user' => $this->buildUserPayload($usuario),
                 'encrypt' => $newToken,
                 'token_type' => 'Bearer',
                 'expires_in' => in_array((int) $usuario->ID, $this->vipUserIds, true) ? null : $this->jwtExpiration,
             ], 200);
+
         } catch (ExpiredException $e) {
             $jti = $this->extractJtiSinVerificar($token);
             if ($jti) {
@@ -660,6 +654,199 @@ class AuthController extends Controller
 
             return response()->json(['message' => 'Token inválido o expirado'], 401);
         }
+    }
+
+    private function buildUserPayload(Users $usuario): array
+    {
+        $identity = UserFirebirdIdentity::where('firebird_user_clave', (int) $usuario->ID)->first()
+            ?? UserFirebirdIdentity::where('firebird_user_clave', (int) $usuario->CLAVE)->first();
+
+        $roles = collect();
+        $userPuesto = null;
+        $esJefeAuxiliar = false;
+
+        if ($identity) {
+            $roles = $identity->roles()->get();
+
+            $identity = UserFirebirdIdentity::with([
+                'puestoActivo.puesto',
+                'puestoActivo.area',
+                'puestoActivo.jefe.firebirdUser',
+            ])->find($identity->id);
+
+            $userPuesto = $identity->puestoActivo ?? null;
+
+            $esJefeAuxiliar = UserPuesto::where('jefe_aux_id', $identity->id)
+                ->where('activo', 1)
+                ->exists();
+        }
+
+        $esEmpleado = $identity && $identity->firebird_tb_clave !== null;
+        $esCliente = $identity && $identity->firebird_clie_clave !== null;
+        $esVendedor = $identity && $identity->firebird_vend_clave !== null;
+        $esProveedor = $identity && $identity->firebird_prov_clave !== null;
+
+        // 🎫 QR fijo de checador (mismo criterio que me())
+        $qrData = null;
+
+        if ($identity && ! $identity->excluir_checador) {
+            try {
+                $qr = $this->qrService->generar($identity->id);
+                $qrData = (new ChecadorAccessQrCodeResource($qr))->resolve();
+            } catch (\Throwable $e) {
+                Log::warning('⚠️ REFRESH_QR_NO_GENERADO', [
+                    'identity_id' => $identity->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $departamentos = collect();
+        $slRow = null;
+        $vcRow = null;
+        $hvcRow = null;
+        $mfRow = null;
+        $acRows = collect();
+        $tbRow = null;
+        $deptoRow = null;
+        $puestoRow = null;
+        $clieRow = null;
+        $vendRow = null;
+        $provRow = null;
+        $turnoActivo = null;
+
+        if ($esEmpleado) {
+            $tbClave = $identity->firebird_tb_clave;
+            $tbClaveNorm = is_string($tbClave) ? trim($tbClave) : $tbClave;
+            $empresaNoi = $identity->firebird_empresa ?? '04';
+
+            try {
+                $firebirdNoi = new FirebirdEmpresaManualService($empresaNoi, 'SRVNOI');
+
+                $departamentos = $firebirdNoi->getMasterTable('DEPTOS')->keyBy(fn ($row) => trim((string) $row->CLAVE));
+                $slRow = $firebirdNoi->getOperationalRowByClave('SL', $tbClaveNorm, 'CLAVE_TRAB');
+                $vcRow = $firebirdNoi->getOperationalRowByClave('VC', $tbClaveNorm, 'CLAVE_TRAB');
+                $hvcRow = $firebirdNoi->getMasterRowByClave('HISTVAC', $tbClaveNorm, 'CVETRAB');
+                $mfRow = $firebirdNoi->getOperationalRowByClave('MF', $tbClaveNorm, 'CLAVE_TRAB');
+                $acRows = $firebirdNoi->getOperationalRowsByClave('AC', $tbClaveNorm, 'CLAVE_TRAB');
+                $tbRow = $firebirdNoi->getOperationalRowByClave('TB', $tbClaveNorm, 'CLAVE');
+
+                if ($tbRow) {
+                    $deptoClave = isset($tbRow->DEPTO) ? trim((string) $tbRow->DEPTO) : null;
+
+                    if ($deptoClave) {
+                        $deptoRow = $departamentos[$deptoClave] ?? null;
+                    }
+
+                    $puestoClave = isset($tbRow->PUESTO) ? trim((string) $tbRow->PUESTO) : null;
+
+                    if ($puestoClave) {
+                        try {
+                            $puestos = $firebirdNoi->getMasterTable('PUESTOS')
+                                ->keyBy(fn ($row) => trim((string) $row->CLAVE));
+                            $puestoRow = $puestos[$puestoClave] ?? null;
+                        } catch (\Throwable $e) {
+                            Log::error('⚠️ REFRESH_PUESTO_LOOKUP_ERROR', [
+                                'puesto_clave' => $puestoClave,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::error('⚠️ REFRESH_EMPLEADO_NOI_ERROR', [
+                    'empresaNoi' => $empresaNoi,
+                    'tbClave' => $tbClaveNorm,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                $turnoActivo = $identity->turnoActivo()
+                    ->with(['turno.turnoDias', 'status'])
+                    ->first();
+            } catch (\Throwable $e) {
+                Log::error('⚠️ REFRESH_TURNO_ERROR', [
+                    'identity_id' => $identity->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if ($esCliente) {
+            $clieClave = $identity->firebird_clie_clave;
+
+            if ($clieClave) {
+                try {
+                    $connection = $this->firebirdService->getProductionConnection();
+                    $clieRow = $connection->selectOne('SELECT * FROM CLIE03 WHERE CLAVE = ?', [$clieClave]);
+                } catch (\Throwable $e) {
+                    Log::error('⚠️ REFRESH_CLIENTE_DATA_ERROR', [
+                        'clie_clave' => $clieClave,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        if ($esVendedor) {
+            $vendClave = $identity->firebird_vend_clave;
+
+            if ($vendClave) {
+                try {
+                    $connection = $this->firebirdService->getProductionConnection();
+                    $vendRow = $connection->selectOne('SELECT * FROM VEND03 WHERE CVE_VEND = ?', [$vendClave]);
+                } catch (\Throwable $e) {
+                    Log::error('⚠️ REFRESH_VENDEDOR_DATA_ERROR', [
+                        'vend_clave' => $vendClave,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        if ($esProveedor) {
+            $provClave = $identity->firebird_prov_clave;
+
+            if ($provClave) {
+                try {
+                    $connection = $this->firebirdService->getProductionConnection();
+                    $provRow = $connection->selectOne('SELECT * FROM PROV03 WHERE CLAVE = ?', [$provClave]);
+                } catch (\Throwable $e) {
+                    Log::error('⚠️ REFRESH_PROVEEDOR_DATA_ERROR', [
+                        'prov_clave' => $provClave,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        return (new UsuarioResource($usuario, [
+            'user_puesto' => $userPuesto,
+            'es_jefe_auxiliar' => $esJefeAuxiliar,
+            'identity_id' => $identity->id ?? null,
+            'departamentos' => $departamentos,
+            'sl' => $slRow,
+            'vacaciones' => $vcRow,
+            'historialvacaciones' => $hvcRow,
+            'faltas' => $mfRow,
+            'acumuladosperiodos' => $acRows,
+            'roles' => $roles,
+            'TB' => $tbRow,
+            'CLIE' => $clieRow,
+            'VEND' => $vendRow,
+            'PROV' => $provRow,
+            'qr' => $qrData,
+            'firebird_user_id' => (int) $usuario->ID,
+            'firebird_user_clave' => $identity->firebird_tb_clave ?? null,
+            'firebird_clie_clave' => $identity->firebird_clie_clave ?? null,
+            'firebird_vend_clave' => $identity->firebird_vend_clave ?? null,
+            'firebird_prov_clave' => $identity->firebird_prov_clave ?? null,
+            'tipo_usuario' => $esEmpleado ? 'empleado' : ($esCliente ? 'cliente' : ($esVendedor ? 'vendedor' : ($esProveedor ? 'proveedor' : null))),
+            'turnoActivo' => $turnoActivo,
+            'DEPTO_NOI' => $deptoRow,
+            'PUESTO_NOI' => $puestoRow,
+        ]))->resolve();
     }
 
     /**

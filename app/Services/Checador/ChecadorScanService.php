@@ -11,8 +11,11 @@ use App\Models\ChecadorRegistro;
 use App\Models\ChecadorSalida;
 use App\Models\Turno;
 use App\Models\UserFirebirdIdentity;
+use App\Models\UserLoginSession;
 use App\Services\FirebirdEmpresaManualService;
 use Carbon\Carbon;
+use Firebase\JWT\JWT;
+use Firebase\JWT\Key;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -99,10 +102,12 @@ class ChecadorScanService
 
     public function registrarChecada(string $token, array $meta = []): array
     {
-        $qr = ChecadorAccessQrCode::where('token', $token)
-            ->where('activo', true)
-            ->with(['identity.turnoActivo.turno.turnoDias', 'identity.permisoExtraordinario'])
-            ->first();
+        // $qr = ChecadorAccessQrCode::where('token', $token)
+        //     ->where('activo', true)
+        //     ->with(['identity.turnoActivo.turno.turnoDias', 'identity.permisoExtraordinario'])
+        //     ->first();
+
+        $qr = $this->resolverQrDesdeToken($token);
 
         if (! $qr) {
             throw new RuntimeException('QR inválido o inactivo', 404);
@@ -113,6 +118,8 @@ class ChecadorScanService
             throw new RuntimeException('Identidad asociada al QR no encontrada', 404);
         }
 
+        $this->verificarSesionActiva($identity->id);
+
         if ($identity->excluir_checador) {
             throw new RuntimeException('Esta cuenta no puede registrar checadas.', 422);
         }
@@ -122,6 +129,46 @@ class ChecadorScanService
         $resultado['usuario_nombre'] = $qr->payload['nombre'] ?? $resultado['usuario_nombre'];
 
         return $resultado;
+    }
+
+    private function resolverQrDesdeToken(string $token): ?ChecadorAccessQrCode
+    {
+        // 1) Intenta como JWT efímero (formato nuevo)
+        try {
+            $decoded = JWT::decode($token, new Key(config('jwt.secret'), 'HS256'));
+
+            if (($decoded->typ ?? null) === 'checador_efimero') {
+                if (isset($decoded->session_jti)) {
+                    $sesionVigente = UserLoginSession::where('firebird_identity_id', $decoded->identity_id)
+                        ->where('status', 1)
+                        ->latest('login_at')
+                        ->first();
+
+                    if (! $sesionVigente || $sesionVigente->jti !== $decoded->session_jti) {
+                        Log::warning('🚫 QR_SESION_NO_COINCIDE', [
+                            'identity_id' => $decoded->identity_id,
+                            'session_jti_qr' => $decoded->session_jti,
+                            'session_jti_actual' => $sesionVigente->jti ?? null,
+                        ]);
+
+                        return null;
+                    }
+                }
+
+                return ChecadorAccessQrCode::where('id', $decoded->qr_id)
+                    ->where('activo', true)
+                    ->with(['identity.turnoActivo.turno'])
+                    ->first();
+            }
+        } catch (\Throwable $e) {
+            // No es JWT válido, seguimos al formato viejo
+        }
+
+        // 2) Fallback: token permanente clásico (compatibilidad con lo que ya funciona)
+        return ChecadorAccessQrCode::where('token', $token)
+            ->where('activo', true)
+            ->with(['identity.turnoActivo.turno'])
+            ->first();
     }
 
     public function registrarChecadaManual(int $identityId, array $meta = []): array
@@ -962,5 +1009,76 @@ class ChecadorScanService
         $yaSeHabiaUsado = ChecadorRegistro::where('checador_permiso_id', $permiso->id)->exists();
 
         return ! $yaSeHabiaUsado;
+    }
+
+    /**
+     * 🔒 Bloquea el registro si la sesión no está activa (status = 1).
+     * Da un mensaje distinto si está pausada (2) vs cerrada/nunca inició (0).
+     */
+    private function verificarSesionActiva(int $firebirdIdentityId): void
+    {
+
+        $sesionActiva = UserLoginSession::where('firebird_identity_id', $firebirdIdentityId)
+            ->where('status', 1)
+            ->where('last_activity', '>=', Carbon::now()->subSeconds(30))
+            ->exists();
+
+        if ($sesionActiva) {
+            return;
+        }
+
+        if (UserLoginSession::where('firebird_identity_id', $firebirdIdentityId)
+            ->where('status', 1)
+            ->exists()) {
+            return; // hay al menos un dispositivo con sesión activa, todo bien
+        }
+
+        $ultimaSesion = UserLoginSession::where('firebird_identity_id', $firebirdIdentityId)
+            ->latest('id')
+            ->first();
+
+        if ($ultimaSesion && (int) $ultimaSesion->status === 2) {
+            Log::warning('🚫 CHECADA_BLOQUEADA_SESION_PAUSADA', [
+                'identity_id' => $firebirdIdentityId,
+                'session_id' => $ultimaSesion->id,
+            ]);
+
+            throw new RuntimeException(
+                'No puedes registrar tu checada: inicia sesion en la app para escanear.',
+                409
+            );
+        }
+
+        Log::warning('🚫 CHECADA_BLOQUEADA_SIN_SESION', ['identity_id' => $firebirdIdentityId]);
+
+        throw new RuntimeException(
+            'No puedes registrar tu checada: no tienes una sesión activa en la app. Inicia sesión primero.',
+            409
+        );
+    }
+
+    public function generarTokenEfimero(int $identityId, string $sessionJti): array
+    {
+        $qr = $this->obtenerActivo($identityId);
+
+        if (! $qr) {
+            throw new \RuntimeException('QR no encontrado o inactivo', 404);
+        }
+
+        $ahora = time();
+        $ttl = 20; // igualado al intervalo de refresh del frontend
+
+        $payload = [
+            'qr_id' => $qr->id,
+            'identity_id' => $identityId,
+            'session_jti' => $sessionJti, // 🔑
+            'iat' => $ahora,
+            'exp' => $ahora + $ttl,
+            'typ' => 'checador_efimero',
+        ];
+
+        $jwt = JWT::encode($payload, config('jwt.secret'), 'HS256');
+
+        return ['token' => $jwt, 'expira_en' => $ttl];
     }
 }
