@@ -9,6 +9,7 @@ use App\Mail\ForgotPasswordMail;
 use App\Models\Firebird\Users;
 use App\Models\ModelHasRole;
 use App\Models\UserFirebirdIdentity;
+use App\Models\UserLoginSession;
 use App\Models\UserPuesto;
 use App\Services\Checador\ChecadorQrService;
 use App\Services\FirebirdConnectionService;
@@ -17,6 +18,7 @@ use Carbon\Carbon;
 use Exception;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
+use Firebase\JWT\ExpiredException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -24,6 +26,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Jenssegers\Agent\Agent;
 
 class AuthController extends Controller
 {
@@ -154,13 +157,11 @@ class AuthController extends Controller
             $esJefeAuxiliar = false;
 
             if ($identity) {
-                $identity = UserFirebirdIdentity::where('firebird_user_clave', (int) $usuario->ID)
-                    ->with([
-                        'puestoActivo.puesto',
-                        'puestoActivo.area',
-                        'puestoActivo.jefe.firebirdUser',
-                    ])
-                    ->first();
+                $identity = UserFirebirdIdentity::with([
+                    'puestoActivo.puesto',
+                    'puestoActivo.area',
+                    'puestoActivo.jefe.firebirdUser',
+                ])->find($identity->id);
 
                 $userPuesto = $identity->puestoActivo ?? null;
 
@@ -224,6 +225,46 @@ class AuthController extends Controller
             }
 
             $token = JWT::encode($payload, $key, 'HS256');
+
+            // 📱 Registrar sesión
+            $agent = new Agent;
+            $agent->setUserAgent($request->userAgent());
+
+            // Busca la sesión de este usuario SIN filtrar por status,
+            // así la reactivamos aunque ya esté cerrada (status = 0)
+            $sesion = UserLoginSession::where('firebird_user_id', $userId)
+                ->latest('login_at')
+                ->first();
+
+            // Si hubiera más de una activa por basura vieja (bug anterior), cierra las demás
+            UserLoginSession::where('firebird_user_id', $userId)
+                ->where('status', 1)
+                ->when($sesion, fn ($q) => $q->where('id', '!=', $sesion->id))
+                ->update(['status' => 0, 'logout_at' => now()]);
+
+            $sessionData = [
+                'firebird_identity_id' => $identity->id ?? null,
+                'jti' => $payload['jti'],
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'device' => $agent->device() ?: null,
+                'browser' => $agent->browser() ?: null,
+                'platform' => $agent->platform() ?: null,
+                'status' => 1,
+                'login_at' => now(),
+                'logout_at' => null,
+            ];
+
+            if ($sesion) {
+                // 🔁 Ya existía (activa o cerrada) -> la reactiva/actualiza, NO crea fila nueva
+                $sesion->update($sessionData);
+            } else {
+                // 🆕 Este usuario nunca tuvo sesión -> crea la primera fila
+                UserLoginSession::create(array_merge($sessionData, [
+                    'firebird_user_id' => $userId,
+                ]));
+            }
+
             $connection = $this->firebirdService->getProductionConnection();
             $departamentos = collect();
             $slRow = null;
@@ -551,27 +592,45 @@ class AuthController extends Controller
      */
     public function signInWithToken(Request $request)
     {
+        $token = $request->input('encrypt');
+
+        if (! $token) {
+            return response()->json(['message' => 'Token no proporcionado'], 401);
+        }
+
         try {
-            $token = $request->input('encrypt');
-
-            if (! $token) {
-                return response()->json([
-                    'message' => 'Token no proporcionado',
-                ], 401);
-            }
-
             $decoded = JWT::decode($token, new Key($this->jwtSecret, $this->jwtAlgorithm));
 
             $usuario = Users::find($decoded->sub);
 
-            // 🔥 CORRECCIÓN: Solo verificar si existe el usuario
             if (! $usuario) {
-                return response()->json([
-                    'message' => 'Usuario no válido',
-                ], 401);
+                return response()->json(['message' => 'Usuario no válido'], 401);
             }
 
-            $newToken = $this->generateToken($usuario);
+            // 🔒 Verificar que la sesión no haya sido cerrada manualmente en otro dispositivo
+            $sesion = null;
+            if (isset($decoded->jti)) {
+                $sesion = UserLoginSession::where('jti', $decoded->jti)->first();
+
+                if ($sesion && (int) $sesion->status === 0) {
+                    Log::warning('🚫 REFRESH_SESSION_CERRADA', ['jti' => $decoded->jti]);
+
+                    return response()->json(['message' => 'Sesión cerrada'], 401);
+                }
+            }
+
+            $newJti = Str::random(32);
+            $newToken = $this->generateToken($usuario, $newJti);
+
+            // 💓 Reutiliza la MISMA fila (mismo patrón que signIn) — solo refresca jti/actividad
+            if ($sesion) {
+                $sesion->update([
+                    'jti' => $newJti,
+                    'last_activity' => now(),
+                    'status' => 1,
+                    'logout_at' => null,
+                ]);
+            }
 
             return response()->json([
                 'user' => [
@@ -587,33 +646,59 @@ class AuthController extends Controller
                 ],
                 'encrypt' => $newToken,
                 'token_type' => 'Bearer',
-                'expires_in' => in_array((int) $usuario->CLAVE, $this->vipUserIds, true) ? null : 86400,
+                'expires_in' => in_array((int) $usuario->ID, $this->vipUserIds, true) ? null : $this->jwtExpiration,
             ], 200);
+        } catch (ExpiredException $e) {
+            $jti = $this->extractJtiSinVerificar($token);
+            if ($jti) {
+                UserLoginSession::where('jti', $jti)->where('status', 1)->first()?->cerrar();
+            }
+
+            return response()->json(['message' => 'Token inválido o expirado'], 401);
         } catch (Exception $e) {
             Log::error('Error en signInWithToken: '.$e->getMessage());
 
-            return response()->json([
-                'message' => 'Token inválido o expirado',
-            ], 401);
+            return response()->json(['message' => 'Token inválido o expirado'], 401);
         }
+    }
+
+    /**
+     * Extrae el 'jti' de un JWT sin validar firma/expiración.
+     * Útil solo para poder cerrar la sesión en BD cuando el token ya expiró.
+     */
+    private function extractJtiSinVerificar(?string $token): ?string
+    {
+        if (! $token) {
+            return null;
+        }
+
+        $parts = explode('.', $token);
+        if (count($parts) !== 3) {
+            return null;
+        }
+
+        $payload = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
+
+        return $payload['jti'] ?? null;
     }
 
     /**
      * Generar token JWT
      */
-    private function generateToken(Users $usuario)
+    private function generateToken(Users $usuario, ?string $jti = null)
     {
         $issuedAt = time();
+        $userId = (int) $usuario->ID; // 🔧 antes usaba CLAVE, inconsistente con signIn (sub = ID)
 
         $payload = [
-            'iss' => env('APP_URL', 'http://localhost'),
-            'sub' => $usuario->CLAVE,
+            'sub' => $userId,
             'iat' => $issuedAt,
-            'correo' => $usuario->CORREO,
-            'usuario' => $usuario->USUARIO,
+            'iss' => config('app.url'),
+            'aud' => 'fibrasan',
+            'jti' => $jti ?? Str::random(32), // 🔧 antes no llevaba jti -> me() no podía validar sesión
         ];
 
-        if (! in_array((int) $usuario->CLAVE, $this->vipUserIds, true)) {
+        if (! in_array($userId, $this->vipUserIds, true)) {
             $payload['exp'] = $issuedAt + $this->jwtExpiration;
         }
 
@@ -672,6 +757,25 @@ class AuthController extends Controller
     public function signOut(Request $request)
     {
         try {
+            $token = $request->bearerToken() ?? $request->input('encrypt');
+
+            if ($token) {
+                try {
+                    $decoded = JWT::decode($token, new Key($this->jwtSecret, $this->jwtAlgorithm));
+
+                    if (isset($decoded->jti)) {
+                        UserLoginSession::where('jti', $decoded->jti)
+                            ->where('status', 1)
+                            ->first()
+                            ?->cerrar();
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('⚠️ SIGNOUT_TOKEN_INVALIDO_O_SIN_JTI', [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
             return response()->json([
                 'message' => 'Sesión cerrada exitosamente',
             ], 200);
@@ -795,6 +899,89 @@ class AuthController extends Controller
             Log::error('Error en unlockSession: '.$e->getMessage());
 
             return response()->json(['message' => 'Error al desbloquear sesión'], 500);
+        }
+    }
+
+    /**
+     * Pausar sesión (usuario cambió de pestaña / minimizó / salió de la PWA)
+     */
+    public function pauseSession(Request $request)
+    {
+        $token = $request->bearerToken() ?? $request->input('encrypt');
+
+        if (! $token) {
+            return response()->json(['message' => 'Token no proporcionado'], 401);
+        }
+
+        try {
+            $decoded = JWT::decode($token, new Key($this->jwtSecret, $this->jwtAlgorithm));
+
+            if (isset($decoded->jti)) {
+                UserLoginSession::where('jti', $decoded->jti)
+                    ->where('status', 1) // solo pausa si estaba activa
+                    ->first()
+                    ?->pausar();
+            }
+
+            return response()->json(['message' => 'Sesión pausada'], 200);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Token inválido'], 401);
+        }
+    }
+
+    /**
+     * Reanudar sesión (usuario volvió a la pestaña / app)
+     */
+    public function resumeSession(Request $request)
+    {
+        $token = $request->bearerToken() ?? $request->input('encrypt');
+
+        if (! $token) {
+            return response()->json(['message' => 'Token no proporcionado'], 401);
+        }
+
+        try {
+            $decoded = JWT::decode($token, new Key($this->jwtSecret, $this->jwtAlgorithm));
+
+            if (isset($decoded->jti)) {
+                UserLoginSession::where('jti', $decoded->jti)
+                    ->whereIn('status', [1, 2]) // activa o pausada
+                    ->first()
+                    ?->reanudar();
+            }
+
+            return response()->json(['message' => 'Sesión reanudada'], 200);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Token inválido'], 401);
+        }
+    }
+
+    /**
+     * Heartbeat: confirma que la sesión sigue activa mientras la pestaña
+     * está visible. Si el backend no recibe uno en X tiempo, un job
+     * la marca como pausada automáticamente (ver punto 5).
+     */
+    public function heartbeat(Request $request)
+    {
+        $token = $request->bearerToken() ?? $request->input('encrypt');
+
+        if (! $token) {
+            return response()->json(['message' => 'Token no proporcionado'], 401);
+        }
+
+        try {
+            $decoded = JWT::decode($token, new Key($this->jwtSecret, $this->jwtAlgorithm));
+
+            if (isset($decoded->jti)) {
+                UserLoginSession::where('jti', $decoded->jti)
+                    ->where('status', 1)
+                    ->first()
+                    ?->heartbeat();
+            }
+
+            return response()->json(['ok' => true], 200);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Token inválido'], 401);
         }
     }
 }
