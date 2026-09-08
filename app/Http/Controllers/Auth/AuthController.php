@@ -227,17 +227,16 @@ class AuthController extends Controller
             $token = JWT::encode($payload, $key, 'HS256');
 
             // 📱 Registrar sesión (con lock para evitar filas duplicadas por requests concurrentes)
-            $agent = new Agent;
-            $agent->setUserAgent($request->userAgent());
+            $deviceInfo = $this->resolveDeviceInfo($request);
 
             $sessionData = [
                 'firebird_identity_id' => $identity->id ?? null,
                 'jti' => $payload['jti'],
                 'ip_address' => $request->ip(),
                 'user_agent' => $request->userAgent(),
-                'device' => $agent->device() ?: null,
-                'browser' => $agent->browser() ?: null,
-                'platform' => $agent->platform() ?: null,
+                'device' => $deviceInfo['device'],
+                'browser' => $deviceInfo['browser'],
+                'platform' => $deviceInfo['platform'],
                 'status' => 1,
                 'login_at' => now(),
                 'logout_at' => null,
@@ -1170,5 +1169,46 @@ class AuthController extends Controller
         } catch (\Throwable $e) {
             return response()->json(['message' => 'Token inválido'], 401);
         }
+    }
+
+    private function resolveDeviceInfo(Request $request): array
+    {
+        $ua = (string) $request->userAgent();
+        $frontend = $request->input('device_info', []);
+
+        $agent = new Agent;
+        $agent->setUserAgent($ua);
+
+        $device = $agent->device() ?: null;
+        $platform = $agent->platform() ?: null;
+        $browser = $agent->browser() ?: null;
+
+        // iPadOS se disfraza de Macintosh en el UA
+        if ($platform === 'OS X' && (($frontend['mobile'] ?? false) === true || str_contains($ua, 'iPad'))) {
+            $platform = 'iPadOS';
+            $device = 'iPad';
+        }
+
+        // HarmonyOS: jenssegers/agent no lo reconoce
+        if (str_contains($ua, 'HarmonyOS') || str_contains($ua, 'OpenHarmony')) {
+            $platform = 'HarmonyOS';
+        }
+
+        // Si el frontend mandó Client Hints, tiene prioridad (más preciso)
+        if (! empty($frontend['model'])) {
+            $device = $frontend['model'];
+        }
+        if (! empty($frontend['platform_version'])) {
+            $platform = trim(($platform ?? '').' '.$frontend['platform_version']);
+        }
+        if (! empty($frontend['brands'])) {
+            $browser = $frontend['brands'];
+        }
+
+        return [
+            'device' => $device,
+            'browser' => $browser,
+            'platform' => $platform,
+        ];
     }
 }
