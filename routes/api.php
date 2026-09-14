@@ -353,8 +353,7 @@ Route::prefix('checador')->middleware('jwt.auth')->group(function () {
     Route::get('/guardia/estado/{identityId}', [ChecadorGuardiaController::class, 'estado']);
     Route::post('/guardia/registrar', [ChecadorGuardiaController::class, 'registrar']);
 
-  
-Route::get('/qr/{identityId}/token-efimero', [ChecadorQrController::class, 'tokenEfimero']);
+    Route::get('/qr/{identityId}/token-efimero', [ChecadorQrController::class, 'tokenEfimero']);
 });
 
 Route::get('mi-ip', function (Request $request) {

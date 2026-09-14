@@ -70,25 +70,25 @@ class EscaneoRolloService
         // ── Paso 1: PSDTABPZASTJ — obtenemos OT_PSD, estado de revisión y datos
         // ampliados de la pieza (maquina, fecha, articulo, tejido, hilatura).
         $sqlPaso1 = '
-        SELECT
-            PJ.ID AS ID,
-            PJ.OT_PSD AS OT_PSD,
-            PJ.ISREV AS ISREV,
-            PJ.PESORV AS PESORV,
-            PJ.PZA AS PIEZA,
-            PJ.PESOTJ AS PESO_TEJIDO,
-            PJ.CVE_ART AS CVE_ART,
-            PJ.CE AS MAQUINA,
-            PJ.FECHAYHORAPSD AS FECHA_PESADO,
-            ART.NOMBRE AS NOMBRE,
-            T.TEJIDO AS TEJIDO,
-            H.CODIGO AS HILATURA
-        FROM PSDTABPZASTJ PJ
-        LEFT JOIN ARTICULOS ART ON PJ.CVE_ART = ART.ID
-        LEFT JOIN TEJIDO T ON T.ID = ART.TEJ
-        LEFT JOIN HILATURA H ON H.ID = ART.HILAT
-        WHERE PJ.ID = ?
-        ';
+            SELECT
+                PJ.ID AS ID,
+                PJ.OT_PSD AS OT_PSD,
+                PJ.ISREV AS ISREV,
+                PJ.PESORV AS PESORV,
+                PJ.PZA AS PIEZA,
+                PJ.PESOTJ AS PESO_TEJIDO,
+                PJ.CVE_ART AS CVE_ART,
+                PJ.CE AS MAQUINA,
+                PJ.FECHAYHORAPSD AS FECHA_PESADO,
+                ART.NOMBRE AS NOMBRE,
+                T.TEJIDO AS TEJIDO,
+                H.CODIGO AS HILATURA
+            FROM PSDTABPZASTJ PJ
+            LEFT JOIN ARTICULOS ART ON PJ.CVE_ART = ART.ID
+            LEFT JOIN TEJIDO T ON T.ID = ART.TEJ
+            LEFT JOIN HILATURA H ON H.ID = ART.HILAT
+            WHERE PJ.ID = ?
+            ';
 
         $rowPaso1 = $this->ejecutar($sqlPaso1, [$clave], 'PESADO-PASO1', $codigoRaw, $clave);
 
@@ -109,14 +109,14 @@ class EscaneoRolloService
 
         // ── Paso 2: ORDENESTEJ — CANT, CANTENT, ESTATUS y OP (sin cambios)
         $sqlPaso2 = '
-        SELECT
-            OT.OP AS OP,
-            OT.CANT AS CANT,
-            OT.CANTENT AS CANTENT,
-            OT.ESTATUS AS ESTATUS
-        FROM ORDENESTEJ OT
-        WHERE OT.OT = ?
-        ';
+            SELECT
+                OT.OP AS OP,
+                OT.CANT AS CANT,
+                OT.CANTENT AS CANTENT,
+                OT.ESTATUS AS ESTATUS
+            FROM ORDENESTEJ OT
+            WHERE OT.OT = ?
+            ';
 
         $rowPaso2 = $this->ejecutar($sqlPaso2, [$otPsd], 'PESADO-PASO2', $codigoRaw, $clave);
 
@@ -132,25 +132,29 @@ class EscaneoRolloService
 
         // ── Paso 3: P_ORDENESENC (sin cambios)
         $sqlPaso3 = "
-        SELECT
-            P.ARTICULO AS ARTICULO,
-            P.CLIENTE AS CLIENTE,
-            COALESCE(V.agente,'SIN AGENTE') AS AGENTE,
-            P.PEDIDO AS PEDIDO,
-            P.ORDEN AS OP,
-            P.PARTIDA AS PEDIDOPART,
-            P.\"CODIGO COLOR\" AS \"COD. COLOR\",
-            P.COLOR AS COLOR,
-            P.FECHA AS FECHA,
-            P.ORDEN AS ORDEN,
-            P.NESTATUS AS OE_ESTATUS,
-            P.ESTATUS AS PROCESO,
-            P.CVE_PED AS CVE_PED,
-            P.CVE_ORDEN AS CVE_ORDEN
-        FROM P_ORDENESENC('03') P
-        LEFT JOIN p_vendxx('03') V ON V.id = P.AGENTE
-        WHERE P.ORDEN = ?
-        ";
+            SELECT
+                P.ARTICULO AS ARTICULO,
+                P.CLIENTE AS CLIENTE,
+                COALESCE(V.agente,'SIN AGENTE') AS AGENTE,
+                P.PEDIDO AS PEDIDO,
+                P.ORDEN AS OP,
+                P.PARTIDA AS PEDIDOPART,
+                P.\"CODIGO COLOR\" AS \"COD. COLOR\",
+                P.COLOR AS COLOR,
+                P.FECHA AS FECHA,
+                P.ORDEN AS ORDEN,
+                P.NESTATUS AS OE_ESTATUS,
+                P.ESTATUS AS PROCESO,
+                IIF(P.NESTATUS = 2, D.DEPTO, NULL) AS ALMACEN,
+                P.CVE_PED AS CVE_PED,
+                P.CVE_ORDEN AS CVE_ORDEN
+            FROM P_ORDENESENC('03') P
+            LEFT JOIN p_vendxx('03') V ON V.id = P.AGENTE
+            LEFT JOIN ORDENESPROC R ON R.ORDEN = P.ORDEN AND R.ST = 1
+            LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC
+            LEFT JOIN DEPTOS D ON D.CLAVE = S.DEPTO
+            WHERE P.ORDEN = ?
+            ";
 
         $row = $this->ejecutar($sqlPaso3, [$op], 'PESADO-PASO3', $codigoRaw, $clave);
 
@@ -184,44 +188,44 @@ class EscaneoRolloService
         $clave = $this->normalizarClave($codigoRaw);
 
         $sqlPaso1 = '
-        SELECT
-            PJ.ID AS ID,
-            PJ.ISREV AS ISREV,
-            PJ.PESORV AS PESORV,
-            COALESCE(PJ.CVE_ORDEN, TEJ.CVE_ORDEN) AS CVE_ORDEN,
-            PJ.CVE_ORDEN_OP AS CVE_ORDEN_OP,
-            PJ.ID_FOLCDO_PL AS ID_FOLCDO_PL,
-            PJ.CVE_ART AS CVE_ART,
-            PJ.PZA AS PZA,
-            PJ.PESOTJ AS PESOTJ,
-            PJ.PESOSL AS PESOSL,
-            PJ.ALMACEN AS ALMACEN,
-            PJ.ID_FOL_INV AS ID_FOL_INV,
-            PJ.FECHAYHORADELIV AS FECHAYHORADELIV,
-            PJ.USDELIV AS USDELIV,
-            PJ.ISDELIV AS ISDELIV,
-            PJ.FECHAYHORAREV AS FECHA_REVISADO,
-            PJ.OT_PSD AS ORDEN_TEJIDO,
-            PJ.CLASIF_TO_CLR AS CLASIFICACION,
-            PJ.CE AS MAQUINA,
-            ART.NOMBRE AS ARTICULO,
-            T.TEJIDO AS TEJIDO,
-            C.COMPOSICION AS COMPOSICION,
-            PA.NOM_EMP AS TEJEDOR,
-            PA.NOM_EMPREV AS REVISADOR,
-            ALM.DESCR AS ALMACEN_NOMBRE,
-            PJ.OT_PSD AS ORDEN_PESADO
-        FROM PSDTABPZASTJ PJ
-        LEFT JOIN ARTICULOS ART ON PJ.CVE_ART = ART.ID
-        LEFT JOIN ARTICULOSH ARTH ON PJ.CVE_ART = ARTH.CVE_ART
-        LEFT JOIN ARTICULOS ART2 ON ARTH.CVE_ART = ART2.ID
-        LEFT JOIN TEJIDO T ON T.ID = COALESCE(ART.TEJ, ART2.TEJ)
-        LEFT JOIN COMPOSICION C ON C.ID = ART.COMP
-        LEFT JOIN PSDTABPZASTJAUX PA ON PA.ID = PJ.ID
-        LEFT JOIN ALMACENES03 ALM ON ALM.CVE_ALM = PJ.ALMACEN
-        LEFT JOIN ORDENESTEJ TEJ ON TEJ.OT = PJ.OT_PSD
-        WHERE PJ.ID = ?
-        ';
+            SELECT
+                PJ.ID AS ID,
+                PJ.ISREV AS ISREV,
+                PJ.PESORV AS PESORV,
+                COALESCE(PJ.CVE_ORDEN, TEJ.CVE_ORDEN) AS CVE_ORDEN,
+                PJ.CVE_ORDEN_OP AS CVE_ORDEN_OP,
+                PJ.ID_FOLCDO_PL AS ID_FOLCDO_PL,
+                PJ.CVE_ART AS CVE_ART,
+                PJ.PZA AS PZA,
+                PJ.PESOTJ AS PESOTJ,
+                PJ.PESOSL AS PESOSL,
+                PJ.ALMACEN AS ALMACEN,
+                PJ.ID_FOL_INV AS ID_FOL_INV,
+                PJ.FECHAYHORADELIV AS FECHAYHORADELIV,
+                PJ.USDELIV AS USDELIV,
+                PJ.ISDELIV AS ISDELIV,
+                PJ.FECHAYHORAREV AS FECHA_REVISADO,
+                PJ.OT_PSD AS ORDEN_TEJIDO,
+                PJ.CLASIF_TO_CLR AS CLASIFICACION,
+                PJ.CE AS MAQUINA,
+                ART.NOMBRE AS ARTICULO,
+                T.TEJIDO AS TEJIDO,
+                C.COMPOSICION AS COMPOSICION,
+                PA.NOM_EMP AS TEJEDOR,
+                PA.NOM_EMPREV AS REVISADOR,
+                ALM.DESCR AS ALMACEN_NOMBRE,
+                PJ.OT_PSD AS ORDEN_PESADO
+            FROM PSDTABPZASTJ PJ
+            LEFT JOIN ARTICULOS ART ON PJ.CVE_ART = ART.ID
+            LEFT JOIN ARTICULOSH ARTH ON PJ.CVE_ART = ARTH.CVE_ART
+            LEFT JOIN ARTICULOS ART2 ON ARTH.CVE_ART = ART2.ID
+            LEFT JOIN TEJIDO T ON T.ID = COALESCE(ART.TEJ, ART2.TEJ)
+            LEFT JOIN COMPOSICION C ON C.ID = ART.COMP
+            LEFT JOIN PSDTABPZASTJAUX PA ON PA.ID = PJ.ID
+            LEFT JOIN ALMACENES03 ALM ON ALM.CVE_ALM = PJ.ALMACEN
+            LEFT JOIN ORDENESTEJ TEJ ON TEJ.OT = PJ.OT_PSD
+            WHERE PJ.ID = ?
+            ';
 
         $rowPaso1 = $this->ejecutar($sqlPaso1, [$clave], 'REVISADO-PASO1', $codigoRaw, $clave);
 
@@ -334,9 +338,14 @@ class EscaneoRolloService
 
             $rowSurtido['ID'] = $rowPaso1['ID'];
             $rowSurtido['ID_QR'] = str_pad((string) $rowPaso1['ID'], 10, '0', STR_PAD_LEFT);
-            $rowSurtido['ORDEN_SURTE'] = $ordenSurte;
+            $rowSurtido['ORDEN_SURTE'] = $rowSurtido['ORDEN'] ?? $ordenSurte;
             $rowSurtido['ORIGEN'] = 'REVISADO';
             $rowSurtido['SUBTIPO'] = $oeEstatusSurtido === 4 ? 'CONTROL_CALIDAD' : 'SURTIDO';
+
+            $opTejido = $this->buscarOpTejido($rowPaso1['ORDEN_TEJIDO'], $codigoRaw, $clave);
+            if ($opTejido) {
+                $rowSurtido['OP'] = $opTejido['OP'];
+            }
 
             return array_merge($rowSurtido, $datosAmpliados);
         }
@@ -382,6 +391,11 @@ class EscaneoRolloService
         $row['ORIGEN'] = 'REVISADO';
         $row['SUBTIPO'] = 'PROCESO';
 
+        $opTejido = $this->buscarOpTejido($rowPaso1['ORDEN_TEJIDO'], $codigoRaw, $clave);
+        if ($opTejido) {
+            $row['OP'] = $opTejido['OP'];
+        }
+
         return array_merge($row, $datosAmpliados);
     }
 
@@ -390,33 +404,175 @@ class EscaneoRolloService
      * disponible cuando la orden ya cruzó a acabado) y cayendo a P_ORDENESENC
      * si aún no ha llegado (sigue en proceso).
      */
+    // private function buscarDatosOrden(int $cveOrden, string $codigoRaw, int $clave, string $etiquetaPaso): ?array
+    // {
+    //     $sqlPsdenc = "
+    //             SELECT
+    //                 P.CLAVE AS \"CVE ART\",
+    //                 P.ARTICULO AS ARTICULO,
+    //                 P.CLIENTE AS CLIENTE,
+    //                 COALESCE(V.agente,'SIN AGENTE') AS AGENTE,
+    //                 P.PEDIDO AS PEDIDO,
+    //                 P.PARTIDA AS OP,
+    //                 OE.PEDIDOPART AS PEDIDOPART,
+    //                 P.\"COD. COLOR\" AS \"COD. COLOR\",
+    //                 P.COLOR AS COLOR,
+    //                 P.FECHA AS FECHA,
+    //                 OE.ORDEN AS ORDEN,
+    //                 OE.ESTATUS AS OE_ESTATUS,
+    //                 IIF(OE.ESTATUS = 2, S.PROCESO, E.ESTATUS) AS PROCESO,
+    //                 OE.CANTIDAD AS \"CANTIDAD SOLICITADA\",
+    //                 OE.CANTENT AS \"CANTIDAD ENTREGADA\"
+    //             FROM ORDENESENC OE
+    //             INNER JOIN P_PSDENC('03') P ON P.CVE_ORDEN = OE.ID
+    //             LEFT JOIN p_vendxx('03') V ON V.id = OE.agente
+    //             LEFT JOIN ORDENESPROC R ON R.ORDEN = OE.ORDEN AND R.ST = 1
+    //             LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC
+    //             LEFT JOIN ORDENESest E ON E.ID = OE.ESTATUS
+    //             WHERE OE.ID = ?
+    //         ";
+
+    //     $row = $this->ejecutar($sqlPsdenc, [$cveOrden], "{$etiquetaPaso}-PSDENC", $codigoRaw, $clave);
+
+    //     if ($row) {
+    //         return $row;
+    //     }
+
+    //     // ── Fallback: orden aún no cruza a P_PSDENC, sigue en proceso.
+    //     // Se le agrega el mismo join a ORDENESENC/ORDENESPROC/PROCESOS que
+    //     // ya usa la rama de arriba, para resolver el proceso específico
+    //     // (ej. baño de tintorería) y traer las cantidades — antes solo
+    //     // traía P.ESTATUS crudo y nunca traía CANTIDAD/CANTENT.
+    //     $sqlOrdenesenc = "
+    //         SELECT
+    //             P.ARTICULO AS ARTICULO,
+    //             P.CLIENTE AS CLIENTE,
+    //             COALESCE(V.agente,'SIN AGENTE') AS AGENTE,
+    //             P.PEDIDO AS PEDIDO,
+    //             P.ORDEN AS OP,
+    //             P.PARTIDA AS PEDIDOPART,
+    //             P.\"CODIGO COLOR\" AS \"COD. COLOR\",
+    //             P.COLOR AS COLOR,
+    //             P.FECHA AS FECHA,
+    //             P.ORDEN AS ORDEN,
+    //             P.NESTATUS AS OE_ESTATUS,
+    //             IIF(OE.ESTATUS = 2, S.PROCESO, E.ESTATUS) AS PROCESO,
+    //             OE.CANTIDAD AS \"CANTIDAD SOLICITADA\",
+    //             OE.CANTENT AS \"CANTIDAD ENTREGADA\"
+    //         FROM P_ORDENESENC('03') P
+    //         LEFT JOIN p_vendxx('03') V ON V.id = P.AGENTE
+    //         LEFT JOIN ORDENESENC OE ON OE.ID = P.CVE_ORDEN
+    //         LEFT JOIN ORDENESPROC R ON R.ORDEN = OE.ORDEN AND R.ST = 1
+    //         LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC
+    //         LEFT JOIN ORDENESest E ON E.ID = OE.ESTATUS
+    //         WHERE P.CVE_ORDEN = ?
+    //     ";
+
+    //     return $this->ejecutar($sqlOrdenesenc, [$cveOrden], "{$etiquetaPaso}-ORDENESENC", $codigoRaw, $clave);
+    // }
+
+    /**
+     * Paso 3 del recorrido: escaneo en ACABADO.
+     */
+    public function escanearAcabado(string $codigoRaw): array
+    {
+        $clave = $this->normalizarClave($codigoRaw);
+
+        $sql = "
+                SELECT
+                    PSD.CLAVE AS ID,
+                    LPAD(PSD.CLAVE,10,'0') AS ID_QR,
+                    P.CLAVE AS \"CVE ART\",
+                    P.ARTICULO AS ARTICULO,
+                    P.CLIENTE AS CLIENTE,
+                    COALESCE(V.agente,'SIN AGENTE') AS AGENTE,
+                    P.PEDIDO AS PEDIDO,
+                    P.PARTIDA AS OP,
+                    OE.PEDIDOPART AS PEDIDOPART,
+                    P.\"COD. COLOR\" AS \"COD. COLOR\",
+                    P.COLOR AS COLOR,
+                    P.FECHA AS FECHA,
+                    PSD.TIPO AS TIPO_COD,
+                    CASE PSD.TIPO
+                        WHEN 51 THEN 'PRIMERA'
+                        WHEN 52 THEN 'PREFERIDA'
+                        WHEN 73 THEN 'ORILLAS'
+                        WHEN 74 THEN 'RETAZO'
+                        WHEN 77 THEN 'SEGUNDA'
+                        WHEN 81 THEN 'MUESTRA'
+                        ELSE 'OTRAS'
+                    END AS TIPO,
+                    PSD.PNETO AS \"PESO NETO\",
+                    PSD.PIEZA AS PIEZA,
+                    PSD.ESTATUS AS PSD_ESTATUS,
+                    PSD.ISDELIV AS ISDELIV,
+                    PSD.FECHAYHORAINGPT AS \"FECHA ING\",
+                    PSD.FECHAYHORASALPT AS \"FECHA SAL\",
+                    PSD.FECHAYHORADEVOL AS \"FECHA DEV\",
+                    PSD.ID_FOL_PL AS PL,
+                    OE.ORDEN AS ORDEN,
+                    OE.ESTATUS AS OE_ESTATUS,
+                    IIF(OE.ESTATUS = 2, S.PROCESO, E.ESTATUS) AS PROCESO,
+                    IIF(OE.ESTATUS = 2, D.DEPTO, NULL) AS ALMACEN,
+                    IIF(
+                        PSD.FECHAYHORADEVOL IS NOT NULL,
+                        '',
+                        IIF(OE.ESTATUS IN (4, 50, 51, 61, 65), 'ROLLO', 'TELA')
+                    ) AS PRODUCTO,
+                    OE.CANTIDAD AS \"CANTIDAD SOLICITADA\",
+                    OE.CANTENT AS \"CANTIDAD ENTREGADA\"
+                FROM PSDTABPZAS PSD
+                INNER JOIN P_PSDENC('03') P ON P.CVE_PSD_ENC = PSD.CVE_ENC
+                LEFT JOIN ORDENESENC OE ON OE.ID = P.CVE_ORDEN
+                LEFT JOIN p_vendxx('03') V ON V.id = OE.agente
+                LEFT JOIN ORDENESPROC R ON R.ORDEN = OE.ORDEN AND R.ST = 1
+                LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC
+                LEFT JOIN DEPTOS D ON D.CLAVE = S.DEPTO
+                LEFT JOIN ORDENESest E ON E.ID = OE.ESTATUS
+                WHERE PSD.CLAVE = ?
+            ";
+
+        $row = $this->ejecutar($sql, [$clave], 'ACABADO', $codigoRaw, $clave);
+
+        if (! $row) {
+            throw new RolloNoEncontradoException($clave);
+        }
+
+        $oeEstatus = (int) ($row['OE_ESTATUS'] ?? 0);
+        $row['ORIGEN'] = $oeEstatus === 61 ? 'FACTURACION' : 'ACABADO';
+
+        return $row;
+    }
+
     private function buscarDatosOrden(int $cveOrden, string $codigoRaw, int $clave, string $etiquetaPaso): ?array
     {
         $sqlPsdenc = "
-            SELECT
-                P.CLAVE AS \"CVE ART\",
-                P.ARTICULO AS ARTICULO,
-                P.CLIENTE AS CLIENTE,
-                COALESCE(V.agente,'SIN AGENTE') AS AGENTE,
-                P.PEDIDO AS PEDIDO,
-                P.PARTIDA AS OP,
-                OE.PEDIDOPART AS PEDIDOPART,
-                P.\"COD. COLOR\" AS \"COD. COLOR\",
-                P.COLOR AS COLOR,
-                P.FECHA AS FECHA,
-                OE.ORDEN AS ORDEN,
-                OE.ESTATUS AS OE_ESTATUS,
-                IIF(OE.ESTATUS = 2, S.PROCESO, E.ESTATUS) AS PROCESO,
-                OE.CANTIDAD AS \"CANTIDAD SOLICITADA\",
-                OE.CANTENT AS \"CANTIDAD ENTREGADA\"
-            FROM ORDENESENC OE
-            INNER JOIN P_PSDENC('03') P ON P.CVE_ORDEN = OE.ID
-            LEFT JOIN p_vendxx('03') V ON V.id = OE.agente
-            LEFT JOIN ORDENESPROC R ON R.ORDEN = OE.ORDEN AND R.ST = 1
-            LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC
-            LEFT JOIN ORDENESest E ON E.ID = OE.ESTATUS
-            WHERE OE.ID = ?
-        ";
+                SELECT
+                    P.CLAVE AS \"CVE ART\",
+                    P.ARTICULO AS ARTICULO,
+                    P.CLIENTE AS CLIENTE,
+                    COALESCE(V.agente,'SIN AGENTE') AS AGENTE,
+                    P.PEDIDO AS PEDIDO,
+                    P.PARTIDA AS OP,
+                    OE.PEDIDOPART AS PEDIDOPART,
+                    P.\"COD. COLOR\" AS \"COD. COLOR\",
+                    P.COLOR AS COLOR,
+                    P.FECHA AS FECHA,
+                    OE.ORDEN AS ORDEN,
+                    OE.ESTATUS AS OE_ESTATUS,
+                    IIF(OE.ESTATUS = 2, S.PROCESO, E.ESTATUS) AS PROCESO,
+                D.DEPTO AS ALMACEN,
+                    OE.CANTIDAD AS \"CANTIDAD SOLICITADA\",
+                    OE.CANTENT AS \"CANTIDAD ENTREGADA\"
+                FROM ORDENESENC OE
+                INNER JOIN P_PSDENC('03') P ON P.CVE_ORDEN = OE.ID
+                LEFT JOIN p_vendxx('03') V ON V.id = OE.agente
+                LEFT JOIN ORDENESPROC R ON R.ORDEN = OE.ORDEN AND R.ST = 1
+                LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC
+                LEFT JOIN DEPTOS D ON D.CLAVE = S.DEPTO
+                LEFT JOIN ORDENESest E ON E.ID = OE.ESTATUS
+                WHERE OE.ID = ?
+            ";
 
         $row = $this->ejecutar($sqlPsdenc, [$cveOrden], "{$etiquetaPaso}-PSDENC", $codigoRaw, $clave);
 
@@ -430,102 +586,33 @@ class EscaneoRolloService
         // (ej. baño de tintorería) y traer las cantidades — antes solo
         // traía P.ESTATUS crudo y nunca traía CANTIDAD/CANTENT.
         $sqlOrdenesenc = "
-        SELECT
-            P.ARTICULO AS ARTICULO,
-            P.CLIENTE AS CLIENTE,
-            COALESCE(V.agente,'SIN AGENTE') AS AGENTE,
-            P.PEDIDO AS PEDIDO,
-            P.ORDEN AS OP,
-            P.PARTIDA AS PEDIDOPART,
-            P.\"CODIGO COLOR\" AS \"COD. COLOR\",
-            P.COLOR AS COLOR,
-            P.FECHA AS FECHA,
-            P.ORDEN AS ORDEN,
-            P.NESTATUS AS OE_ESTATUS,
-            IIF(OE.ESTATUS = 2, S.PROCESO, E.ESTATUS) AS PROCESO,
-            OE.CANTIDAD AS \"CANTIDAD SOLICITADA\",
-            OE.CANTENT AS \"CANTIDAD ENTREGADA\"
-        FROM P_ORDENESENC('03') P
-        LEFT JOIN p_vendxx('03') V ON V.id = P.AGENTE
-        LEFT JOIN ORDENESENC OE ON OE.ID = P.CVE_ORDEN
-        LEFT JOIN ORDENESPROC R ON R.ORDEN = OE.ORDEN AND R.ST = 1
-        LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC
-        LEFT JOIN ORDENESest E ON E.ID = OE.ESTATUS
-        WHERE P.CVE_ORDEN = ?
-    ";
-
-        return $this->ejecutar($sqlOrdenesenc, [$cveOrden], "{$etiquetaPaso}-ORDENESENC", $codigoRaw, $clave);
-    }
-
-    /**
-     * Paso 3 del recorrido: escaneo en ACABADO.
-     */
-    public function escanearAcabado(string $codigoRaw): array
-    {
-        $clave = $this->normalizarClave($codigoRaw);
-
-        $sql = "
             SELECT
-                PSD.CLAVE AS ID,
-                LPAD(PSD.CLAVE,10,'0') AS ID_QR,
-                P.CLAVE AS \"CVE ART\",
                 P.ARTICULO AS ARTICULO,
                 P.CLIENTE AS CLIENTE,
                 COALESCE(V.agente,'SIN AGENTE') AS AGENTE,
                 P.PEDIDO AS PEDIDO,
-                P.PARTIDA AS OP,
-                OE.PEDIDOPART AS PEDIDOPART,
-                P.\"COD. COLOR\" AS \"COD. COLOR\",
+                P.ORDEN AS OP,
+                P.PARTIDA AS PEDIDOPART,
+                P.\"CODIGO COLOR\" AS \"COD. COLOR\",
                 P.COLOR AS COLOR,
                 P.FECHA AS FECHA,
-                PSD.TIPO AS TIPO_COD,
-                CASE PSD.TIPO
-                    WHEN 51 THEN 'PRIMERA'
-                    WHEN 52 THEN 'PREFERIDA'
-                    WHEN 73 THEN 'ORILLAS'
-                    WHEN 74 THEN 'RETAZO'
-                    WHEN 77 THEN 'SEGUNDA'
-                    WHEN 81 THEN 'MUESTRA'
-                    ELSE 'OTRAS'
-                END AS TIPO,
-                PSD.PNETO AS \"PESO NETO\",
-                PSD.PIEZA AS PIEZA,
-                PSD.ESTATUS AS PSD_ESTATUS,
-                PSD.ISDELIV AS ISDELIV,
-                PSD.FECHAYHORAINGPT AS \"FECHA ING\",
-                PSD.FECHAYHORASALPT AS \"FECHA SAL\",
-                PSD.FECHAYHORADEVOL AS \"FECHA DEV\",
-                PSD.ID_FOL_PL AS PL,
-                OE.ORDEN AS ORDEN,
-                OE.ESTATUS AS OE_ESTATUS,
+                P.ORDEN AS ORDEN,
+                P.NESTATUS AS OE_ESTATUS,
                 IIF(OE.ESTATUS = 2, S.PROCESO, E.ESTATUS) AS PROCESO,
-                IIF(
-                    PSD.FECHAYHORADEVOL IS NOT NULL,
-                    '',
-                    IIF(OE.ESTATUS IN (4, 50, 51, 61, 65), 'ROLLO', 'TELA')
-                ) AS PRODUCTO,
+    D.DEPTO AS ALMACEN,
                 OE.CANTIDAD AS \"CANTIDAD SOLICITADA\",
                 OE.CANTENT AS \"CANTIDAD ENTREGADA\"
-            FROM PSDTABPZAS PSD
-            INNER JOIN P_PSDENC('03') P ON P.CVE_PSD_ENC = PSD.CVE_ENC
+            FROM P_ORDENESENC('03') P
+            LEFT JOIN p_vendxx('03') V ON V.id = P.AGENTE
             LEFT JOIN ORDENESENC OE ON OE.ID = P.CVE_ORDEN
-            LEFT JOIN p_vendxx('03') V ON V.id = OE.agente
             LEFT JOIN ORDENESPROC R ON R.ORDEN = OE.ORDEN AND R.ST = 1
             LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC
+            LEFT JOIN DEPTOS D ON D.CLAVE = S.DEPTO
             LEFT JOIN ORDENESest E ON E.ID = OE.ESTATUS
-            WHERE PSD.CLAVE = ?
+            WHERE P.CVE_ORDEN = ?
         ";
 
-        $row = $this->ejecutar($sql, [$clave], 'ACABADO', $codigoRaw, $clave);
-
-        if (! $row) {
-            throw new RolloNoEncontradoException($clave);
-        }
-
-        $oeEstatus = (int) ($row['OE_ESTATUS'] ?? 0);
-        $row['ORIGEN'] = $oeEstatus === 61 ? 'FACTURACION' : 'ACABADO';
-
-        return $row;
+        return $this->ejecutar($sqlOrdenesenc, [$cveOrden], "{$etiquetaPaso}-ORDENESENC", $codigoRaw, $clave);
     }
 
     /**
@@ -573,15 +660,34 @@ class EscaneoRolloService
     private function buscarDatosVentaDirecta(string $folioVentaDirecta, string $codigoRaw, int $clave): ?array
     {
         $sql = '
-    SELECT
-        PL.FECHAYHORA AS FECHA_ENTREGA_CDO,
-        PL.USELAB AS USELAB,
-        U.NOMBRE AS USELAB_NOMBRE
-    FROM PTPLISTCDO PL
-    LEFT JOIN USUARIOS U ON U.CLAVE = PL.USELAB
-    WHERE PL.ID_CDO = ?
-    ';
+        SELECT
+            PL.FECHAYHORA AS FECHA_ENTREGA_CDO,
+            PL.USELAB AS USELAB,
+            U.NOMBRE AS USELAB_NOMBRE
+        FROM PTPLISTCDO PL
+        LEFT JOIN USUARIOS U ON U.CLAVE = PL.USELAB
+        WHERE PL.ID_CDO = ?
+        ';
 
         return $this->ejecutar($sql, [$folioVentaDirecta], 'REVISADO-VENTA-DIRECTA-PTPLISTCDO', $codigoRaw, $clave);
+    }
+
+    /**
+     * Trae ORDENESTEJ.OP a partir del OT (orden de tejido), para no
+     * confundirlo con ORDEN (que viene de ORDENESENC/P_ORDENESENC).
+     */
+    private function buscarOpTejido(?string $otPsd, string $codigoRaw, int $clave): ?array
+    {
+        if (empty($otPsd)) {
+            return null;
+        }
+
+        $sql = '
+        SELECT OT.OP AS OP
+        FROM ORDENESTEJ OT
+        WHERE OT.OT = ?
+    ';
+
+        return $this->ejecutar($sql, [$otPsd], 'REVISADO-OP-TEJIDO', $codigoRaw, $clave);
     }
 }
