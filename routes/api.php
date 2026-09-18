@@ -374,7 +374,8 @@ Route::prefix('areas')->middleware('jwt.auth')->group(function () {
     Route::patch('/{id}/toggle-activo', [AreaController::class, 'toggleActivo']);
 
     Route::apiResource('', AreaController::class)
-        ->parameters(['' => 'id']);
+        ->parameters(['' => 'id'])
+        ->names('areas');
 });
 
 /*
@@ -387,7 +388,8 @@ Route::prefix('puestos')->middleware('jwt.auth')->group(function () {
     Route::patch('/{id}/toggle-activo', [PuestoController::class, 'toggleActivo']);
 
     Route::apiResource('', PuestoController::class)
-        ->parameters(['' => 'id']);
+        ->parameters(['' => 'id'])
+        ->names('puestos');
 });
 
 /*
@@ -402,7 +404,8 @@ Route::prefix('turnos')->middleware('jwt.auth')->group(function () {
     Route::patch('/{id}/dias/{diaSemana}', [TurnoController::class, 'actualizarDia']);
 
     Route::apiResource('', TurnoController::class)
-        ->parameters(['' => 'id']);
+        ->parameters(['' => 'id'])
+        ->names('turnos');
 });
 
 /*
