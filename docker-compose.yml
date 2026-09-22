@@ -1,0 +1,101 @@
+services:
+
+  # --- Laravel (PHP) ---
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fibrasan_app
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www          # tu código real se refleja en vivo dentro del contenedor
+    env_file:
+      - .env
+    depends_on:
+      - mysql
+      - redis
+    networks:
+      - fibrasan_net
+
+  # --- Nginx (servidor web) ---
+  nginx:
+    image: nginx:alpine
+    container_name: fibrasan_nginx
+    ports:
+      - "8000:80"           # entras por http://localhost:8000
+    volumes:
+      - ./:/var/www
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - app
+    networks:
+      - fibrasan_net
+
+  # --- MySQL ---
+  mysql:
+    image: mysql:8.0
+    container_name: fibrasan_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: erp_fibrasan
+      MYSQL_ROOT_PASSWORD: root_password   # ponle una contraseña real, ver nota abajo
+      MYSQL_ALLOW_EMPTY_PASSWORD: "no"
+    ports:
+      - "3306:3306"          # opcional: te deja conectar con TablePlus/DBeaver desde tu compu
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - fibrasan_net
+
+  # --- Redis ---
+  redis:
+    image: redis:7-alpine
+    container_name: fibrasan_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - fibrasan_net
+
+  # --- Reverb (websockets) ---
+  reverb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fibrasan_reverb
+    working_dir: /var/www
+    command: php artisan reverb:start --host=0.0.0.0 --port=8080
+    volumes:
+      - ./:/var/www
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    depends_on:
+      - app
+    networks:
+      - fibrasan_net
+
+  # --- Queue worker (procesa colas) ---
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fibrasan_queue
+    working_dir: /var/www
+    command: php artisan queue:work --tries=3
+    volumes:
+      - ./:/var/www
+    env_file:
+      - .env
+    depends_on:
+      - app
+      - mysql
+    networks:
+      - fibrasan_net
+
+networks:
+  fibrasan_net:
+    driver: bridge
+
+volumes:
+  mysql_data:

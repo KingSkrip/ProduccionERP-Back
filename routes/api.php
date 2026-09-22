@@ -435,6 +435,20 @@ Route::get('/test-reverb', function () {
         'ok' => true,
         'message' => 'Evento enviado',
     ]);
+
+
+
+
+});
+
+Route::post('/debug-json', function (\Illuminate\Http\Request $request) {
+    return response()->json([
+        'content_type' => $request->header('Content-Type'),
+        'content_length' => $request->header('Content-Length'),
+        'all' => $request->all(),
+        'json' => $request->json()->all(),
+        'raw' => file_get_contents('php://input'),
+    ]);
 });
 
 /**

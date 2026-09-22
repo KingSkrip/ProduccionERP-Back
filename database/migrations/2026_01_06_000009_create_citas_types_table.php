@@ -26,14 +26,6 @@ return new class extends Migration
 
             $table->timestamps();
         });
-
-        Schema::table('citas', function (Blueprint $table) {
-            $table->foreignId('cita_type_id')
-                ->nullable()
-                ->after('id')
-                ->constrained('citas_types')
-                ->nullOnDelete();
-        });
     }
 
     /**
@@ -41,11 +33,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('citas', function (Blueprint $table) {
-            $table->dropForeign(['cita_type_id']);
-            $table->dropColumn('cita_type_id');
-        });
-
         Schema::dropIfExists('citas_types');
     }
 };

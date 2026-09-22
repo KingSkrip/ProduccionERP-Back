@@ -14,29 +14,44 @@ return new class extends Migration
             // 🔗 Relaciones
             $table->unsignedBigInteger('id_user')->nullable();
             $table->unsignedBigInteger('id_visitante')->nullable();
-             $table->foreignId('cita_type_id')
+
+            $table->foreignId('cita_type_id')
                 ->nullable()
                 ->constrained('citas_types')
                 ->nullOnDelete();
+
+            // 👤 Datos del visitante
             $table->string('nombre_visitante', 255)->nullable();
+
             // 📅 Datos de la cita
             $table->date('fecha')->nullable();
             $table->time('hora_inicio')->nullable();
             $table->time('hora_fin')->nullable();
-
             $table->string('motivo', 255)->nullable();
 
-            $table->enum('estado', ['pendiente', 'confirmada', 'cancelada'])
+            $table->enum('estado', [
+                'pendiente',
+                'confirmada',
+                'cancelada'
+            ])
                 ->default('pendiente')
                 ->nullable();
 
             $table->text('notas')->nullable();
-            $table->string('con_vehiculo', 255)->nullable()->default('no');
-               $table->string('sala', 100)->nullable()->after('con_vehiculo');
+
+            // 🚗 Vehículo y sala
+            $table->string('con_vehiculo', 255)
+                ->nullable()
+                ->default('no');
+
+            $table->string('sala', 100)->nullable();
+
+            // 🔔 Recordatorios
             $table->boolean('recordatorio_30min')->default(false);
             $table->boolean('recordatorio_60min')->default(false);
 
-            $table->timestamps(); // created_at & updated_at
+            // 🕒 Timestamps
+            $table->timestamps();
 
             // 🔐 Foreign Keys
             $table->foreign('id_user')

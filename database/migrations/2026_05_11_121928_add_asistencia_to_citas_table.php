@@ -6,26 +6,19 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
-      Schema::table('citas', function (Blueprint $table) {
-        $table->enum('asistencia', ['rechazada', 'confirmada'])
-              ->default('pendiente')
-              ->after('estado')
-              ->nullable();
-    });
+        Schema::table('citas', function (Blueprint $table) {
+            $table->enum('asistencia', ['rechazada', 'confirmada'])
+                ->nullable()
+                ->after('estado');
+        });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::table('citas', function (Blueprint $table) {
-        $table->dropColumn('asistencia');
-    });
+            $table->dropColumn('asistencia');
+        });
     }
 };
