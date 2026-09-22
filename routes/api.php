@@ -436,20 +436,17 @@ Route::get('/test-reverb', function () {
         'message' => 'Evento enviado',
     ]);
 
-
-
-
 });
 
-Route::post('/debug-json', function (\Illuminate\Http\Request $request) {
-    return response()->json([
-        'content_type' => $request->header('Content-Type'),
-        'content_length' => $request->header('Content-Length'),
-        'all' => $request->all(),
-        'json' => $request->json()->all(),
-        'raw' => file_get_contents('php://input'),
-    ]);
-});
+// Route::post('/debug-json', function (\Illuminate\Http\Request $request) {
+//     return response()->json([
+//         'content_type' => $request->header('Content-Type'),
+//         'content_length' => $request->header('Content-Length'),
+//         'all' => $request->all(),
+//         'json' => $request->json()->all(),
+//         'raw' => file_get_contents('php://input'),
+//     ]);
+// });
 
 /**
  * SIEMPRE QUE SE AGREGE UNA NUEVA RUTA HAY QUE AGREGARLA A
