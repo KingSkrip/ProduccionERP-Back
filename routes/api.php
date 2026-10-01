@@ -21,6 +21,7 @@ use App\Http\Controllers\MailboxController;
 use App\Http\Controllers\Personalizacion\Dashboard\DataDashboardController;
 use App\Http\Controllers\Personalizacion\Perfil\PerfilController;
 use App\Http\Controllers\Puestos\PuestoController;
+use App\Http\Controllers\Reprocesos\ReprocesosController;
 use App\Http\Controllers\RH\Nominas\EmpresaUno\EmpresaUnoController;
 use App\Http\Controllers\Scanner\ScannerEmbarquesController;
 use App\Http\Controllers\SuperAdmin\AutorizacionPedidos\AutorizacionPedidosController;
@@ -355,6 +356,17 @@ Route::prefix('checador')->middleware('jwt.auth')->group(function () {
 
     Route::get('/qr/{identityId}/token-efimero', [ChecadorQrController::class, 'tokenEfimero']);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Reprocesos
+|--------------------------------------------------------------------------
+*/
+Route::prefix('reprocesos')->group(function () {
+    Route::get('/', [ReprocesosController::class, 'index']);
+    Route::get('/{id}', [ReprocesosController::class, 'show']);
+});
+
 
 Route::get('mi-ip', function (Request $request) {
     $ip = $request->header('X-Real-IP')

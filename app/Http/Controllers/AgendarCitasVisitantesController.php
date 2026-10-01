@@ -20,7 +20,7 @@ use App\Services\Agenda\CitaNotificacionService;
 use Illuminate\Database\Connection;
 use App\Services\FirebirdConnectionService;
 
-class AgendarCitasVisitantesControllercopy extends Controller
+class AgendarCitasVisitantesController extends Controller
 {
     private string $jwtSecret;
     private UserService $userService;
