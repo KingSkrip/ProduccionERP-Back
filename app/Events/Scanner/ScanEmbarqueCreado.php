@@ -20,7 +20,8 @@ class ScanEmbarqueCreado implements ShouldBroadcastNow
         public int    $codigoEnt,
         public string $fechaYHora,
         public int    $procesado,
-        public mixed  $userId  // 👈
+        public mixed  $userId,
+           public ?array $datos = null, 
     ) {}
 
     public function broadcastOn(): Channel

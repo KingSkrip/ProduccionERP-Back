@@ -17,6 +17,7 @@ use App\Http\Controllers\Clientes\EstadosCuentaController;
 use App\Http\Controllers\Clientes\PedidosController;
 use App\Http\Controllers\Colaboradores\SoliVacacionesController;
 use App\Http\Controllers\Inventario\InventarioController;
+use App\Http\Controllers\Inventario\ScannerResumenPendientesController;
 use App\Http\Controllers\MailboxController;
 use App\Http\Controllers\Personalizacion\Dashboard\DataDashboardController;
 use App\Http\Controllers\Personalizacion\Perfil\PerfilController;
@@ -306,6 +307,7 @@ Route::prefix('scanner')->middleware('jwt.auth')->group(function () {
     Route::get('/embarques', [ScannerEmbarquesController::class, 'index']);
     Route::post('/embarques', [ScannerEmbarquesController::class, 'scan']);
     Route::post('/inventario', [ScannerEmbarquesController::class, 'verificarInventario']);
+
 });
 
 Route::prefix('checador')->middleware('jwt.auth')->group(function () {
@@ -429,6 +431,7 @@ Route::prefix('inventario')->middleware('jwt.auth')->group(function () {
 
     Route::get('/', [InventarioController::class, 'index']);
     Route::post('/escanearinventario', [InventarioController::class, 'escanear']);
+       Route::post('/embarques/resumen-pendientes', [ScannerResumenPendientesController::class, 'resumen']);
 });
 
 Route::get('/test-reverb', function () {
