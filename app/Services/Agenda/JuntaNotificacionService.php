@@ -3,18 +3,15 @@
 namespace App\Services\Agenda;
 
 use App\Jobs\EnviarMensajeWhatsappJob;
-use App\Models\Cita;
 use App\Models\UserFirebirdIdentity;
 use App\Services\FirebirdEmpresaManualService;
 use App\Services\UserService;
 use Carbon\Carbon;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class JuntaNotificacionService
 {
-
     public function __construct(
         private FirebirdEmpresaManualService $firebird,  // ← esto puede fallar
         private UserService $userService,
@@ -30,26 +27,26 @@ class JuntaNotificacionService
      */
     public function mensajeCreacionParaOrganizador(
         string $nombreOrganizador,
-        array  $nombresParticipantes,
+        array $nombresParticipantes,
         string $fecha,
         string $horaIni,
         string $horaFin,
         ?string $asunto = null,
-        ?string $sala   = null,
-        ?string $notas  = null,
+        ?string $sala = null,
+        ?string $notas = null,
     ): string {
-        $lista     = $this->listaParticipantes($nombresParticipantes);
+        $lista = $this->listaParticipantes($nombresParticipantes);
         $asuntoTxt = $asunto ? "\n📋 Asunto: {$asunto}" : '';
-        $salaTxt   = $sala   ? "\n📍 Sala: " . $this->getSalaLabel($sala) : '';
-        $notasTxt  = $notas  ? "\n📝 Notas: {$notas}"   : '';
+        $salaTxt = $sala ? "\n📍 Sala: ".$this->getSalaLabel($sala) : '';
+        $notasTxt = $notas ? "\n📝 Notas: {$notas}" : '';
 
         return "✅ *Junta agendada*\n"
-            . "👤 Participantes: {$lista}\n"
-            . "📅 {$fecha}\n"
-            . "🕐 de {$horaIni} a {$horaFin}"
-            . $salaTxt
-            . $asuntoTxt
-            . $notasTxt;
+            ."👤 Participantes: {$lista}\n"
+            ."📅 {$fecha}\n"
+            ."🕐 de {$horaIni} a {$horaFin}"
+            .$salaTxt
+            .$asuntoTxt
+            .$notasTxt;
     }
 
     /**
@@ -57,52 +54,52 @@ class JuntaNotificacionService
      * Incluye solicitud de confirmación de asistencia.
      */
     public function mensajeInvitacionParaParticipante(
-        string  $nombreOrganizador,
-        string  $nombreParticipante,
-        string  $fecha,
-        string  $horaIni,
-        string  $horaFin,
+        string $nombreOrganizador,
+        string $nombreParticipante,
+        string $fecha,
+        string $horaIni,
+        string $horaFin,
         ?string $asunto = null,
-        ?string $sala   = null,
-        ?string $notas  = null,
+        ?string $sala = null,
+        ?string $notas = null,
     ): string {
         $asuntoTxt = $asunto ? "\nAsunto: {$asunto}" : '';
-        $salaTxt   = $sala   ? "\n📍 Sala: " . $this->getSalaLabel($sala) : '';
-        $notasTxt  = $notas  ? "\nNotas: {$notas}"   : '';
+        $salaTxt = $sala ? "\n📍 Sala: ".$this->getSalaLabel($sala) : '';
+        $notasTxt = $notas ? "\nNotas: {$notas}" : '';
 
         return "*{$nombreOrganizador}* te ha invitado a una junta.\n"
-            . "{$fecha}\n"
-            . "🕐 de {$horaIni} a {$horaFin}"
-            . $salaTxt
-            . $asuntoTxt
-            . $notasTxt
-            . "\n\n✋ *Por favor confirma tu asistencia* respondiendo a esta junta en la app.";
+            ."{$fecha}\n"
+            ."🕐 de {$horaIni} a {$horaFin}"
+            .$salaTxt
+            .$asuntoTxt
+            .$notasTxt
+            ."\n\n✋ *Por favor confirma tu asistencia* respondiendo a esta junta en la app.";
     }
 
     /**
      * Mensaje para el ORGANIZADOR cuando se edita la junta.
      */
     public function mensajeEdicionParaOrganizador(
-        array   $nombresParticipantes,
-        string  $fecha,
-        string  $horaIni,
-        string  $horaFin,
+        array $nombresParticipantes,
+        string $fecha,
+        string $horaIni,
+        string $horaFin,
         ?string $asunto = null,
-        ?string $sala   = null,
-        ?string $notas  = null,
+        ?string $sala = null,
+        ?string $notas = null,
     ): string {
-        $lista     = $this->listaParticipantes($nombresParticipantes);
+        $lista = $this->listaParticipantes($nombresParticipantes);
         $asuntoTxt = $asunto ? "\n📋 Asunto: {$asunto}" : '';
-        $salaTxt   = $sala   ? "\n📍 Sala: " . $this->getSalaLabel($sala) : '';
-        $notasTxt  = $notas  ? "\n📝 Notas: {$notas}"   : '';
+        $salaTxt = $sala ? "\n📍 Sala: ".$this->getSalaLabel($sala) : '';
+        $notasTxt = $notas ? "\n📝 Notas: {$notas}" : '';
 
         return "✏️ *Junta actualizada*\n"
-            . "👤 Participantes: {$lista}\n"
-            . "📅 {$fecha}\n"
-            . "🕐 de {$horaIni} a {$horaFin}"
-            . $salaTxt
-            . $asuntoTxt
-            . $notasTxt;
+            ."👤 Participantes: {$lista}\n"
+            ."📅 {$fecha}\n"
+            ."🕐 de {$horaIni} a {$horaFin}"
+            .$salaTxt
+            .$asuntoTxt
+            .$notasTxt;
     }
 
     /**
@@ -110,59 +107,59 @@ class JuntaNotificacionService
      * Vuelve a pedir confirmación porque los detalles cambiaron.
      */
     public function mensajeEdicionParaParticipante(
-        string  $nombreOrganizador,
-        string  $fecha,
-        string  $horaIni,
-        string  $horaFin,
+        string $nombreOrganizador,
+        string $fecha,
+        string $horaIni,
+        string $horaFin,
         ?string $asunto = null,
-        ?string $sala   = null,
-        ?string $notas  = null,
+        ?string $sala = null,
+        ?string $notas = null,
     ): string {
         $asuntoTxt = $asunto ? "\n📋 Asunto: {$asunto}" : '';
-        $salaTxt   = $sala   ? "\n📍 Sala: " . $this->getSalaLabel($sala) : '';
-        $notasTxt  = $notas  ? "\n📝 Notas: {$notas}"   : '';
+        $salaTxt = $sala ? "\n📍 Sala: ".$this->getSalaLabel($sala) : '';
+        $notasTxt = $notas ? "\n📝 Notas: {$notas}" : '';
 
         return "✏️ *{$nombreOrganizador}* actualizó una junta contigo.\n"
-            . "📅 {$fecha}\n"
-            . "🕐 de {$horaIni} a {$horaFin}"
-            . $salaTxt
-            . $asuntoTxt
-            . $notasTxt
-            . "\n\n✋ *Por favor confirma nuevamente tu asistencia* en la app.";
+            ."📅 {$fecha}\n"
+            ."🕐 de {$horaIni} a {$horaFin}"
+            .$salaTxt
+            .$asuntoTxt
+            .$notasTxt
+            ."\n\n✋ *Por favor confirma nuevamente tu asistencia* en la app.";
     }
 
     /**
      * Mensaje para el ORGANIZADOR al cancelar/eliminar la junta.
      */
     public function mensajeCancelacionParaOrganizador(
-        array   $nombresParticipantes,
-        string  $fecha,
-        string  $horaIni,
+        array $nombresParticipantes,
+        string $fecha,
+        string $horaIni,
         ?string $asunto = null,
     ): string {
-        $lista     = $this->listaParticipantes($nombresParticipantes);
+        $lista = $this->listaParticipantes($nombresParticipantes);
         $asuntoTxt = $asunto ? "\n📋 Asunto: {$asunto}" : '';
 
         return "❌ *Junta cancelada*\n"
-            . "👤 Participantes: {$lista}\n"
-            . "📅 {$fecha}\n"
-            . "🕐 {$horaIni}"
-            . $asuntoTxt;
+            ."👤 Participantes: {$lista}\n"
+            ."📅 {$fecha}\n"
+            ."🕐 {$horaIni}"
+            .$asuntoTxt;
     }
 
     /**
      * Mensaje para cada PARTICIPANTE cuando la junta es cancelada/eliminada.
      */
     public function mensajeCancelacionParaParticipante(
-        string  $nombreOrganizador,
-        string  $fecha,
-        string  $horaIni,
+        string $nombreOrganizador,
+        string $fecha,
+        string $horaIni,
         ?string $asunto = null,
     ): string {
         $asuntoTxt = $asunto ? "\n📋 Asunto: {$asunto}" : '';
 
         return "❌ *{$nombreOrganizador}* canceló la junta del día *{$fecha}* a las *{$horaIni}*."
-            . $asuntoTxt;
+            .$asuntoTxt;
     }
 
     /**
@@ -170,26 +167,26 @@ class JuntaNotificacionService
      * $esMiPropio = true si quien recibe es el que hizo el cambio.
      */
     public function mensajeCambioEstado(
-        string  $quienCambia,
-        string  $contraparte,
-        string  $estadoAnterior,
-        string  $estadoNuevo,
-        string  $fecha,
-        string  $horaIni,
-        string  $horaFin,
-        bool    $esMiPropio,
+        string $quienCambia,
+        string $contraparte,
+        string $estadoAnterior,
+        string $estadoNuevo,
+        string $fecha,
+        string $horaIni,
+        string $horaFin,
+        bool $esMiPropio,
     ): string {
         $transicion = "*{$estadoAnterior}* → *{$estadoNuevo}*";
 
         if ($esMiPropio) {
             return "✅ Cambiaste el estado de la junta con *{$contraparte}*\n"
-                . "📅 {$fecha} · 🕐 de {$horaIni} a {$horaFin}\n\n"
-                . "Estado: {$transicion}";
+                ."📅 {$fecha} · 🕐 de {$horaIni} a {$horaFin}\n\n"
+                ."Estado: {$transicion}";
         }
 
         return "⚠️ *{$quienCambia}* cambió el estado de la junta contigo\n"
-            . "📅 {$fecha} · 🕐 de {$horaIni} a {$horaFin}\n\n"
-            . "Estado: {$transicion}";
+            ."📅 {$fecha} · 🕐 de {$horaIni} a {$horaFin}\n\n"
+            ."Estado: {$transicion}";
     }
 
     // ─────────────────────────────────────────────
@@ -201,28 +198,20 @@ class JuntaNotificacionService
      * - 1 mensaje al organizador con la lista completa de participantes
      * - 1 mensaje a cada participante pidiendo confirmación
      *
-     * @param string      $telefonoOrganizador
-     * @param string      $nombreOrganizador
-     * @param array       $participantes  [ ['telefono' => '...', 'nombre' => '...'], ... ]
-     * @param string      $fecha
-     * @param string      $horaIni
-     * @param string      $horaFin
-     * @param string|null $asunto
-     * @param string|null $sala
-     * @param string|null $notas
-     * @param string      $tipo           'creacion' | 'edicion'
+     * @param  array  $participantes  [ ['telefono' => '...', 'nombre' => '...'], ... ]
+     * @param  string  $tipo  'creacion' | 'edicion'
      */
     public function notificarTodos(
         ?string $telefonoOrganizador,
-        string  $nombreOrganizador,
-        array   $participantes,
-        string  $fecha,
-        string  $horaIni,
-        string  $horaFin,
+        string $nombreOrganizador,
+        array $participantes,
+        string $fecha,
+        string $horaIni,
+        string $horaFin,
         ?string $asunto = null,
-        ?string $sala   = null,
-        ?string $notas  = null,
-        string  $tipo   = 'creacion',
+        ?string $sala = null,
+        ?string $notas = null,
+        string $tipo = 'creacion',
     ): void {
         $nombresParticipantes = array_column($participantes, 'nombre');
         $queueIndex = 0;
@@ -239,9 +228,11 @@ class JuntaNotificacionService
         // ── Mensaje a cada participante ──
         foreach ($participantes as $p) {
             $telefono = $p['telefono'] ?? null;
-            $nombre   = $p['nombre']   ?? 'Participante';
+            $nombre = $p['nombre'] ?? 'Participante';
 
-            if (!$telefono) continue;
+            if (! $telefono) {
+                continue;
+            }
 
             $msgPartic = $tipo === 'edicion'
                 ? $this->mensajeEdicionParaParticipante($nombreOrganizador, $fecha, $horaIni, $horaFin, $asunto, $sala, $notas)
@@ -256,10 +247,10 @@ class JuntaNotificacionService
      */
     public function notificarCancelacionTodos(
         ?string $telefonoOrganizador,
-        string  $nombreOrganizador,
-        array   $participantes,
-        string  $fecha,
-        string  $horaIni,
+        string $nombreOrganizador,
+        array $participantes,
+        string $fecha,
+        string $horaIni,
         ?string $asunto = null,
     ): void {
         $nombresParticipantes = array_column($participantes, 'nombre');
@@ -272,7 +263,9 @@ class JuntaNotificacionService
 
         foreach ($participantes as $p) {
             $telefono = $p['telefono'] ?? null;
-            if (!$telefono) continue;
+            if (! $telefono) {
+                continue;
+            }
 
             $msg = $this->mensajeCancelacionParaParticipante($nombreOrganizador, $fecha, $horaIni, $asunto);
             $this->despacharJob($telefono, $msg, $queueIndex++);
@@ -290,9 +283,10 @@ class JuntaNotificacionService
 
     public function formatHora($hora): string
     {
-        $c      = $hora instanceof Carbon ? $hora : Carbon::parse($hora);
+        $c = $hora instanceof Carbon ? $hora : Carbon::parse($hora);
         $sufijo = $c->format('A') === 'AM' ? 'am' : 'pm';
-        return $c->format('g:i') . ' ' . $sufijo;
+
+        return $c->format('g:i').' '.$sufijo;
     }
 
     // ─────────────────────────────────────────────
@@ -302,11 +296,11 @@ class JuntaNotificacionService
     private function getSalaLabel(string $sala): string
     {
         $labels = [
-            'sala_tejido'    => 'Sala de juntas de tejido',
-            'sala_junta'     => 'Sala de juntas (piso 2)',
-            'oficina_sabu'   => 'Oficina de Sabu',
-            'oficina_jaime'  => 'Oficina de Jaime',
-            'remota'         => 'Remota (videollamada)',
+            'sala_tejido' => 'Sala de juntas de tejido',
+            'sala_junta' => 'Sala de juntas (piso 2)',
+            'oficina_sabu' => 'Oficina de Sabu',
+            'oficina_jaime' => 'Oficina de Jaime',
+            'remota' => 'Remota (videollamada)',
         ];
 
         return $labels[$sala] ?? $sala;
@@ -314,7 +308,7 @@ class JuntaNotificacionService
 
     private function listaParticipantes(array $nombres): string
     {
-        return implode(', ', array_map(fn($n) => "*{$n}*", $nombres));
+        return implode(', ', array_map(fn ($n) => "*{$n}*", $nombres));
     }
 
     private function despacharJob(string $telefono, string $mensaje, int $delayMinutos = 0): void
@@ -324,12 +318,10 @@ class JuntaNotificacionService
             ->onQueue('whatsapp');
 
         Log::info('📨 JUNTA WhatsApp encolado', [
-            'telefono'      => $telefono,
+            'telefono' => $telefono,
             'delay_minutos' => $delayMinutos,
         ]);
     }
-
-
 
     // ── Sin constructor, no necesita inyección ──
 
@@ -343,17 +335,19 @@ class JuntaNotificacionService
 
         try {
             if ($identity->firebird_tb_clave !== null) {
-                $empresa     = $identity->firebird_empresa ?? '04';
-                $tbClave     = trim((string) $identity->firebird_tb_clave);
+                $empresa = $identity->firebird_empresa ?? '04';
+                $tbClave = trim((string) $identity->firebird_tb_clave);
                 $firebirdNoi = new FirebirdEmpresaManualService($empresa, 'SRVNOI');
 
                 $tbRow = $firebirdNoi->getOperationalTable('TB')
-                    ->keyBy(fn($r) => trim((string) $r->CLAVE))
+                    ->keyBy(fn ($r) => trim((string) $r->CLAVE))
                     ->get($tbClave);
 
                 if ($tbRow) {
                     foreach ($campos as $c) {
-                        if (!empty($tbRow->$c)) return $tbRow->$c;
+                        if (! empty($tbRow->$c)) {
+                            return $tbRow->$c;
+                        }
                     }
                 }
 
@@ -362,29 +356,31 @@ class JuntaNotificacionService
 
             // CLIE, VEND, PROV
             [$table, $where, $param] = match (true) {
-                $identity->firebird_clie_clave !== null => ['CLIE03', 'CLAVE',       $identity->firebird_clie_clave],
-                $identity->firebird_vend_clave !== null => ['VEND03', 'CVE_VEND',    $identity->firebird_vend_clave],
-                $identity->firebird_prov_clave !== null => ['PROV03', 'TRIM(CLAVE)', trim((string) $identity->firebird_prov_clave)],
-                default                                 => [null, null, null],
+                $identity->firebird_clie_clave !== null => [tb('CLIE'), 'CLAVE',       $identity->firebird_clie_clave],
+                $identity->firebird_vend_clave !== null => [tb('VEND'), 'CVE_VEND',    $identity->firebird_vend_clave],
+                $identity->firebird_prov_clave !== null => [tb('PROV'), 'TRIM(CLAVE)', trim((string) $identity->firebird_prov_clave)],
+                default => [null, null, null],
             };
 
             if ($table) {
                 $conn = DB::connection('firebird_produccion');
-                $row  = $conn->selectOne(
-                    'SELECT ' . implode(',', $campos) . " FROM {$table} WHERE {$where} = ?",
+                $row = $conn->selectOne(
+                    'SELECT '.implode(',', $campos)." FROM {$table} WHERE {$where} = ?",
                     [$param]
                 );
 
                 if ($row) {
                     foreach ($campos as $c) {
-                        if (!empty($row->$c)) return $row->$c;
+                        if (! empty($row->$c)) {
+                            return $row->$c;
+                        }
                     }
                 }
             }
         } catch (\Throwable $e) {
             Log::error('❌ JUNTA_TELEFONO_IDENTITY_ERROR', [
                 'identity_id' => $identity->id,
-                'error'       => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
         }
 
@@ -404,14 +400,14 @@ class JuntaNotificacionService
         string $horaFin,
         ?string $asunto = null,
     ): void {
-        $telefonoOrg    = $this->obtenerTelefonoDeIdentity($organizador);
+        $telefonoOrg = $this->obtenerTelefonoDeIdentity($organizador);
         $telefonoPartic = $this->obtenerTelefonoDeIdentity($participante);
-        $nombrePartic   = $participante->firebirdUser?->NOMBRE ?? 'Un participante';
-        $nombreOrg      = $organizador->firebirdUser?->NOMBRE  ?? 'El organizador';
+        $nombrePartic = $participante->firebirdUser?->NOMBRE ?? 'Un participante';
+        $nombreOrg = $organizador->firebirdUser?->NOMBRE ?? 'El organizador';
 
-        $asuntoTxt    = $asunto ? "\n📋 Asunto: {$asunto}" : '';
-        $emoji        = $asistencia === 'confirmada' ? '✅' : '❌';
-        $accion       = $asistencia === 'confirmada' ? 'confirmó su asistencia'  : 'rechazó su asistencia';
+        $asuntoTxt = $asunto ? "\n📋 Asunto: {$asunto}" : '';
+        $emoji = $asistencia === 'confirmada' ? '✅' : '❌';
+        $accion = $asistencia === 'confirmada' ? 'confirmó su asistencia' : 'rechazó su asistencia';
         $accionPropia = $asistencia === 'confirmada' ? 'confirmaste tu asistencia' : 'rechazaste tu asistencia';
 
         $queueIndex = 0;

@@ -46,7 +46,7 @@ protected $fb;
         $identity = DB::connection('mysql')
             ->table('users_firebird_identities')
             ->where('firebird_user_clave', $user->ID)
-            ->where('firebird_clie_tabla', 'CLIE03')
+            ->where('firebird_clie_tabla', tb('CLIE'))
             ->whereNotNull('firebird_clie_clave')
             ->first();
 

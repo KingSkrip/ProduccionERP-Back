@@ -159,7 +159,7 @@ class CitaNotificacionService
         if ($identity->firebird_clie_clave !== null) {
             try {
                 $row = $this->firebirdService->getProductionConnection()->selectOne(
-                    "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM CLIE03 WHERE CLAVE = ?",
+                    "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM ".tb('CLIE')." WHERE CLAVE = ?",
                     [$identity->firebird_clie_clave]
                 );
                 return $row?->TELEFONO ?? $row?->TEL ?? $row?->CELULAR ?? $row?->TEL_CELULAR ?? null;
@@ -171,7 +171,7 @@ class CitaNotificacionService
         if ($identity->firebird_vend_clave !== null) {
             try {
                 $row = $this->firebirdService->getProductionConnection()->selectOne(
-                    "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM VEND03 WHERE CVE_VEND = ?",
+                    "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM ".tb('VEND')." WHERE CVE_VEND = ?",
                     [$identity->firebird_vend_clave]
                 );
                 return $row?->TELEFONO ?? $row?->TEL ?? $row?->CELULAR ?? $row?->TEL_CELULAR ?? null;
@@ -183,7 +183,7 @@ class CitaNotificacionService
         if ($identity->firebird_prov_clave !== null) {
             try {
                 $row = $this->firebirdService->getProductionConnection()->selectOne(
-                    "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM PROV03 WHERE TRIM(CLAVE) = ?",
+                    "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM ".tb('PROV')." WHERE TRIM(CLAVE) = ?",
                     [trim((string) $identity->firebird_prov_clave)]
                 );
                 return $row?->TELEFONO ?? $row?->TEL ?? $row?->CELULAR ?? $row?->TEL_CELULAR ?? null;
@@ -219,7 +219,7 @@ class CitaNotificacionService
 
         if ($identity->firebird_clie_clave !== null) {
             try {
-                $row = $this->firebirdService->getProductionConnection()->selectOne("SELECT NOMBRE FROM CLIE03 WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
+                $row = $this->firebirdService->getProductionConnection()->selectOne("SELECT NOMBRE FROM ".tb('CLIE')." WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
                 return $row?->NOMBRE ?? null;
             } catch (\Throwable $e) {
                 Log::error('NOMBRE CLIE03 error', ['error' => $e->getMessage()]);
@@ -228,7 +228,7 @@ class CitaNotificacionService
 
         if ($identity->firebird_vend_clave !== null) {
             try {
-                $row = $this->firebirdService->getProductionConnection()->selectOne("SELECT NOMBRE FROM VEND03 WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
+                $row = $this->firebirdService->getProductionConnection()->selectOne("SELECT NOMBRE FROM ".tb('VEND')." WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
                 return $row?->NOMBRE ?? null;
             } catch (\Throwable $e) {
                 Log::error('NOMBRE VEND03 error', ['error' => $e->getMessage()]);
@@ -238,7 +238,7 @@ class CitaNotificacionService
         if ($identity->firebird_prov_clave !== null) {
             try {
                 $row = $this->firebirdService->getProductionConnection()->selectOne(
-                    "SELECT NOMBRE FROM PROV03 WHERE TRIM(CLAVE) = ?",
+                    "SELECT NOMBRE FROM ".tb('PROV')." WHERE TRIM(CLAVE) = ?",
                     [trim((string) $identity->firebird_prov_clave)]
                 );
                 return $row?->NOMBRE ?? null;

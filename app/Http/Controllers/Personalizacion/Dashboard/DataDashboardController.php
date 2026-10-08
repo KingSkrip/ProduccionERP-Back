@@ -263,7 +263,7 @@ class DataDashboardController extends Controller
                         $lap('firebirdService->getProductionConnection() [cliente]');
 
                         $clieRow = $connection->selectOne(
-                            'SELECT * FROM CLIE03 WHERE CLAVE = ?',
+                           'SELECT * FROM '.tb('CLIE').' WHERE CLAVE = ?',
                             [$clieClave]
                         );
                         $lap('SELECT CLIE03');
@@ -289,7 +289,7 @@ class DataDashboardController extends Controller
                     try {
                         $connection = $this->firebirdService->getProductionConnection();
                         $vendRow = $connection->selectOne(
-                            'SELECT * FROM VEND03 WHERE CVE_VEND = ?',
+                         'SELECT * FROM '.tb('VEND').' WHERE CVE_VEND = ?',
                             [$vendClave]
                         );
                         $lap('SELECT VEND03');
@@ -315,7 +315,7 @@ class DataDashboardController extends Controller
                     try {
                         $connection = $this->firebirdService->getProductionConnection();
                         $provRow = $connection->selectOne(
-                            'SELECT * FROM PROV03 WHERE CLAVE = ?',
+                         'SELECT * FROM '.tb('PROV').' WHERE CLAVE = ?',
                             [$provClave]
                         );
                         $lap('SELECT PROV03');

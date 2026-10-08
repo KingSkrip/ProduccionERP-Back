@@ -141,7 +141,7 @@ class ReportesProduccionCOPYController extends Controller
                     psd.PARTIDA
                 FROM PSDTABPZAS psd
                 LEFT JOIN PTPLISTENC pl ON pl.id = psd.id_fol_pl
-                LEFT JOIN CLIE03 c ON c.clave = pl.cliente
+                LEFT JOIN ".tb('CLIE')." c ON c.clave = pl.cliente
                 WHERE pl.FECHAYHORA >= ?
                 AND pl.FECHAYHORA < ?
                 AND psd.estatus = 1

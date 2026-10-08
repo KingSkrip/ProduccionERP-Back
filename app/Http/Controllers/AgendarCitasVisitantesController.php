@@ -91,11 +91,11 @@ class AgendarCitasVisitantesController extends Controller
                             $nombreProveedor = $tbRow->NOMBRE ?? null;
                         } elseif (!empty($provIdentity->firebird_clie_clave)) {
                             $conn = $this->firebird->getProductionConnection();
-                            $row = $conn->selectOne("SELECT NOMBRE FROM CLIE03 WHERE CLAVE = ?", [$provIdentity->firebird_clie_clave]);
+                            $row = $conn->selectOne("SELECT NOMBRE FROM ".tb('CLIE')." WHERE CLAVE = ?", [$provIdentity->firebird_clie_clave]);
                             $nombreProveedor = $row?->NOMBRE ?? null;
                         } elseif ($provIdentity->firebird_vend_clave !== null) {
                             $conn = $this->firebird->getProductionConnection();
-                            $row = $conn->selectOne("SELECT NOMBRE FROM VEND03 WHERE CVE_VEND = ?", [$provIdentity->firebird_vend_clave]);
+                            $row = $conn->selectOne("SELECT NOMBRE FROM ".tb('VEND')." WHERE CVE_VEND = ?", [$provIdentity->firebird_vend_clave]);
                             $nombreProveedor = $row?->NOMBRE ?? null;
                         } elseif ($provIdentity->firebird_prov_clave !== null) {
                             $conn = $this->firebird->getProductionConnection();
@@ -103,7 +103,7 @@ class AgendarCitasVisitantesController extends Controller
                                 'prov_clave' => $provIdentity->firebird_prov_clave,
                                 'type'       => gettype($provIdentity->firebird_prov_clave),
                             ]);
-                            $row = $conn->selectOne("SELECT NOMBRE FROM PROV03 WHERE TRIM(CLAVE) = ?", [trim((string) $provIdentity->firebird_prov_clave)]);
+                            $row = $conn->selectOne("SELECT NOMBRE FROM ".tb('PROV')." WHERE TRIM(CLAVE) = ?", [trim((string) $provIdentity->firebird_prov_clave)]);
                             Log::info('📦 PROV03_RESULT', ['row' => $row]);
                             $nombreProveedor = $row?->NOMBRE ?? null;
                         }
@@ -963,15 +963,15 @@ class AgendarCitasVisitantesController extends Controller
                 $nombreProveedor = $tbRow->NOMBRE ?? 'Sin nombre';
             } elseif (!empty($identity->firebird_clie_clave)) {
                 $conn = $this->firebird->getProductionConnection();
-                $row  = $conn->selectOne("SELECT NOMBRE FROM CLIE03 WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
+                $row  = $conn->selectOne("SELECT NOMBRE FROM ".tb('CLIE')." WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
                 $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
             } elseif ($identity->firebird_vend_clave !== null) {
              $conn = $this->firebird->getProductionConnection();
-                $row  = $conn->selectOne("SELECT NOMBRE FROM VEND03 WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
+                $row  = $conn->selectOne("SELECT NOMBRE FROM ".tb('VEND')." WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
                 $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
             } elseif ($identity->firebird_prov_clave !== null) {
                $conn = $this->firebird->getProductionConnection();
-                $row  = $conn->selectOne("SELECT NOMBRE FROM PROV03 WHERE TRIM(CLAVE) = ?", [trim((string) $identity->firebird_prov_clave)]);
+                $row  = $conn->selectOne("SELECT NOMBRE FROM ".tb('PROV')." WHERE TRIM(CLAVE) = ?", [trim((string) $identity->firebird_prov_clave)]);
                 $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
             }
         } catch (\Throwable $e) {
@@ -1153,7 +1153,7 @@ class AgendarCitasVisitantesController extends Controller
             try {
                 $connection = $this->firebird->getProductionConnection();
                 $clieRow = $connection->selectOne(
-                    "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM CLIE03 WHERE CLAVE = ?",
+                    "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM ".tb('CLIE')." WHERE CLAVE = ?",
                     [$identity->firebird_clie_clave]
                 );
 
@@ -1179,7 +1179,7 @@ class AgendarCitasVisitantesController extends Controller
             try {
                 $connection = $this->firebird->getProductionConnection();
                 $vendRow = $connection->selectOne(
-                    "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM VEND03 WHERE CVE_VEND = ?",
+                    "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM ".tb('VEND')." WHERE CVE_VEND = ?",
                     [$identity->firebird_vend_clave]
                 );
 
@@ -1205,7 +1205,7 @@ class AgendarCitasVisitantesController extends Controller
             try {
                 $connection = $this->firebird->getProductionConnection();
                 $provRow = $connection->selectOne(
-                    "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM PROV03 WHERE CLAVE = ?",
+                    "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM ".tb('PROV')." WHERE CLAVE = ?",
                     [$identity->firebird_prov_clave]
                 );
 
@@ -1377,18 +1377,18 @@ class AgendarCitasVisitantesController extends Controller
                 $nombreProveedor = $tbRow->NOMBRE ?? 'Sin nombre';
             } elseif (!empty($identity->firebird_clie_clave)) {
             $conn = $this->firebird->getProductionConnection();
-                $row  = $conn->selectOne("SELECT NOMBRE FROM CLIE03 WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
+                $row  = $conn->selectOne("SELECT NOMBRE FROM ".tb('CLIE')." WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
 
                 $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
             } elseif ($identity->firebird_vend_clave !== null) {
                $conn = $this->firebird->getProductionConnection();
-                $row  = $conn->selectOne("SELECT NOMBRE FROM VEND03 WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
+                $row  = $conn->selectOne("SELECT NOMBRE FROM ".tb('VEND')." WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
 
                 $nombreProveedor = $row?->NOMBRE ?? 'Sin nombre';
             } elseif ($identity->firebird_prov_clave !== null) {
                $conn = $this->firebird->getProductionConnection();
                 $row  = $conn->selectOne(
-                    "SELECT NOMBRE FROM PROV03 WHERE TRIM(CLAVE) = ?",
+                    "SELECT NOMBRE FROM ".tb('PROV')." WHERE TRIM(CLAVE) = ?",
                     [trim((string) $identity->firebird_prov_clave)]
                 );
 

@@ -108,7 +108,7 @@ class UserService
         if ($esCliente && $identity->firebird_clie_clave) {
             try {
                 $clieRow = $this->firebirdService->getProductionConnection()
-                    ->selectOne('SELECT * FROM CLIE03 WHERE CLAVE = ?', [$identity->firebird_clie_clave]);
+                    ->selectOne('SELECT * FROM '.tb('CLIE').' WHERE CLAVE = ?', [$identity->firebird_clie_clave]);
             } catch (\Throwable $e) {
                 Log::error('UserService::me CLIE03 error', ['error' => $e->getMessage()]);
             }
@@ -120,7 +120,7 @@ class UserService
         if ($esVendedor && $identity->firebird_vend_clave) {
             try {
                 $vendRow = $this->firebirdService->getProductionConnection()
-                    ->selectOne('SELECT * FROM VEND03 WHERE CVE_VEND = ?', [$identity->firebird_vend_clave]);
+                    ->selectOne('SELECT * FROM '.tb('VEND').' WHERE CVE_VEND = ?', [$identity->firebird_vend_clave]);
             } catch (\Throwable $e) {
                 Log::error('UserService::me VEND03 error', ['error' => $e->getMessage()]);
             }
@@ -132,7 +132,7 @@ class UserService
         if ($esProveedor && $identity->firebird_prov_clave) {
             try {
                 $provRow = $this->firebirdService->getProductionConnection()
-                    ->selectOne('SELECT * FROM PROV03 WHERE CLAVE = ?', [$identity->firebird_prov_clave]);
+                    ->selectOne('SELECT * FROM '.tb('PROV').' WHERE CLAVE = ?', [$identity->firebird_prov_clave]);
             } catch (\Throwable $e) {
                 Log::error('UserService::me PROV03 error', ['error' => $e->getMessage()]);
             }

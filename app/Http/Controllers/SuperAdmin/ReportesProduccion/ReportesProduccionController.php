@@ -176,15 +176,15 @@ class ReportesProduccionController extends Controller
                     CAST(P.CANT * P.PREC AS NUMERIC(18,2)) AS SUBTOTAL,
                     CAST(P.TOTIMP4 AS NUMERIC(18,2)) AS IVA,
                    P.CANT * P.PREC AS TOTAL
-                FROM FACTF03 F
-                INNER JOIN PAR_FACTF03   P    ON P.CVE_DOC  = F.CVE_DOC
-                INNER JOIN CLIE03        C    ON C.CLAVE    = F.CVE_CLPV
-                INNER JOIN INVE03        I    ON I.CVE_ART  = P.CVE_ART
+                FROM ".tb('FACTF')." F
+                INNER JOIN ".tb('PAR_FACTF')."   P    ON P.CVE_DOC  = F.CVE_DOC
+                INNER JOIN ".tb('CLIE')."        C    ON C.CLAVE    = F.CVE_CLPV
+                INNER JOIN ".tb('INVE')."        I    ON I.CVE_ART  = P.CVE_ART
                 LEFT  JOIN ARTICULOS     AR   ON AR.CVE_ART = I.CVE_ART
                 LEFT  JOIN TEJIDO        T    ON T.ID       = AR.TEJ
                 LEFT  JOIN COMPOSICION   COMP ON COMP.ID    = AR.COMP
                 LEFT  JOIN HILATURA      HI   ON HI.ID      = AR.HILAT
-                LEFT  JOIN OBS_DOCF03    O    ON O.CVE_OBS  = P.CVE_OBS
+                LEFT  JOIN ".tb('OBS_DOCF')."    O    ON O.CVE_OBS  = P.CVE_OBS
                 WHERE
                     F.STATUS        = 'E'
                     AND F.fecha_doc >= ?
@@ -198,8 +198,8 @@ class ReportesProduccionController extends Controller
 
         //AND NOT EXISTS (
         //     SELECT 1
-        //     FROM FACTD03 FD
-        //     INNER JOIN PAR_FACTD03 PD ON PD.CVE_DOC = FD.CVE_DOC
+        //     FROM ".tb('FACTD')." FD
+        //     INNER JOIN ".tb('PAR_FACTD')." PD ON PD.CVE_DOC = FD.CVE_DOC
         //     WHERE FD.CVE_DOC  = F.DOC_SIG
         //     AND FD.STATUS   = 'E'
         //     AND PD.CVE_ART  = P.CVE_ART
@@ -210,7 +210,7 @@ class ReportesProduccionController extends Controller
             SELECT
                 F.CVE_DOC,
                 F.IMPORTE
-            FROM FACTV03 F
+            FROM ".tb('FACTV')." F
             WHERE F.STATUS = 'E'
             AND F.FECHA_DOC >= ?
             AND F.FECHA_DOC < ?
@@ -223,9 +223,9 @@ class ReportesProduccionController extends Controller
                 F.CAN_TOT,
                 F.IMPORTE,
                 I.LIN_PROD AS LINEA_PRODUCTO
-            FROM FACTV03 F
-            INNER JOIN PAR_FACTV03 P ON F.CVE_DOC = P.CVE_DOC
-            INNER JOIN INVE03 I ON I.CVE_ART = P.CVE_ART
+            FROM ".tb('FACTV')." F
+            INNER JOIN ".tb('PAR_FACTV')." P ON F.CVE_DOC = P.CVE_DOC
+            INNER JOIN ".tb('INVE')." I ON I.CVE_ART = P.CVE_ART
             WHERE F.STATUS = 'E'
             AND F.FECHA_DOC >= ?
             AND F.FECHA_DOC < ?
@@ -239,9 +239,9 @@ class ReportesProduccionController extends Controller
                 CAST(SUM(F.IMPORTE) AS NUMERIC(18,2))         AS TOTAL_NV,
                 P.UNI_VENTA                                   AS UM,
                 CAST(SUM(P.CANT) AS NUMERIC(18,2))            AS CANT
-            FROM FACTV03 F
-            INNER JOIN PAR_FACTV03 P ON F.CVE_DOC = P.CVE_DOC
-            INNER JOIN INVE03      I ON I.CVE_ART = P.CVE_ART
+            FROM ".tb('FACTV')." F
+            INNER JOIN ".tb('PAR_FACTV')." P ON F.CVE_DOC = P.CVE_DOC
+            INNER JOIN ".tb('INVE')."      I ON I.CVE_ART = P.CVE_ART
             WHERE F.STATUS = 'E'
             AND F.FECHA_DOC >= ?
             AND F.FECHA_DOC <= ?
@@ -273,11 +273,11 @@ class ReportesProduccionController extends Controller
             CAST(PD.CANT * PD.PREC AS NUMERIC(18,2))        AS SUBTOTAL,
             CAST(PD.TOTIMP4       AS NUMERIC(18,2))         AS IVA,
             PD.CANT * PD.PREC                               AS TOTAL
-        FROM FACTF03 F
-        INNER JOIN FACTD03       FD   ON FD.CVE_DOC  = F.DOC_SIG
-        INNER JOIN PAR_FACTD03   PD   ON PD.CVE_DOC  = FD.CVE_DOC
-        INNER JOIN CLIE03        C    ON C.CLAVE      = FD.CVE_CLPV
-        INNER JOIN INVE03        I    ON I.CVE_ART    = PD.CVE_ART
+        FROM ".tb('FACTF')." F
+        INNER JOIN ".tb('FACTD')."       FD   ON FD.CVE_DOC  = F.DOC_SIG
+        INNER JOIN ".tb('PAR_FACTD')."   PD   ON PD.CVE_DOC  = FD.CVE_DOC
+        INNER JOIN ".tb('CLIE')."        C    ON C.CLAVE      = FD.CVE_CLPV
+        INNER JOIN ".tb('INVE')."        I    ON I.CVE_ART    = PD.CVE_ART
         LEFT  JOIN ARTICULOS     AR   ON AR.CVE_ART   = I.CVE_ART
         LEFT  JOIN TEJIDO        T    ON T.ID          = AR.TEJ
        WHERE
@@ -654,15 +654,15 @@ class ReportesProduccionController extends Controller
                 CAST(SUM(P.TOTIMP4) AS NUMERIC(18,2))              AS IMPUESTOS,
                 I.LIN_PROD AS LINEA_PRODUCTO,
                 CAST(SUM(P.CANT * P.PREC * 1.16) AS NUMERIC(18,2)) AS TOTAL
-            FROM FACTF03 F
-            INNER JOIN PAR_FACTF03   P    ON P.CVE_DOC  = F.CVE_DOC
-            INNER JOIN CLIE03        C    ON C.CLAVE    = F.CVE_CLPV
-            INNER JOIN INVE03        I    ON I.CVE_ART  = P.CVE_ART
+            FROM ".tb('FACTF')." F
+            INNER JOIN ".tb('PAR_FACTF')."   P    ON P.CVE_DOC  = F.CVE_DOC
+            INNER JOIN ".tb('CLIE')."        C    ON C.CLAVE    = F.CVE_CLPV
+            INNER JOIN ".tb('INVE')."        I    ON I.CVE_ART  = P.CVE_ART
             LEFT  JOIN ARTICULOS     AR   ON AR.CVE_ART = I.CVE_ART
             LEFT  JOIN TEJIDO        T    ON T.ID       = AR.TEJ
             LEFT  JOIN COMPOSICION   COMP ON COMP.ID    = AR.COMP
             LEFT  JOIN HILATURA      HI   ON HI.ID      = AR.HILAT
-            LEFT  JOIN OBS_DOCF03    O    ON O.CVE_OBS  = P.CVE_OBS
+            LEFT  JOIN ".tb('OBS_DOCF')."    O    ON O.CVE_OBS  = P.CVE_OBS
             WHERE
                 F.STATUS        = 'E'
                 AND F.FECHA_DOC >= ?
@@ -671,8 +671,8 @@ class ReportesProduccionController extends Controller
                 AND I.LIN_PROD IN ('HILOS', 'PTPR')
                 AND NOT EXISTS (
                     SELECT 1
-                    FROM FACTD03 FD
-                    INNER JOIN PAR_FACTD03 PD ON PD.CVE_DOC = FD.CVE_DOC
+                    FROM ".tb('FACTD')." FD
+                    INNER JOIN ".tb('PAR_FACTD')." PD ON PD.CVE_DOC = FD.CVE_DOC
                     WHERE FD.CVE_DOC  = F.DOC_SIG
                     AND FD.STATUS   = 'E'
                     AND PD.CVE_ART  = P.CVE_ART
@@ -688,7 +688,7 @@ class ReportesProduccionController extends Controller
                 CAST(F.FECHA_DOC AS DATE)      AS FECHA,
                 COUNT(F.CVE_DOC)               AS REGISTROS,
                 CAST(SUM(F.IMPORTE) AS NUMERIC(18,2)) AS TOTAL_NV
-            FROM FACTV03 F
+            FROM ".tb('FACTV')." F
             WHERE F.STATUS = 'E'
               AND F.FECHA_DOC >= ?
               AND F.FECHA_DOC <= ?

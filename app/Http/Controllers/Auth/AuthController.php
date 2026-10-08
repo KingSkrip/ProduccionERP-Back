@@ -442,7 +442,7 @@ class AuthController extends Controller
                 if ($clieClave) {
                     try {
                         $clieRow = $connection->selectOne(
-                            'SELECT * FROM CLIE03 WHERE CLAVE = ?',
+                            'SELECT * FROM '.tb('CLIE').' WHERE CLAVE = ?',
                             [$clieClave]
                         );
 
@@ -481,7 +481,7 @@ class AuthController extends Controller
                 if ($vendClave) {
                     try {
                         $vendRow = $connection->selectOne(
-                            'SELECT * FROM VEND03 WHERE CVE_VEND = ?',
+                            'SELECT * FROM '.tb('VEND').' WHERE CVE_VEND = ?',
                             [$vendClave]
                         );
 
@@ -519,7 +519,7 @@ class AuthController extends Controller
                 if ($provClave) {
                     try {
                         $provRow = $connection->selectOne(
-                            'SELECT * FROM PROV03 WHERE CLAVE = ?',
+                            'SELECT * FROM '.tb('PROV').' WHERE CLAVE = ?',
                             [$provClave]
                         );
 
@@ -778,7 +778,7 @@ class AuthController extends Controller
             if ($clieClave) {
                 try {
                     $connection = $this->firebirdService->getProductionConnection();
-                    $clieRow = $connection->selectOne('SELECT * FROM CLIE03 WHERE CLAVE = ?', [$clieClave]);
+                    $clieRow = $connection->selectOne('SELECT * FROM '.tb('CLIE').' WHERE CLAVE = ?', [$clieClave]);
                 } catch (\Throwable $e) {
                     Log::error('⚠️ REFRESH_CLIENTE_DATA_ERROR', [
                         'clie_clave' => $clieClave,
@@ -794,7 +794,7 @@ class AuthController extends Controller
             if ($vendClave) {
                 try {
                     $connection = $this->firebirdService->getProductionConnection();
-                    $vendRow = $connection->selectOne('SELECT * FROM VEND03 WHERE CVE_VEND = ?', [$vendClave]);
+                    $vendRow = $connection->selectOne('SELECT * FROM '.tb('VEND').' WHERE CVE_VEND = ?', [$vendClave]);
                 } catch (\Throwable $e) {
                     Log::error('⚠️ REFRESH_VENDEDOR_DATA_ERROR', [
                         'vend_clave' => $vendClave,
@@ -810,7 +810,7 @@ class AuthController extends Controller
             if ($provClave) {
                 try {
                     $connection = $this->firebirdService->getProductionConnection();
-                    $provRow = $connection->selectOne('SELECT * FROM PROV03 WHERE CLAVE = ?', [$provClave]);
+                    $provRow = $connection->selectOne('SELECT * FROM '.tb('PROV').' WHERE CLAVE = ?', [$provClave]);
                 } catch (\Throwable $e) {
                     Log::error('⚠️ REFRESH_PROVEEDOR_DATA_ERROR', [
                         'prov_clave' => $provClave,

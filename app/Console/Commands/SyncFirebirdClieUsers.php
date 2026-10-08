@@ -2,18 +2,19 @@
 
 namespace App\Console\Commands;
 
-use App\Services\FirebirdComandEmpresaService;
 use App\Services\FirebirdConnectionService;
+use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Carbon\Carbon;
 
 class SyncFirebirdClieUsers extends Command
 {
     protected $signature = 'firebird:sync-clie-users {--vincular-existentes : Vincular usuarios existentes sin pivote} {--asignar-roles : Asignar roles faltantes a identidades sin rol}';
+
     protected $description = 'Sincroniza CLIE03 (clientes) con USUARIOS Firebird y pivote MySQL';
+
     protected FirebirdConnectionService $firebirdService;
 
     public function __construct(FirebirdConnectionService $firebirdService)
@@ -24,28 +25,30 @@ class SyncFirebirdClieUsers extends Command
 
     public function handle()
     {
-        $this->info("🔥 Iniciando sincronización de clientes CLIE03");
+        $this->info('🔥 Iniciando sincronización de clientes CLIE03');
 
         try {
             // 🎭 Si se pide solo asignar roles, ejecutar esa función y salir
             if ($this->option('asignar-roles')) {
                 $this->newLine();
-                $this->info("🎭 ASIGNANDO ROLES FALTANTES...");
+                $this->info('🎭 ASIGNANDO ROLES FALTANTES...');
                 $this->asignarRolesFaltantes();
-                $this->info("✅ Asignación de roles completada");
+                $this->info('✅ Asignación de roles completada');
+
                 return 0;
             }
 
             // 📊 Obtener clientes de CLIE03
-            $this->info("📊 Obteniendo clientes de CLIE03...");
+            $this->info('📊 Obteniendo clientes de CLIE03...');
             $clientes = $this->getClientesFromClie03();
 
             if ($clientes->isEmpty()) {
-                $this->error("❌ No se encontraron clientes en CLIE03");
+                $this->error('❌ No se encontraron clientes en CLIE03');
+
                 return 1;
             }
 
-            $this->info("👥 Clientes encontrados: " . $clientes->count());
+            $this->info('👥 Clientes encontrados: '.$clientes->count());
 
             // 📝 Obtener todos los usuarios existentes en Firebird USUARIOS
             $usuariosExistentes = $this->getUsuariosFromProduccion();
@@ -53,7 +56,7 @@ class SyncFirebirdClieUsers extends Command
             // 📌 Obtener pivotes existentes para CLIE03
             $pivotesExistentes = DB::connection('mysql')
                 ->table('users_firebird_identities')
-                ->where('firebird_clie_tabla', 'CLIE03')
+                ->where('firebird_clie_tabla', tb('CLIE'))
                 ->whereNotNull('firebird_clie_clave')
                 ->get()
                 ->keyBy('firebird_clie_clave');
@@ -61,13 +64,13 @@ class SyncFirebirdClieUsers extends Command
             // 🔗 Si se activa la opción, vincular usuarios existentes primero
             if ($this->option('vincular-existentes')) {
                 $this->newLine();
-                $this->info("🔗 VINCULANDO USUARIOS EXISTENTES SIN PIVOTE...");
+                $this->info('🔗 VINCULANDO USUARIOS EXISTENTES SIN PIVOTE...');
                 $this->vincularUsuariosExistentes(
                     $clientes,
                     $usuariosExistentes,
                     $pivotesExistentes
                 );
-                $this->info("✅ Vinculación completada");
+                $this->info('✅ Vinculación completada');
                 $this->newLine();
             }
 
@@ -86,12 +89,14 @@ class SyncFirebirdClieUsers extends Command
                 if (empty($nombreCompleto) || strlen($nombreCompleto) < 3) {
                     $this->warn("⚠️ Cliente CLAVE {$claveClie} sin nombre válido, omitido");
                     $omitidos++;
+
                     continue;
                 }
 
-                if (empty($correo) || !filter_var($correo, FILTER_VALIDATE_EMAIL)) {
+                if (empty($correo) || ! filter_var($correo, FILTER_VALIDATE_EMAIL)) {
                     $this->warn("⚠️ Cliente CLAVE {$claveClie} ({$nombreCompleto}) sin correo válido, omitido");
                     $omitidos++;
+
                     continue;
                 }
 
@@ -99,6 +104,7 @@ class SyncFirebirdClieUsers extends Command
                 if ($pivotesExistentes->has($claveClie)) {
                     $this->info("⏭️  Ya existe pivote para: {$nombreCompleto} (CLIE CLAVE: {$claveClie})");
                     $omitidos++;
+
                     continue;
                 }
 
@@ -121,6 +127,7 @@ class SyncFirebirdClieUsers extends Command
                     }
 
                     $omitidos++;
+
                     continue;
                 }
 
@@ -153,25 +160,26 @@ class SyncFirebirdClieUsers extends Command
 
             // 📊 Resumen
             $this->newLine();
-            $this->info("🎯 RESUMEN DE SINCRONIZACIÓN - CLIE03");
-            $this->info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            $this->info('🎯 RESUMEN DE SINCRONIZACIÓN - CLIE03');
+            $this->info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             $this->info("📋 Total procesados: {$procesados}");
             $this->info("✅ Nuevos usuarios: {$nuevos}");
             $this->info("⏭️  Omitidos (ya existían): {$omitidos}");
-            $this->info("🗄️  Tabla: CLIE03");
+            $this->info('🗄️  Tabla: CLIE03');
 
             // 🎭 Asignar roles faltantes automáticamente al final
             $this->newLine();
-            $this->info("🎭 Verificando roles faltantes...");
+            $this->info('🎭 Verificando roles faltantes...');
             $this->asignarRolesFaltantes();
 
             return 0;
         } catch (\Exception $e) {
-            $this->error("💥 Error fatal: " . $e->getMessage());
+            $this->error('💥 Error fatal: '.$e->getMessage());
             Log::error('Error en sync CLIE users', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return 1;
         }
     }
@@ -185,11 +193,11 @@ class SyncFirebirdClieUsers extends Command
             // 🔍 Obtener todas las identidades de CLIE03
             $identidadesClie = DB::connection('mysql')
                 ->table('users_firebird_identities')
-                ->where('firebird_clie_tabla', 'CLIE03')
+                ->where('firebird_clie_tabla', tb('CLIE'))
                 ->whereNotNull('firebird_clie_clave')
                 ->get();
 
-            $this->info("📊 Identidades de CLIE03 encontradas: " . $identidadesClie->count());
+            $this->info('📊 Identidades de CLIE03 encontradas: '.$identidadesClie->count());
 
             $rolesAsignados = 0;
             $yaTenianRol = 0;
@@ -203,6 +211,7 @@ class SyncFirebirdClieUsers extends Command
 
                 if ($tieneRol) {
                     $yaTenianRol++;
+
                     continue;
                 }
 
@@ -215,7 +224,7 @@ class SyncFirebirdClieUsers extends Command
                         'firebird_identity_id' => $identity->id,
                         'model_type' => 'firebird_identity',
                         'created_at' => Carbon::now(),
-                        'updated_at' => Carbon::now()
+                        'updated_at' => Carbon::now(),
                     ]);
 
                 $this->info("🎭 Rol asignado a identity ID: {$identity->id} (CLIE: {$identity->firebird_clie_clave})");
@@ -223,14 +232,14 @@ class SyncFirebirdClieUsers extends Command
             }
 
             $this->newLine();
-            $this->info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            $this->info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             $this->info("🎭 Roles asignados: {$rolesAsignados}");
             $this->info("✅ Ya tenían rol: {$yaTenianRol}");
-            $this->info("📊 Total identidades: " . $identidadesClie->count());
+            $this->info('📊 Total identidades: '.$identidadesClie->count());
         } catch (\Exception $e) {
-            $this->error("❌ Error al asignar roles faltantes: " . $e->getMessage());
+            $this->error('❌ Error al asignar roles faltantes: '.$e->getMessage());
             Log::error('Error al asignar roles faltantes CLIE', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -256,7 +265,7 @@ class SyncFirebirdClieUsers extends Command
             $correo = trim($cliente->EMAILPRED ?? '');
 
             // Validar correo
-            if (empty($correo) || !filter_var($correo, FILTER_VALIDATE_EMAIL)) {
+            if (empty($correo) || ! filter_var($correo, FILTER_VALIDATE_EMAIL)) {
                 continue;
             }
 
@@ -286,7 +295,7 @@ class SyncFirebirdClieUsers extends Command
             }
         }
 
-        $this->info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        $this->info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         $this->info("🔗 Usuarios vinculados: {$vinculados}");
         $this->info("⚠️  No encontrados en USUARIOS: {$noEncontrados}");
     }
@@ -297,7 +306,7 @@ class SyncFirebirdClieUsers extends Command
     protected function getClientesFromClie03()
     {
         return collect(
-            $this->firebirdService->getProductionConnection()->select("SELECT CLAVE, NOMBRE, EMAILPRED FROM CLIE03")
+            $this->firebirdService->getProductionConnection()->select('SELECT CLAVE, NOMBRE, EMAILPRED FROM '.tb('CLIE'))
         );
     }
 
@@ -307,7 +316,7 @@ class SyncFirebirdClieUsers extends Command
     protected function getUsuariosFromProduccion()
     {
         return collect(
-            $this->firebirdService->getProductionConnection()->select("SELECT ID, NOMBRE, CORREO FROM USUARIOS")
+            $this->firebirdService->getProductionConnection()->select('SELECT ID, NOMBRE, CORREO FROM USUARIOS')
         );
     }
 
@@ -347,14 +356,14 @@ class SyncFirebirdClieUsers extends Command
             $connection = $this->firebirdService->getProductionConnection();
 
             // 🔑 Obtener siguiente CLAVE
-            $maxClave = $connection->selectOne("SELECT MAX(CLAVE) as MAX_CLAVE FROM USUARIOS");
+            $maxClave = $connection->selectOne('SELECT MAX(CLAVE) as MAX_CLAVE FROM USUARIOS');
             $nuevaClave = ($maxClave->MAX_CLAVE ?? 0) + 1;
 
             // 🔐 Hash de contraseña
             $passwordHash = Hash::make($passwordPlain);
 
             // 📝 Insertar en USUARIOS
-            $connection->insert("
+            $connection->insert('
                 INSERT INTO USUARIOS (
                     CLAVE,
                     NOMBRE,
@@ -367,7 +376,7 @@ class SyncFirebirdClieUsers extends Command
                     SESIONES,
                     PERFIL
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ", [
+            ', [
                 $nuevaClave,
                 strtoupper(substr($nombre, 0, 31)),
                 strtolower(substr($correo, 0, 37)),
@@ -377,18 +386,19 @@ class SyncFirebirdClieUsers extends Command
                 1,
                 Carbon::now()->format('Y-m-d H:i:s'),
                 0,
-                0
+                0,
             ]);
 
             // 🔍 Obtener el ID generado por el trigger
-            $usuario = $connection->selectOne("SELECT ID FROM USUARIOS WHERE CLAVE = ?", [$nuevaClave]);
+            $usuario = $connection->selectOne('SELECT ID FROM USUARIOS WHERE CLAVE = ?', [$nuevaClave]);
 
             return $usuario->ID ?? null;
         } catch (\Exception $e) {
             Log::error('Error al crear usuario Firebird desde CLIE', [
                 'nombre' => $nombre,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -403,12 +413,13 @@ class SyncFirebirdClieUsers extends Command
             $exacto = DB::connection('mysql')
                 ->table('users_firebird_identities')
                 ->where('firebird_user_clave', $firebirdUserId)
-                ->where('firebird_clie_tabla', 'CLIE03')
+                ->where('firebird_clie_tabla', tb('CLIE'))
                 ->where('firebird_clie_clave', $firebirdClieClave)
                 ->first();
 
             if ($exacto) {
                 $this->info("⏭️  Pivote ya existe, omitiendo ID: {$exacto->id}");
+
                 return $exacto->id;
             }
 
@@ -420,6 +431,7 @@ class SyncFirebirdClieUsers extends Command
 
             if ($registroExistente) {
                 $this->warn("⚠️  Ya existe registro para user ID {$firebirdUserId}, omitiendo sin modificar");
+
                 return null;
             }
 
@@ -428,25 +440,27 @@ class SyncFirebirdClieUsers extends Command
                 ->table('users_firebird_identities')
                 ->insertGetId([
                     'firebird_user_clave' => $firebirdUserId,
-                    'firebird_tb_clave'   => null,
-                    'firebird_tb_tabla'   => null,
-                    'firebird_empresa'    => null,
+                    'firebird_tb_clave' => null,
+                    'firebird_tb_tabla' => null,
+                    'firebird_empresa' => null,
                     'firebird_clie_clave' => $firebirdClieClave,
-                    'firebird_clie_tabla' => 'CLIE03',
+                    'firebird_clie_tabla' => tb('CLIE'),
                     'firebird_vend_clave' => null,
                     'firebird_vend_tabla' => null,
-                    'created_at'          => now(),
+                    'created_at' => now(),
                 ]);
 
             $this->info("📌 Pivote creado con ID: {$id}");
+
             return $id;
         } catch (\Exception $e) {
-            $this->error("❌ Error al registrar pivote: " . $e->getMessage());
+            $this->error('❌ Error al registrar pivote: '.$e->getMessage());
             Log::error('Error al registrar pivote CLIE', [
                 'fb_user_id' => $firebirdUserId,
                 'clie_clave' => $firebirdClieClave,
-                'error'      => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -464,7 +478,8 @@ class SyncFirebirdClieUsers extends Command
                 ->exists();
 
             if ($yaTieneRol) {
-                $this->info("🎭 Usuario ya tiene rol asignado");
+                $this->info('🎭 Usuario ya tiene rol asignado');
+
                 return;
             }
 
@@ -477,16 +492,20 @@ class SyncFirebirdClieUsers extends Command
                     'firebird_identity_id' => $firebirdIdentityId,
                     'model_type' => 'firebird_identity',
                     'created_at' => Carbon::now(),
-                    'updated_at' => Carbon::now()
+                    'updated_at' => Carbon::now(),
                 ]);
 
-            $this->info("🎭 Rol asignado: CLIENTE (role_id: 6)");
+            $this->info('🎭 Rol asignado: CLIENTE (role_id: 6)');
         } catch (\Exception $e) {
             Log::error('Error al asignar rol cliente', [
                 'identity_id' => $firebirdIdentityId,
                 'nombre' => $nombreCompleto,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
     }
+
+
+
+
 }

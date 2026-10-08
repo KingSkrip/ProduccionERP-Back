@@ -9,7 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
-class ScannerEmbarquesController extends Controller
+class ScannerEmbarquesSinClienteController extends Controller
 {
     protected FirebirdConnectionService $firebird;
 
@@ -135,7 +135,7 @@ class ScannerEmbarquesController extends Controller
             'CODIGOENT' => (int) $codigoLimpio,
             'FECHAYHORA' => $fechaYHora,
             'PROCESADO' => 0,
-            'SINCLIENTE' => 0,
+            'SINCLIENTE' => 1,
         ];
         Log::info('💾 [scan] Insertando en INVFISVSTEOPT...', ['payload' => $payload]);
 

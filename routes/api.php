@@ -367,8 +367,8 @@ Route::prefix('checador')->middleware('jwt.auth')->group(function () {
 Route::prefix('reprocesos')->group(function () {
     Route::get('/', [ReprocesosController::class, 'index']);
     Route::get('/{id}', [ReprocesosController::class, 'show']);
+    Route::post('/{id}/liberar', [ReprocesosController::class, 'liberar']);
 });
-
 
 Route::get('mi-ip', function (Request $request) {
     $ip = $request->header('X-Real-IP')
@@ -431,7 +431,7 @@ Route::prefix('inventario')->middleware('jwt.auth')->group(function () {
 
     Route::get('/', [InventarioController::class, 'index']);
     Route::post('/escanearinventario', [InventarioController::class, 'escanear']);
-       Route::post('/embarques/resumen-pendientes', [ScannerResumenPendientesController::class, 'resumen']);
+    Route::post('/embarques/resumen-pendientes', [ScannerResumenPendientesController::class, 'resumen']);
 });
 
 Route::get('/test-reverb', function () {
@@ -442,7 +442,7 @@ Route::get('/test-reverb', function () {
         foto: null,
         tipo: 'entrada',
         hora: now()->format('H:i'),
-        firebirdEmpresa: '03',
+        firebirdEmpresa: config('firebird.company'),
         metodo: 'test',
     ));
 

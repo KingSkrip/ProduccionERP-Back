@@ -899,7 +899,7 @@ class VisitaService
         if ($identity->firebird_clie_clave !== null) {
             try {
                 $row = $this->firebird->getProductionConnection()
-                    ->selectOne("SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM CLIE03 WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
+                    ->selectOne("SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM ".tb('CLIE')." WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
 
                 if ($row) return $row->TELEFONO ?? $row->TEL ?? $row->CELULAR ?? $row->TEL_CELULAR ?? null;
             } catch (\Throwable $e) {
@@ -913,7 +913,7 @@ class VisitaService
         if ($identity->firebird_vend_clave !== null) {
             try {
                 $row = $this->firebird->getProductionConnection()
-                    ->selectOne("SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM VEND03 WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
+                    ->selectOne("SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM ".tb('VEND')." WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
 
                 if ($row) return $row->TELEFONO ?? $row->TEL ?? $row->CELULAR ?? $row->TEL_CELULAR ?? null;
             } catch (\Throwable $e) {
@@ -927,7 +927,7 @@ class VisitaService
         if ($identity->firebird_prov_clave !== null) {
             try {
                 $row = $this->firebird->getProductionConnection()
-                    ->selectOne("SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM PROV03 WHERE CLAVE = ?", [$identity->firebird_prov_clave]);
+                    ->selectOne("SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM ".tb('PROV')." WHERE CLAVE = ?", [$identity->firebird_prov_clave]);
 
                 if ($row) return $row->TELEFONO ?? $row->TEL ?? $row->CELULAR ?? $row->TEL_CELULAR ?? null;
             } catch (\Throwable $e) {
@@ -961,17 +961,17 @@ class VisitaService
             $conn = $this->firebird->getProductionConnection();
 
             if (!empty($identity->firebird_clie_clave)) {
-                $row = $conn->selectOne("SELECT NOMBRE FROM CLIE03 WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
+                $row = $conn->selectOne("SELECT NOMBRE FROM ".tb('CLIE')." WHERE CLAVE = ?", [$identity->firebird_clie_clave]);
                 return $row?->NOMBRE ?? 'Sin nombre';
             }
 
             if ($identity->firebird_vend_clave !== null) {
-                $row = $conn->selectOne("SELECT NOMBRE FROM VEND03 WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
+                $row = $conn->selectOne("SELECT NOMBRE FROM ".tb('VEND')." WHERE CVE_VEND = ?", [$identity->firebird_vend_clave]);
                 return $row?->NOMBRE ?? 'Sin nombre';
             }
 
             if ($identity->firebird_prov_clave !== null) {
-                $row = $conn->selectOne("SELECT NOMBRE FROM PROV03 WHERE TRIM(CLAVE) = ?", [trim((string) $identity->firebird_prov_clave)]);
+                $row = $conn->selectOne("SELECT NOMBRE FROM ".tb('PROV')." WHERE TRIM(CLAVE) = ?", [trim((string) $identity->firebird_prov_clave)]);
                 return $row?->NOMBRE ?? 'Sin nombre';
             }
         } catch (\Throwable $e) {

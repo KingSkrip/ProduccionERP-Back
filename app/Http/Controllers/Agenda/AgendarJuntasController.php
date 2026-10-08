@@ -3,30 +3,36 @@
 namespace App\Http\Controllers\Agenda;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\EnviarMensajeWhatsappJob;
 use App\Models\Cita;
 use App\Models\UserFirebirdIdentity;
+use App\Services\Agenda\CitaNotificacionService;
+use App\Services\Agenda\JuntaNotificacionService;
 use App\Services\ExcludedFirebirdUsersService;
 use App\Services\FirebirdConnectionService;
 use App\Services\FirebirdEmpresaManualService;
 use App\Services\UserService;
-use App\Jobs\EnviarMensajeWhatsappJob;
-use App\Services\Agenda\CitaNotificacionService;
-use App\Services\Agenda\JuntaNotificacionService;
 use Carbon\Carbon;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class AgendarJuntasController extends Controller
 {
     private string $jwtSecret;
+
     private UserService $userService;
+
     private CitaNotificacionService $notif;
+
     private static int $whatsappQueueIndex = 0;
+
     protected $firebird;
 
+    private JuntaNotificacionService $juntaNotif;
+
+    private FirebirdConnectionService $firebirdConn;
 
     public function __construct(
         FirebirdConnectionService $firebirdConnection,
@@ -36,11 +42,11 @@ class AgendarJuntasController extends Controller
         JuntaNotificacionService $juntaNotif,
         private ExcludedFirebirdUsersService $excludedUsers,
     ) {
-        $this->jwtSecret    = config('jwt.secret') ?? env('JWT_SECRET');
-        $this->userService  = $userService;
-        $this->notif        = $notif;
-        $this->juntaNotif   = $juntaNotif;
-        $this->firebird     = $firebird;
+        $this->jwtSecret = config('jwt.secret') ?? env('JWT_SECRET');
+        $this->userService = $userService;
+        $this->notif = $notif;
+        $this->juntaNotif = $juntaNotif;
+        $this->firebird = $firebird;
         $this->firebirdConn = $firebirdConnection;
     }
 
@@ -48,11 +54,15 @@ class AgendarJuntasController extends Controller
     private function getIdentityFromToken(Request $request): ?UserFirebirdIdentity
     {
         $token = $request->bearerToken();
-        if (!$token) return null;
+        if (! $token) {
+            return null;
+        }
 
         $decoded = JWT::decode($token, new Key($this->jwtSecret, 'HS256'));
         $sub = (int) $decoded->sub;
-        if (!$sub) return null;
+        if (! $sub) {
+            return null;
+        }
 
         return UserFirebirdIdentity::where('firebird_user_clave', $sub)->first();
     }
@@ -63,7 +73,7 @@ class AgendarJuntasController extends Controller
     public function index(Request $request)
     {
         $identity = $this->getIdentityFromToken($request);
-        if (!$identity) {
+        if (! $identity) {
             return response()->json(['message' => 'No autenticado'], 401);
         }
 
@@ -87,31 +97,31 @@ class AgendarJuntasController extends Controller
     public function store(Request $request)
     {
         $identity = $this->getIdentityFromToken($request);
-        if (!$identity) {
+        if (! $identity) {
             return response()->json(['message' => 'No autenticado'], 401);
         }
 
         $request->validate([
-            'fecha'           => 'required|date',
-            'hora_inicio'     => 'required',
-            'hora_fin'        => 'required|after:hora_inicio',
-            'participantes'   => 'required|array|min:1',
+            'fecha' => 'required|date',
+            'hora_inicio' => 'required',
+            'hora_fin' => 'required|after:hora_inicio',
+            'participantes' => 'required|array|min:1',
             'participantes.*' => 'required|integer',
-            'asunto'          => 'nullable|string|max:255',
-            'sala'            => 'nullable|string|max:100',
-            'estado'          => 'nullable|in:pendiente,confirmada,cancelada',
-            'notas'           => 'nullable|string',
+            'asunto' => 'nullable|string|max:255',
+            'sala' => 'nullable|string|max:100',
+            'estado' => 'nullable|in:pendiente,confirmada,cancelada',
+            'notas' => 'nullable|string',
         ], [
             'participantes.required' => 'Debes seleccionar al menos un participante.',
-            'participantes.min'      => 'Debes seleccionar al menos un participante.',
-            'hora_fin.after'         => 'La hora de fin debe ser mayor que la hora de inicio.',
-            'fecha.required'         => 'La fecha es obligatoria.',
+            'participantes.min' => 'Debes seleccionar al menos un participante.',
+            'hora_fin.after' => 'La hora de fin debe ser mayor que la hora de inicio.',
+            'fecha.required' => 'La fecha es obligatoria.',
         ]);
 
         $idOrganizador = $identity->id;
 
         $fechaHoraInicio = new \DateTime("{$request->fecha}T{$request->hora_inicio}:00");
-        if ($fechaHoraInicio <= new \DateTime()) {
+        if ($fechaHoraInicio <= new \DateTime) {
             return response()->json([
                 'message' => 'No puedes agendar una junta en una fecha u hora que ya pasó.',
                 'errores' => [],
@@ -131,7 +141,7 @@ class AgendarJuntasController extends Controller
             ], 422);
         }
 
-        $meData            = $this->userService->me($request);
+        $meData = $this->userService->me($request);
         $nombreOrganizador = $meData['user']['TB']->NOMBRE
             ?? $meData['user']['CLIE']->NOMBRE
             ?? $meData['user']['VEND']->NOMBRE
@@ -140,20 +150,22 @@ class AgendarJuntasController extends Controller
             ?? 'Un colaborador';
         $telefonoOrganizador = $this->obtenerTelefonoUsuario($meData['user']);
 
-        $juntasCreadas  = [];
+        $juntasCreadas = [];
         $participantesOk = []; // ← acumulamos los que sí se crearon
-        $errores        = [];
+        $errores = [];
 
         foreach ($request->participantes as $idParticipante) {
             $participanteIdentity = UserFirebirdIdentity::where('firebird_user_clave', $idParticipante)->first();
 
-            if (!$participanteIdentity) {
+            if (! $participanteIdentity) {
                 $errores[] = "Participante con id {$idParticipante} no encontrado.";
+
                 continue;
             }
 
             if (is_null($participanteIdentity->firebird_tb_clave)) {
                 $errores[] = "El participante ID {$idParticipante} no es un usuario interno.";
+
                 continue;
             }
 
@@ -170,39 +182,40 @@ class AgendarJuntasController extends Controller
                 $nombrePartic = $participanteIdentity->firebirdUser->NOMBRE ?? "ID {$idParticipante}";
                 $horaIniCruce = Carbon::parse($cruce->hora_inicio)->format('g:i a');
                 $horaFinCruce = Carbon::parse($cruce->hora_fin)->format('g:i a');
-                $errores[]    = "{$nombrePartic} ya tiene una cita de {$horaIniCruce} a {$horaFinCruce}.";
+                $errores[] = "{$nombrePartic} ya tiene una cita de {$horaIniCruce} a {$horaFinCruce}.";
+
                 continue;
             }
 
             $nombrePartic = $participanteIdentity->firebirdUser->NOMBRE ?? null;
 
             $junta = Cita::create([
-                'cita_type_id'     => 2,
-                'id_user'          => $idOrganizador,
-                'id_visitante'     => $participanteIdentity->id,
+                'cita_type_id' => 2,
+                'id_user' => $idOrganizador,
+                'id_visitante' => $participanteIdentity->id,
                 'nombre_visitante' => $nombrePartic,
-                'fecha'            => $request->fecha,
-                'hora_inicio'      => $request->hora_inicio,
-                'hora_fin'         => $request->hora_fin,
-                'motivo'           => $request->asunto,
-                'estado'           => $request->estado ?? 'pendiente',
-                'notas'            => $request->notas,
-                'con_vehiculo'     => false,
-                'sala'             => $request->sala,
-                'created_at'       => now(),
+                'fecha' => $request->fecha,
+                'hora_inicio' => $request->hora_inicio,
+                'hora_fin' => $request->hora_fin,
+                'motivo' => $request->asunto,
+                'estado' => $request->estado ?? 'pendiente',
+                'notas' => $request->notas,
+                'con_vehiculo' => false,
+                'sala' => $request->sala,
+                'created_at' => now(),
             ]);
 
             $juntasCreadas[] = $junta;
 
             // ← Acumulamos nombre + teléfono de cada participante creado con éxito
             $participantesOk[] = [
-                'nombre'   => $nombrePartic ?? "ID {$idParticipante}",
+                'nombre' => $nombrePartic ?? "ID {$idParticipante}",
                 'telefono' => $this->obtenerTelefonoDeIdentity($participanteIdentity),
             ];
 
             Log::info('✅ JUNTA_CREADA', [
-                'junta_id'     => $junta->id,
-                'organizador'  => $idOrganizador,
+                'junta_id' => $junta->id,
+                'organizador' => $idOrganizador,
                 'participante' => $idParticipante,
             ]);
         }
@@ -235,12 +248,11 @@ class AgendarJuntasController extends Controller
         }
 
         return response()->json([
-            'message' => count($juntasCreadas) . ' junta(s) registrada(s) con éxito.',
-            'juntas'  => $juntasCreadas,
+            'message' => count($juntasCreadas).' junta(s) registrada(s) con éxito.',
+            'juntas' => $juntasCreadas,
             'errores' => $errores,
         ], 201);
     }
-
 
     /* =============================================================
  | ✏️ UPDATE — editar junta
@@ -248,7 +260,7 @@ class AgendarJuntasController extends Controller
     public function update(Request $request, $id)
     {
         $identity = $this->getIdentityFromToken($request);
-        if (!$identity) {
+        if (! $identity) {
             return response()->json(['message' => 'No autenticado'], 401);
         }
 
@@ -256,30 +268,30 @@ class AgendarJuntasController extends Controller
             ->where('id_user', $identity->id)
             ->find($id);
 
-        if (!$junta) {
+        if (! $junta) {
             return response()->json(['message' => 'Junta no encontrada'], 404);
         }
 
         $request->validate([
-            'fecha'           => 'sometimes|required|date',
-            'hora_inicio'     => 'sometimes|required',
-            'hora_fin'        => 'sometimes|required|after:hora_inicio',
-            'participantes'   => 'sometimes|array|min:1',
+            'fecha' => 'sometimes|required|date',
+            'hora_inicio' => 'sometimes|required',
+            'hora_fin' => 'sometimes|required|after:hora_inicio',
+            'participantes' => 'sometimes|array|min:1',
             'participantes.*' => 'integer',
-            'asunto'          => 'nullable|string|max:255',
-            'sala'            => 'nullable|string|max:100',
-            'estado'          => 'nullable|in:pendiente,confirmada,cancelada',
-            'notas'           => 'nullable|string',
+            'asunto' => 'nullable|string|max:255',
+            'sala' => 'nullable|string|max:100',
+            'estado' => 'nullable|in:pendiente,confirmada,cancelada',
+            'notas' => 'nullable|string',
         ], [
             'hora_fin.after' => 'La hora de fin debe ser mayor que la hora de inicio.',
             'fecha.required' => 'La fecha es obligatoria.',
         ]);
 
         $idOrganizador = $identity->id;
-        $fecha         = $request->fecha       ?? $junta->fecha;
-        $hora_inicio   = $request->hora_inicio ?? $junta->hora_inicio;
-        $hora_fin      = $request->hora_fin    ?? $junta->hora_fin;
-        $sala          = $request->sala        ?? $junta->sala;
+        $fecha = $request->fecha ?? $junta->fecha;
+        $hora_inicio = $request->hora_inicio ?? $junta->hora_inicio;
+        $hora_fin = $request->hora_fin ?? $junta->hora_fin;
+        $sala = $request->sala ?? $junta->sala;
 
         // ── Obtener TODOS los ids de esta junta (misma fecha/hora/organizador) ──
         $idsJuntaActual = Cita::where('cita_type_id', 2)
@@ -303,7 +315,7 @@ class AgendarJuntasController extends Controller
             ], 422);
         }
 
-        $meData            = $this->userService->me($request);
+        $meData = $this->userService->me($request);
         $nombreOrganizador = $meData['user']['TB']->NOMBRE
             ?? $meData['user']['CLIE']->NOMBRE
             ?? $meData['user']['VEND']->NOMBRE
@@ -314,8 +326,8 @@ class AgendarJuntasController extends Controller
 
         if ($request->has('participantes')) {
             $juntasActualizadas = [];
-            $participantesOk    = [];
-            $errores            = [];
+            $participantesOk = [];
+            $errores = [];
 
             // ── NUEVO: Eliminar filas de participantes que ya no están en la lista ──
             // Obtener las identities de los participantes que SÍ vienen en el request
@@ -331,13 +343,15 @@ class AgendarJuntasController extends Controller
             foreach ($request->participantes as $idParticipante) {
                 $participanteIdentity = UserFirebirdIdentity::where('firebird_user_clave', $idParticipante)->first();
 
-                if (!$participanteIdentity) {
+                if (! $participanteIdentity) {
                     $errores[] = "Participante con id {$idParticipante} no encontrado.";
+
                     continue;
                 }
 
                 if (is_null($participanteIdentity->firebird_tb_clave)) {
                     $errores[] = "El participante ID {$idParticipante} no es un usuario interno.";
+
                     continue;
                 }
 
@@ -355,28 +369,29 @@ class AgendarJuntasController extends Controller
                     $nombrePartic = $participanteIdentity->firebirdUser->NOMBRE ?? "ID {$idParticipante}";
                     $horaIniCruce = Carbon::parse($cruce->hora_inicio)->format('g:i a');
                     $horaFinCruce = Carbon::parse($cruce->hora_fin)->format('g:i a');
-                    $errores[]    = "{$nombrePartic} ya tiene una cita de {$horaIniCruce} a {$horaFinCruce}.";
+                    $errores[] = "{$nombrePartic} ya tiene una cita de {$horaIniCruce} a {$horaFinCruce}.";
+
                     continue;
                 }
 
                 $nombrePartic = $participanteIdentity->firebirdUser->NOMBRE ?? null;
 
                 $junta->update([
-                    'id_visitante'     => $participanteIdentity->id,
+                    'id_visitante' => $participanteIdentity->id,
                     'nombre_visitante' => $nombrePartic,
-                    'fecha'            => $fecha,
-                    'hora_inicio'      => $hora_inicio,
-                    'hora_fin'         => $hora_fin,
-                    'motivo'           => $request->asunto ?? $junta->motivo,
-                    'estado'           => $request->estado ?? $junta->estado,
-                    'notas'            => $request->notas  ?? $junta->notas,
-                    'sala'             => $sala,
+                    'fecha' => $fecha,
+                    'hora_inicio' => $hora_inicio,
+                    'hora_fin' => $hora_fin,
+                    'motivo' => $request->asunto ?? $junta->motivo,
+                    'estado' => $request->estado ?? $junta->estado,
+                    'notas' => $request->notas ?? $junta->notas,
+                    'sala' => $sala,
                 ]);
 
                 $juntasActualizadas[] = $junta->fresh();
 
                 $participantesOk[] = [
-                    'nombre'   => $nombrePartic ?? "ID {$idParticipante}",
+                    'nombre' => $nombrePartic ?? "ID {$idParticipante}",
                     'telefono' => $this->obtenerTelefonoDeIdentity($participanteIdentity),
                 ];
             }
@@ -398,7 +413,7 @@ class AgendarJuntasController extends Controller
                     horaFin: $this->juntaNotif->formatHora($hora_fin),
                     asunto: $request->asunto ?? $junta->motivo,
                     sala: $sala,
-                    notas: $request->notas  ?? $junta->notas,
+                    notas: $request->notas ?? $junta->notas,
                     tipo: 'edicion',
                 );
             } catch (\Throwable $e) {
@@ -406,30 +421,30 @@ class AgendarJuntasController extends Controller
             }
 
             return response()->json([
-                'message' => count($juntasActualizadas) . ' junta(s) actualizada(s) con éxito.',
-                'juntas'  => $juntasActualizadas,
+                'message' => count($juntasActualizadas).' junta(s) actualizada(s) con éxito.',
+                'juntas' => $juntasActualizadas,
                 'errores' => $errores,
             ]);
         }
 
         // ── SIN cambio de participantes ──
-        $participanteActual  = UserFirebirdIdentity::find($junta->id_visitante);
-        $nombreParticActual  = $junta->nombre_visitante ?? 'el participante';
-        $asunto              = $request->asunto ?? $junta->motivo;
+        $participanteActual = UserFirebirdIdentity::find($junta->id_visitante);
+        $nombreParticActual = $junta->nombre_visitante ?? 'el participante';
+        $asunto = $request->asunto ?? $junta->motivo;
 
         $junta->update([
-            'fecha'       => $fecha,
+            'fecha' => $fecha,
             'hora_inicio' => $hora_inicio,
-            'hora_fin'    => $hora_fin,
-            'motivo'      => $asunto,
-            'estado'      => $request->estado ?? $junta->estado,
-            'notas'       => $request->notas  ?? $junta->notas,
-            'sala'        => $sala,
+            'hora_fin' => $hora_fin,
+            'motivo' => $asunto,
+            'estado' => $request->estado ?? $junta->estado,
+            'notas' => $request->notas ?? $junta->notas,
+            'sala' => $sala,
         ]);
 
         try {
             $participantesOk = [[
-                'nombre'   => $nombreParticActual,
+                'nombre' => $nombreParticActual,
                 'telefono' => $participanteActual
                     ? $this->obtenerTelefonoDeIdentity($participanteActual)
                     : null,
@@ -453,10 +468,9 @@ class AgendarJuntasController extends Controller
 
         return response()->json([
             'message' => 'Junta actualizada con éxito.',
-            'junta'   => $junta->fresh(),
+            'junta' => $junta->fresh(),
         ]);
     }
-
 
     /* =============================================================
  | 🗑️ DESTROY — eliminar junta
@@ -464,7 +478,7 @@ class AgendarJuntasController extends Controller
     public function destroy(Request $request, $id)
     {
         $identity = $this->getIdentityFromToken($request);
-        if (!$identity) {
+        if (! $identity) {
             return response()->json(['message' => 'No autenticado'], 401);
         }
 
@@ -472,11 +486,11 @@ class AgendarJuntasController extends Controller
             ->where('id_user', $identity->id)
             ->find($id);
 
-        if (!$junta) {
+        if (! $junta) {
             return response()->json(['message' => 'Junta no encontrada'], 404);
         }
 
-        $meData   = $this->userService->me($request);
+        $meData = $this->userService->me($request);
         $nombreOrg = $meData['user']['TB']->NOMBRE
             ?? $meData['user']['CLIE']->NOMBRE
             ?? $meData['user']['VEND']->NOMBRE
@@ -486,10 +500,10 @@ class AgendarJuntasController extends Controller
 
         // Recolectar participante(s) antes de borrar
         $participantesOk = [];
-        $participante    = UserFirebirdIdentity::find($junta->id_visitante);
+        $participante = UserFirebirdIdentity::find($junta->id_visitante);
         if ($participante) {
             $participantesOk[] = [
-                'nombre'   => $junta->nombre_visitante ?? $participante->firebirdUser->NOMBRE ?? 'Participante',
+                'nombre' => $junta->nombre_visitante ?? $participante->firebirdUser->NOMBRE ?? 'Participante',
                 'telefono' => $this->obtenerTelefonoDeIdentity($participante),
             ];
         }
@@ -519,7 +533,7 @@ class AgendarJuntasController extends Controller
     public function updateEstado(Request $request, $id)
     {
         $identity = $this->getIdentityFromToken($request);
-        if (!$identity) {
+        if (! $identity) {
             return response()->json(['message' => 'No autenticado'], 401);
         }
 
@@ -534,7 +548,7 @@ class AgendarJuntasController extends Controller
             })
             ->find($id);
 
-        if (!$junta) {
+        if (! $junta) {
             return response()->json(['message' => 'Junta no encontrada'], 404);
         }
 
@@ -545,24 +559,24 @@ class AgendarJuntasController extends Controller
         $estadoAnterior = $junta->estado;
         $junta->update(['estado' => $request->estado]);
 
-        $organizadorIdentity   = UserFirebirdIdentity::find($junta->id_user);
-        $participanteIdentity  = UserFirebirdIdentity::find($junta->id_visitante);
-        $nombreOrg             = $organizadorIdentity?->firebirdUser->NOMBRE  ?? 'Organizador';
-        $nombrePartic          = $participanteIdentity?->firebirdUser->NOMBRE ?? 'Participante';
-        $telefonoOrg           = $organizadorIdentity  ? $this->obtenerTelefonoDeIdentity($organizadorIdentity)  : null;
-        $telefonoPartic        = $participanteIdentity ? $this->obtenerTelefonoDeIdentity($participanteIdentity) : null;
+        $organizadorIdentity = UserFirebirdIdentity::find($junta->id_user);
+        $participanteIdentity = UserFirebirdIdentity::find($junta->id_visitante);
+        $nombreOrg = $organizadorIdentity?->firebirdUser->NOMBRE ?? 'Organizador';
+        $nombrePartic = $participanteIdentity?->firebirdUser->NOMBRE ?? 'Participante';
+        $telefonoOrg = $organizadorIdentity ? $this->obtenerTelefonoDeIdentity($organizadorIdentity) : null;
+        $telefonoPartic = $participanteIdentity ? $this->obtenerTelefonoDeIdentity($participanteIdentity) : null;
 
-        $fecha   = Carbon::parse($junta->fecha)->locale('es')->isoFormat('D [de] MMMM [de] YYYY');
+        $fecha = Carbon::parse($junta->fecha)->locale('es')->isoFormat('D [de] MMMM [de] YYYY');
         $horaIni = Carbon::parse($junta->hora_inicio)->format('g:i a');
         $horaFin = Carbon::parse($junta->hora_fin)->format('g:i a');
 
         $yoSoyOrganizador = $identity->id === $junta->id_user;
-        $quienCambia      = $yoSoyOrganizador ? $nombreOrg : $nombrePartic;
-        $miContraparte    = $yoSoyOrganizador ? $nombrePartic : $nombreOrg;
-        $mensajeEstado    = "Estado: *{$estadoAnterior}* → *{$request->estado}*";
+        $quienCambia = $yoSoyOrganizador ? $nombreOrg : $nombrePartic;
+        $miContraparte = $yoSoyOrganizador ? $nombrePartic : $nombreOrg;
+        $mensajeEstado = "Estado: *{$estadoAnterior}* → *{$request->estado}*";
 
-        $msgPropio    = "✅ Cambiaste el estado de la junta con *{$miContraparte}* del día *{$fecha}* de *{$horaIni}* a *{$horaFin}*.\n\n{$mensajeEstado}";
-        $msgTercero   = "⚠️ *{$quienCambia}* cambió el estado de la junta contigo del día *{$fecha}* de *{$horaIni}* a *{$horaFin}*.\n\n{$mensajeEstado}";
+        $msgPropio = "✅ Cambiaste el estado de la junta con *{$miContraparte}* del día *{$fecha}* de *{$horaIni}* a *{$horaFin}*.\n\n{$mensajeEstado}";
+        $msgTercero = "⚠️ *{$quienCambia}* cambió el estado de la junta contigo del día *{$fecha}* de *{$horaIni}* a *{$horaFin}*.\n\n{$mensajeEstado}";
 
         try {
             if ($telefonoOrg) {
@@ -574,7 +588,7 @@ class AgendarJuntasController extends Controller
 
         try {
             if ($telefonoPartic) {
-                $this->enviarWhatsapp($telefonoPartic, !$yoSoyOrganizador ? $msgPropio : $msgTercero);
+                $this->enviarWhatsapp($telefonoPartic, ! $yoSoyOrganizador ? $msgPropio : $msgTercero);
             }
         } catch (\Throwable $e) {
             Log::error('❌ JUNTA_ESTADO_WHATSAPP_PARTIC', ['error' => $e->getMessage()]);
@@ -582,7 +596,7 @@ class AgendarJuntasController extends Controller
 
         return response()->json([
             'message' => 'Estado actualizado.',
-            'junta'   => $junta->fresh(),
+            'junta' => $junta->fresh(),
         ]);
     }
 
@@ -596,7 +610,7 @@ class AgendarJuntasController extends Controller
             ->onQueue('whatsapp');
 
         Log::info('📨 JUNTA WhatsApp encolado', [
-            'telefono'    => $telefono,
+            'telefono' => $telefono,
             'queue_index' => self::$whatsappQueueIndex,
         ]);
 
@@ -608,19 +622,25 @@ class AgendarJuntasController extends Controller
         $tipo = $userData['tipo_usuario'] ?? null;
 
         $map = [
-            'empleado'  => ['TB',   ['TELEFONO', 'TEL', 'TEL_CELULAR', 'CELULAR', 'TEL_PARTICULAR']],
-            'cliente'   => ['CLIE', ['TELEFONO', 'TEL', 'CELULAR', 'TEL_CELULAR']],
-            'vendedor'  => ['VEND', ['TELEFONO', 'TEL', 'CELULAR', 'TEL_CELULAR']],
+            'empleado' => ['TB',   ['TELEFONO', 'TEL', 'TEL_CELULAR', 'CELULAR', 'TEL_PARTICULAR']],
+            'cliente' => ['CLIE', ['TELEFONO', 'TEL', 'CELULAR', 'TEL_CELULAR']],
+            'vendedor' => ['VEND', ['TELEFONO', 'TEL', 'CELULAR', 'TEL_CELULAR']],
         ];
 
-        if (!isset($map[$tipo])) return null;
+        if (! isset($map[$tipo])) {
+            return null;
+        }
 
         [$key, $campos] = $map[$tipo];
         $registro = $userData[$key] ?? null;
-        if (!$registro) return null;
+        if (! $registro) {
+            return null;
+        }
 
         foreach ($campos as $campo) {
-            if (!empty($registro->$campo)) return $registro->$campo;
+            if (! empty($registro->$campo)) {
+                return $registro->$campo;
+            }
         }
 
         return null;
@@ -633,64 +653,67 @@ class AgendarJuntasController extends Controller
         try {
             // Empleado (TB)
             if ($identity->firebird_tb_clave !== null) {
-                $empresa     = $identity->firebird_empresa ?? '04';
-                $tbClave     = trim((string) $identity->firebird_tb_clave);
+                $empresa = $identity->firebird_empresa ?? '04';
+                $tbClave = trim((string) $identity->firebird_tb_clave);
                 $firebirdNoi = new FirebirdEmpresaManualService($empresa, 'SRVNOI');
-                $tbRow       = $firebirdNoi->getOperationalTable('TB')
-                    ->keyBy(fn($r) => trim((string) $r->CLAVE))
+                $tbRow = $firebirdNoi->getOperationalTable('TB')
+                    ->keyBy(fn ($r) => trim((string) $r->CLAVE))
                     ->get($tbClave);
 
                 if ($tbRow) {
                     foreach ($campos as $c) {
-                        if (!empty($tbRow->$c)) return $tbRow->$c;
+                        if (! empty($tbRow->$c)) {
+                            return $tbRow->$c;
+                        }
                     }
                 }
+
                 return null;
             }
 
-            $conn  = $this->firebird->getProductionConnection();
+            $conn = $this->firebird->getProductionConnection();
             $table = null;
             $where = null;
             $param = null;
 
             if ($identity->firebird_clie_clave !== null) {
-                $table = 'CLIE03';
+                $table = tb('CLIE');
                 $where = 'CLAVE';
                 $param = $identity->firebird_clie_clave;
             } elseif ($identity->firebird_vend_clave !== null) {
-                $table = 'VEND03';
+                $table = tb('VEND');
                 $where = 'CVE_VEND';
                 $param = $identity->firebird_vend_clave;
             } elseif ($identity->firebird_prov_clave !== null) {
-                $table = 'PROV03';
+                $table = tb('PROV');
                 $where = 'TRIM(CLAVE)';
                 $param = trim((string) $identity->firebird_prov_clave);
             }
 
             if ($table) {
-                $row = $conn->selectOne("SELECT " . implode(',', $campos) . " FROM {$table} WHERE {$where} = ?", [$param]);
+                $row = $conn->selectOne('SELECT '.implode(',', $campos)." FROM {$table} WHERE {$where} = ?", [$param]);
                 if ($row) {
                     foreach ($campos as $c) {
-                        if (!empty($row->$c)) return $row->$c;
+                        if (! empty($row->$c)) {
+                            return $row->$c;
+                        }
                     }
                 }
             }
         } catch (\Throwable $e) {
             Log::error('❌ JUNTA_TELEFONO_IDENTITY_ERROR', [
                 'identity_id' => $identity->id,
-                'error'       => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
         }
 
         return null;
     }
 
-
-
     public function updateAsistencia(Request $request, $id)
     {
         $identity = $this->getIdentityFromToken($request);
-        if (!$identity) {
+        if (! $identity) {
             return response()->json(['message' => 'No autenticado'], 401);
         }
 
@@ -703,7 +726,7 @@ class AgendarJuntasController extends Controller
             ->where('id_visitante', $identity->id)
             ->find($id);
 
-        if (!$junta) {
+        if (! $junta) {
             return response()->json(['message' => 'Junta no encontrada o no eres participante'], 404);
         }
 
@@ -722,11 +745,11 @@ class AgendarJuntasController extends Controller
                 $this->enviarWhatsapp(
                     $telefonoOrg,
                     "{$emoji} *{$nombrePartic}* {$texto} a la junta del *"
-                        . $this->juntaNotif->formatFecha($junta->fecha)
-                        . "* de "
-                        . $this->juntaNotif->formatHora($junta->hora_inicio)
-                        . " a "
-                        . $this->juntaNotif->formatHora($junta->hora_fin)
+                        .$this->juntaNotif->formatFecha($junta->fecha)
+                        .'* de '
+                        .$this->juntaNotif->formatHora($junta->hora_inicio)
+                        .' a '
+                        .$this->juntaNotif->formatHora($junta->hora_fin)
                 );
             }
         } catch (\Throwable $e) {
@@ -734,8 +757,8 @@ class AgendarJuntasController extends Controller
         }
 
         return response()->json([
-            'message'    => 'Asistencia actualizada.',
-            'junta'      => $junta->fresh(),
+            'message' => 'Asistencia actualizada.',
+            'junta' => $junta->fresh(),
         ]);
     }
 }

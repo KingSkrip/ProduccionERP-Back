@@ -310,7 +310,7 @@ class WhatsAppNotificationService
         if ($identity->firebird_clie_clave !== null) {
             $conn = $this->getFirebirdConnection();
             $row  = $conn->selectOne(
-                "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM CLIE03 WHERE CLAVE = ?",
+                "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM ".tb('CLIE')." WHERE CLAVE = ?",
                 [$identity->firebird_clie_clave]
             );
 
@@ -332,7 +332,7 @@ class WhatsAppNotificationService
         if ($identity->firebird_vend_clave !== null) {
             $conn = $this->getFirebirdConnection();
             $row  = $conn->selectOne(
-                "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM VEND03 WHERE CVE_VEND = ?",
+                "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM ".tb('VEND')." WHERE CVE_VEND = ?",
                 [$identity->firebird_vend_clave]
             );
 
@@ -354,7 +354,7 @@ class WhatsAppNotificationService
         if ($identity->firebird_prov_clave !== null) {
             $conn = $this->getFirebirdConnection();
             $row  = $conn->selectOne(
-                "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM PROV03 WHERE TRIM(CLAVE) = ?",
+                "SELECT TELEFONO, TEL, CELULAR, TEL_CELULAR FROM ".tb('PROV')." WHERE TRIM(CLAVE) = ?",
                 [trim((string) $identity->firebird_prov_clave)]
             );
 

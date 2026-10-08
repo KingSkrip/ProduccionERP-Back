@@ -96,7 +96,7 @@ class PedidosAgentesController extends Controller
         $identity = DB::connection('mysql')
             ->table('users_firebird_identities')
             ->where('firebird_user_clave', $user->ID)
-            ->where('firebird_vend_tabla', 'VEND03')
+          ->where('firebird_vend_tabla', tb('VEND'))
             ->whereNotNull('firebird_vend_clave')
             ->first();
 

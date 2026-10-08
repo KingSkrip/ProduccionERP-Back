@@ -536,9 +536,9 @@ class JuntaService
 
             $conn  = $this->firebird->getProductionConnection();
             [$table, $where, $param] = match (true) {
-                $identity->firebird_clie_clave !== null => ['CLIE03', 'CLAVE',      $identity->firebird_clie_clave],
-                $identity->firebird_vend_clave !== null => ['VEND03', 'CVE_VEND',   $identity->firebird_vend_clave],
-                $identity->firebird_prov_clave !== null => ['PROV03', 'TRIM(CLAVE)', trim((string) $identity->firebird_prov_clave)],
+                $identity->firebird_clie_clave !== null => [tb('CLIE'), 'CLAVE',      $identity->firebird_clie_clave],
+                $identity->firebird_vend_clave !== null => [tb('VEND'), 'CVE_VEND',   $identity->firebird_vend_clave],
+                $identity->firebird_prov_clave !== null => [tb('PROV'), 'TRIM(CLAVE)', trim((string) $identity->firebird_prov_clave)],
                 default                                 => [null, null, null],
             };
 

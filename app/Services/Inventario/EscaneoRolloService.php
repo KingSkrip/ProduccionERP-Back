@@ -148,8 +148,8 @@ class EscaneoRolloService
                 IIF(P.NESTATUS = 2, D.DEPTO, NULL) AS ALMACEN,
                 P.CVE_PED AS CVE_PED,
                 P.CVE_ORDEN AS CVE_ORDEN
-            FROM P_ORDENESENC('03') P
-            LEFT JOIN p_vendxx('03') V ON V.id = P.AGENTE
+            FROM P_ORDENESENC('".config('firebird.company')."') P
+            LEFT JOIN p_vendxx('".config('firebird.company')."') V ON V.id = P.AGENTE
             LEFT JOIN ORDENESPROC R ON R.ORDEN = P.ORDEN AND R.ST = 1
             LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC
             LEFT JOIN DEPTOS D ON D.CLAVE = S.DEPTO
@@ -222,7 +222,7 @@ class EscaneoRolloService
             LEFT JOIN TEJIDO T ON T.ID = COALESCE(ART.TEJ, ART2.TEJ)
             LEFT JOIN COMPOSICION C ON C.ID = ART.COMP
             LEFT JOIN PSDTABPZASTJAUX PA ON PA.ID = PJ.ID
-            LEFT JOIN ALMACENES03 ALM ON ALM.CVE_ALM = PJ.ALMACEN
+            LEFT JOIN '.tb('ALMACENES').' ALM ON ALM.CVE_ALM = PJ.ALMACEN
             LEFT JOIN ORDENESTEJ TEJ ON TEJ.OT = PJ.OT_PSD
             WHERE PJ.ID = ?
             ';
@@ -424,8 +424,8 @@ class EscaneoRolloService
     //                 OE.CANTIDAD AS \"CANTIDAD SOLICITADA\",
     //                 OE.CANTENT AS \"CANTIDAD ENTREGADA\"
     //             FROM ORDENESENC OE
-    //             INNER JOIN P_PSDENC('03') P ON P.CVE_ORDEN = OE.ID
-    //             LEFT JOIN p_vendxx('03') V ON V.id = OE.agente
+    //             INNER JOIN P_PSDENC('".config('firebird.company')."') P ON P.CVE_ORDEN = OE.ID
+    //             LEFT JOIN p_vendxx('".config('firebird.company')."') V ON V.id = OE.agente
     //             LEFT JOIN ORDENESPROC R ON R.ORDEN = OE.ORDEN AND R.ST = 1
     //             LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC
     //             LEFT JOIN ORDENESest E ON E.ID = OE.ESTATUS
@@ -459,8 +459,8 @@ class EscaneoRolloService
     //             IIF(OE.ESTATUS = 2, S.PROCESO, E.ESTATUS) AS PROCESO,
     //             OE.CANTIDAD AS \"CANTIDAD SOLICITADA\",
     //             OE.CANTENT AS \"CANTIDAD ENTREGADA\"
-    //         FROM P_ORDENESENC('03') P
-    //         LEFT JOIN p_vendxx('03') V ON V.id = P.AGENTE
+    //         FROM P_ORDENESENC('".config('firebird.company')."') P
+    //         LEFT JOIN p_vendxx('".config('firebird.company')."') V ON V.id = P.AGENTE
     //         LEFT JOIN ORDENESENC OE ON OE.ID = P.CVE_ORDEN
     //         LEFT JOIN ORDENESPROC R ON R.ORDEN = OE.ORDEN AND R.ST = 1
     //         LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC
@@ -522,9 +522,9 @@ class EscaneoRolloService
                     OE.CANTIDAD AS \"CANTIDAD SOLICITADA\",
                     OE.CANTENT AS \"CANTIDAD ENTREGADA\"
                 FROM PSDTABPZAS PSD
-                INNER JOIN P_PSDENC('03') P ON P.CVE_PSD_ENC = PSD.CVE_ENC
+                INNER JOIN P_PSDENC('".config('firebird.company')."') P ON P.CVE_PSD_ENC = PSD.CVE_ENC
                 LEFT JOIN ORDENESENC OE ON OE.ID = P.CVE_ORDEN
-                LEFT JOIN p_vendxx('03') V ON V.id = OE.agente
+                LEFT JOIN p_vendxx('".config('firebird.company')."') V ON V.id = OE.agente
                 LEFT JOIN ORDENESPROC R ON R.ORDEN = OE.ORDEN AND R.ST = 1
                 LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC
                 LEFT JOIN DEPTOS D ON D.CLAVE = S.DEPTO
@@ -565,8 +565,8 @@ class EscaneoRolloService
                     OE.CANTIDAD AS \"CANTIDAD SOLICITADA\",
                     OE.CANTENT AS \"CANTIDAD ENTREGADA\"
                 FROM ORDENESENC OE
-                INNER JOIN P_PSDENC('03') P ON P.CVE_ORDEN = OE.ID
-                LEFT JOIN p_vendxx('03') V ON V.id = OE.agente
+                INNER JOIN P_PSDENC('".config('firebird.company')."') P ON P.CVE_ORDEN = OE.ID
+                LEFT JOIN p_vendxx('".config('firebird.company')."') V ON V.id = OE.agente
                 LEFT JOIN ORDENESPROC R ON R.ORDEN = OE.ORDEN AND R.ST = 1
                 LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC
                 LEFT JOIN DEPTOS D ON D.CLAVE = S.DEPTO
@@ -602,8 +602,8 @@ class EscaneoRolloService
     D.DEPTO AS ALMACEN,
                 OE.CANTIDAD AS \"CANTIDAD SOLICITADA\",
                 OE.CANTENT AS \"CANTIDAD ENTREGADA\"
-            FROM P_ORDENESENC('03') P
-            LEFT JOIN p_vendxx('03') V ON V.id = P.AGENTE
+            FROM P_ORDENESENC('".config('firebird.company')."') P
+            LEFT JOIN p_vendxx('".config('firebird.company')."') V ON V.id = P.AGENTE
             LEFT JOIN ORDENESENC OE ON OE.ID = P.CVE_ORDEN
             LEFT JOIN ORDENESPROC R ON R.ORDEN = OE.ORDEN AND R.ST = 1
             LEFT JOIN PROCESOS S ON S.CODIGO = R.PROC

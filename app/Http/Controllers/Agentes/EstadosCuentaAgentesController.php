@@ -56,9 +56,9 @@ class EstadosCuentaAgentesController extends Controller
             ROUND(COALESCE(SUM(cd.IMPMON_EXT), 0), 2) AS ABONOS,
             ROUND(cm.IMPORTE - COALESCE(SUM(cd.IMPMON_EXT), 0), 2) AS SALDOS,
             ROUND(c.SALDO, 2) AS TOTAL_SALDO
-        FROM CLIE03 c
-        INNER JOIN CUEN_M03 cm ON c.CLAVE = cm.CVE_CLIE
-        LEFT JOIN CUEN_DET03 cd
+        FROM ".tb('CLIE')." c
+        INNER JOIN ".tb('CUEN_M')." cm ON c.CLAVE = cm.CVE_CLIE
+        LEFT JOIN ".tb('CUEN_DET')." cd
             ON cm.CVE_CLIE = cd.CVE_CLIE
             AND cm.NO_FACTURA = cd.NO_FACTURA
         WHERE TRIM(UPPER(c.NOMBRE)) NOT IN (
@@ -132,12 +132,12 @@ class EstadosCuentaAgentesController extends Controller
         $identityQuery = DB::connection('mysql')
             ->table('users_firebird_identities')
             ->where('firebird_user_clave', $user->ID)
-            ->where('firebird_vend_tabla', 'VEND03')
+            ->where('firebird_vend_tabla', tb('VEND'))
             ->whereNotNull('firebird_vend_clave');
 
         Log::info('🧠 Query preparada', [
             'firebird_user_clave' => $user->ID,
-            'firebird_vend_tabla' => 'VEND03',
+            'firebird_vend_tabla' => tb('VEND'),
         ]);
 
         $identity = $identityQuery->first();
@@ -230,7 +230,7 @@ class EstadosCuentaAgentesController extends Controller
                 SELECT FIRST 1
                     CLAVE, NOMBRE, RFC, STATUS,
                     ROUND(COALESCE(SALDO, 0), 2) AS SALDO
-                FROM CLIE03
+                FROM ".tb('CLIE')."
                 WHERE TRIM(CVE_VEND) = TRIM(?)
             ";
                 $cliente = $this->fb()->selectOne($queryCliente, [$cveVend]);
@@ -253,8 +253,8 @@ class EstadosCuentaAgentesController extends Controller
 
             // ✅ Saldo total según acceso
             $saldoQuery = $accesoTotal
-                ? "SELECT ROUND(COALESCE(SUM(SALDO), 0), 2) AS SALDO_TOTAL FROM CLIE03"
-                : "SELECT ROUND(COALESCE(SUM(SALDO), 0), 2) AS SALDO_TOTAL FROM CLIE03 WHERE TRIM(CVE_VEND) = TRIM(?)";
+                ? "SELECT ROUND(COALESCE(SUM(SALDO), 0), 2) AS SALDO_TOTAL FROM ".tb('CLIE').""
+                : "SELECT ROUND(COALESCE(SUM(SALDO), 0), 2) AS SALDO_TOTAL FROM ".tb('CLIE')." WHERE TRIM(CVE_VEND) = TRIM(?)";
 
             $saldoTotal = $accesoTotal
                 ? $this->fb()->selectOne($saldoQuery)->SALDO_TOTAL ?? 0
@@ -563,7 +563,7 @@ class EstadosCuentaAgentesController extends Controller
             }
 
             $this->fb()->update(
-                "UPDATE CLIE03 SET STATUS = ? WHERE TRIM(CVE_VEND) = TRIM(?)",
+                "UPDATE ".tb('CLIE')." SET STATUS = ? WHERE TRIM(CVE_VEND) = TRIM(?)",
                 [$request->status, $clie]
             );
 
