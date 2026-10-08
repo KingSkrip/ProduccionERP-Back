@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\Agentes;
 
 use App\Http\Controllers\Controller;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Carbon\Carbon;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Mail;
 
 class EstadosCuentaAgentesController extends Controller
@@ -20,7 +20,7 @@ class EstadosCuentaAgentesController extends Controller
 
     protected function queryBase(?string $cveVend = null): string
     {
-        $filtroVendedor = $cveVend ? "AND TRIM(c.CVE_VEND) = TRIM(?)" : "";
+        $filtroVendedor = $cveVend ? 'AND TRIM(c.CVE_VEND) = TRIM(?)' : '';
 
         // 🔥 Clientes a excluir cuando tenga acceso total (subrol 9 o 10)
         $clientesExcluidos = "
@@ -37,11 +37,11 @@ class EstadosCuentaAgentesController extends Controller
         'ZURIZEN'
     ";
 
-        $filtroClientesEspeciales = !$cveVend
+        $filtroClientesEspeciales = ! $cveVend
             ? "AND TRIM(UPPER(c.NOMBRE)) NOT IN ($clientesExcluidos)"
-            : "";
+            : '';
 
-        return "
+        return '
     SELECT * FROM (
         SELECT
             c.CLAVE,
@@ -56,9 +56,9 @@ class EstadosCuentaAgentesController extends Controller
             ROUND(COALESCE(SUM(cd.IMPMON_EXT), 0), 2) AS ABONOS,
             ROUND(cm.IMPORTE - COALESCE(SUM(cd.IMPMON_EXT), 0), 2) AS SALDOS,
             ROUND(c.SALDO, 2) AS TOTAL_SALDO
-        FROM ".tb('CLIE')." c
-        INNER JOIN ".tb('CUEN_M')." cm ON c.CLAVE = cm.CVE_CLIE
-        LEFT JOIN ".tb('CUEN_DET')." cd
+        FROM '.tb('CLIE').' c
+        INNER JOIN '.tb('CUEN_M').' cm ON c.CLAVE = cm.CVE_CLIE
+        LEFT JOIN '.tb('CUEN_DET')." cd
             ON cm.CVE_CLIE = cd.CVE_CLIE
             AND cm.NO_FACTURA = cd.NO_FACTURA
         WHERE TRIM(UPPER(c.NOMBRE)) NOT IN (
@@ -82,7 +82,9 @@ class EstadosCuentaAgentesController extends Controller
     {
         $user = Auth::user();
 
-        if (!$user) return false;
+        if (! $user) {
+            return false;
+        }
 
         // Buscar la identity del usuario
         $identity = DB::connection('mysql')
@@ -90,7 +92,9 @@ class EstadosCuentaAgentesController extends Controller
             ->where('firebird_user_clave', $user->ID)
             ->first();
 
-        if (!$identity) return false;
+        if (! $identity) {
+            return false;
+        }
 
         // Leer los subrol_id desde model_has_roles
         $subPermissions = DB::connection('mysql')
@@ -101,16 +105,14 @@ class EstadosCuentaAgentesController extends Controller
             ->toArray();
 
         Log::info('🔐 SUB_PERMISSIONS_CHECK', [
-            'user_id'         => $user->ID,
-            'identity_id'     => $identity->id,
+            'user_id' => $user->ID,
+            'identity_id' => $identity->id,
             'sub_permissions' => $subPermissions,
-            'tiene_acceso'    => in_array(9, $subPermissions) || in_array(10, $subPermissions),
+            'tiene_acceso' => in_array(9, $subPermissions) || in_array(10, $subPermissions),
         ]);
 
         return in_array(9, $subPermissions) || in_array(10, $subPermissions);
     }
-
-
 
     protected function getAgenteClave()
     {
@@ -118,7 +120,7 @@ class EstadosCuentaAgentesController extends Controller
 
         $user = Auth::user();
 
-        if (!$user) {
+        if (! $user) {
             Log::warning('⛔ Usuario no autenticado');
             abort(401, 'No autenticado');
         }
@@ -142,7 +144,7 @@ class EstadosCuentaAgentesController extends Controller
 
         $identity = $identityQuery->first();
 
-        if (!$identity) {
+        if (! $identity) {
             Log::warning('⛔ No se encontró identidad vinculada', [
                 'firebird_user_clave' => $user->ID,
             ]);
@@ -157,7 +159,6 @@ class EstadosCuentaAgentesController extends Controller
         return $identity->firebird_vend_clave;
     }
 
-
     /* =======================================================
         📄 INDEX - Lista de movimientos del cliente
     ======================================================= */
@@ -165,13 +166,11 @@ class EstadosCuentaAgentesController extends Controller
     {
         try {
             $accesoTotal = $this->tieneAccesoTotal();
-            $cveVend     = $accesoTotal ? null : $this->getAgenteClave();
-            $params      = $accesoTotal ? [] : [$cveVend];
+            $cveVend = $accesoTotal ? null : $this->getAgenteClave();
+            $params = $accesoTotal ? [] : [$cveVend];
 
-            $query    = $this->queryBase($cveVend);
-            $query .= " ORDER BY FECHA_APLI DESC";
-
-
+            $query = $this->queryBase($cveVend);
+            $query .= ' ORDER BY FECHA_APLI DESC';
 
             // $resultados = $this->fb()->select($query, [$cveVend]);
 
@@ -179,24 +178,24 @@ class EstadosCuentaAgentesController extends Controller
 
             $estadosCuenta = collect($resultados)->map(function ($item) {
                 return [
-                    'clave'             => trim($item->CLAVE),
-                    'nombre'            => trim($item->NOMBRE ?? ''),
-                    'rfc'               => trim($item->RFC ?? ''),
-                    'status'            => $item->STATUS ?? '',
-                    'documento'         => trim($item->DOCUMENTO),
-                    'fecha_aplicacion'  => $item->FECHA_APLI ? Carbon::parse($item->FECHA_APLI)->format('Y-m-d') : null,
+                    'clave' => trim($item->CLAVE),
+                    'nombre' => trim($item->NOMBRE ?? ''),
+                    'rfc' => trim($item->RFC ?? ''),
+                    'status' => $item->STATUS ?? '',
+                    'documento' => trim($item->DOCUMENTO),
+                    'fecha_aplicacion' => $item->FECHA_APLI ? Carbon::parse($item->FECHA_APLI)->format('Y-m-d') : null,
                     'fecha_vencimiento' => $item->FECHA_VENC ? Carbon::parse($item->FECHA_VENC)->format('Y-m-d') : null,
-                    'cargos'            => (float) $item->CARGOS,
-                    'abonos'            => (float) $item->ABONOS,
-                    'saldo'             => (float) $item->SALDOS,
-                    'total_saldo'       => (float) $item->TOTAL_SALDO,
+                    'cargos' => (float) $item->CARGOS,
+                    'abonos' => (float) $item->ABONOS,
+                    'saldo' => (float) $item->SALDOS,
+                    'total_saldo' => (float) $item->TOTAL_SALDO,
                 ];
             })->values();
 
             return response()->json([
-                'success'      => true,
-                'data'         => $estadosCuenta,
-                'total'        => $estadosCuenta->count(),
+                'success' => true,
+                'data' => $estadosCuenta,
+                'total' => $estadosCuenta->count(),
                 'total_cargos' => round($estadosCuenta->sum('cargos'), 2),
                 'total_abonos' => round($estadosCuenta->sum('abonos'), 2),
                 'total_saldos' => round($estadosCuenta->sum('saldo'), 2),
@@ -204,12 +203,13 @@ class EstadosCuentaAgentesController extends Controller
         } catch (\Exception $e) {
             Log::error('ERROR_INDEX_ESTADOS_CUENTA', [
                 'message' => $e->getMessage(),
-                'trace'   => $e->getTraceAsString(),
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener estados de cuenta',
-                'error'   => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -221,48 +221,50 @@ class EstadosCuentaAgentesController extends Controller
     {
         try {
             $accesoTotal = $this->tieneAccesoTotal();
-            $cveVend     = $accesoTotal ? null : $this->getAgenteClave();
-            $params      = $accesoTotal ? [] : [$cveVend];
+            $cveVend = $accesoTotal ? null : $this->getAgenteClave();
+            $params = $accesoTotal ? [] : [$cveVend];
 
             // ✅ Solo buscar cliente específico si NO tiene acceso total
-            if (!$accesoTotal) {
-                $queryCliente = "
+            if (! $accesoTotal) {
+                $queryCliente = '
                 SELECT FIRST 1
                     CLAVE, NOMBRE, RFC, STATUS,
                     ROUND(COALESCE(SALDO, 0), 2) AS SALDO
-                FROM ".tb('CLIE')."
+                FROM '.tb('CLIE').'
                 WHERE TRIM(CVE_VEND) = TRIM(?)
-            ";
+            ';
                 $cliente = $this->fb()->selectOne($queryCliente, [$cveVend]);
 
-                if (!$cliente) {
+                if (! $cliente) {
                     return response()->json([
-                        'success'       => false,
-                        'message'       => 'No se encontraron clientes para este vendedor',
-                        'clave_buscada' => $cveVend
+                        'success' => false,
+                        'message' => 'No se encontraron clientes para este vendedor',
+                        'clave_buscada' => $cveVend,
                     ], 404);
                 }
             }
 
-            $query      = $this->queryBase($cveVend);
+            $query = $this->queryBase($cveVend);
             $resultados = $this->fb()->select($query, $params);
-            $datos      = collect($resultados);
+            $datos = collect($resultados);
 
             $totalCargos = $datos->sum('CARGOS');
             $totalAbonos = $datos->sum('ABONOS');
 
             // ✅ Saldo total según acceso
             $saldoQuery = $accesoTotal
-                ? "SELECT ROUND(COALESCE(SUM(SALDO), 0), 2) AS SALDO_TOTAL FROM ".tb('CLIE').""
-                : "SELECT ROUND(COALESCE(SUM(SALDO), 0), 2) AS SALDO_TOTAL FROM ".tb('CLIE')." WHERE TRIM(CVE_VEND) = TRIM(?)";
+                ? 'SELECT ROUND(COALESCE(SUM(SALDO), 0), 2) AS SALDO_TOTAL FROM '.tb('CLIE').''
+                : 'SELECT ROUND(COALESCE(SUM(SALDO), 0), 2) AS SALDO_TOTAL FROM '.tb('CLIE').' WHERE TRIM(CVE_VEND) = TRIM(?)';
 
             $saldoTotal = $accesoTotal
                 ? $this->fb()->selectOne($saldoQuery)->SALDO_TOTAL ?? 0
                 : $this->fb()->selectOne($saldoQuery, [$cveVend])->SALDO_TOTAL ?? 0;
 
-            $hoy      = Carbon::now();
+            $hoy = Carbon::now();
             $vencidos = $datos->filter(function ($item) use ($hoy) {
-                if (!$item->FECHA_VENC || $item->SALDOS <= 0) return false;
+                if (! $item->FECHA_VENC || $item->SALDOS <= 0) {
+                    return false;
+                }
                 try {
                     return Carbon::parse($item->FECHA_VENC)->lt($hoy);
                 } catch (\Exception $e) {
@@ -272,31 +274,32 @@ class EstadosCuentaAgentesController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data'    => [
+                'data' => [
                     'vendedor' => [
                         'cve_vend' => $cveVend ?? 'TODOS',
                     ],
                     'totales' => [
-                        'cargos'      => round($totalCargos, 2),
-                        'abonos'      => round($totalAbonos, 2),
+                        'cargos' => round($totalCargos, 2),
+                        'abonos' => round($totalAbonos, 2),
                         'saldo_total' => (float) $saldoTotal,
                     ],
                     'documentos' => [
-                        'total'         => $datos->count(),
-                        'vencidos'      => $vencidos->count(),
+                        'total' => $datos->count(),
+                        'vencidos' => $vencidos->count(),
                         'monto_vencido' => round($vencidos->sum('SALDOS'), 2),
-                    ]
-                ]
+                    ],
+                ],
             ]);
         } catch (\Exception $e) {
             Log::error('ERROR_RESUMEN_ESTADOS_CUENTA', [
                 'message' => $e->getMessage(),
-                'trace'   => $e->getTraceAsString(),
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener resumen',
-                'error'   => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -308,45 +311,46 @@ class EstadosCuentaAgentesController extends Controller
     {
         try {
             $accesoTotal = $this->tieneAccesoTotal();
-            $cveVend     = $accesoTotal ? null : $this->getAgenteClave();
-            $params      = $accesoTotal ? [$anio] : [$cveVend, $anio];
+            $cveVend = $accesoTotal ? null : $this->getAgenteClave();
+            $params = $accesoTotal ? [$anio] : [$cveVend, $anio];
 
-            $query  = $this->queryBase($cveVend);
-            $query .= " AND EXTRACT(YEAR FROM FECHA_APLI) = ?";
-            $query .= " ORDER BY FECHA_APLI DESC";
+            $query = $this->queryBase($cveVend);
+            $query .= ' AND EXTRACT(YEAR FROM FECHA_APLI) = ?';
+            $query .= ' ORDER BY FECHA_APLI DESC';
 
             $resultados = $this->fb()->select($query, $params);
 
             $estadosCuenta = collect($resultados)->map(function ($item) {
                 return [
-                    'clave'             => trim($item->CLAVE),
-                    'nombre'            => trim($item->NOMBRE ?? ''),
-                    'rfc'               => trim($item->RFC ?? ''),
-                    'status'            => $item->STATUS ?? '',
-                    'documento'         => trim($item->DOCUMENTO),
-                    'fecha_aplicacion'  => $item->FECHA_APLI ? Carbon::parse($item->FECHA_APLI)->format('Y-m-d') : null,
+                    'clave' => trim($item->CLAVE),
+                    'nombre' => trim($item->NOMBRE ?? ''),
+                    'rfc' => trim($item->RFC ?? ''),
+                    'status' => $item->STATUS ?? '',
+                    'documento' => trim($item->DOCUMENTO),
+                    'fecha_aplicacion' => $item->FECHA_APLI ? Carbon::parse($item->FECHA_APLI)->format('Y-m-d') : null,
                     'fecha_vencimiento' => $item->FECHA_VENC ? Carbon::parse($item->FECHA_VENC)->format('Y-m-d') : null,
-                    'cargos'            => (float) $item->CARGOS,
-                    'abonos'            => (float) $item->ABONOS,
-                    'saldo'             => (float) $item->SALDOS,
+                    'cargos' => (float) $item->CARGOS,
+                    'abonos' => (float) $item->ABONOS,
+                    'saldo' => (float) $item->SALDOS,
                 ];
             })->values();
 
             return response()->json([
                 'success' => true,
-                'anio'    => (int) $anio,
-                'data'    => $estadosCuenta,
-                'total'   => $estadosCuenta->count(),
+                'anio' => (int) $anio,
+                'data' => $estadosCuenta,
+                'total' => $estadosCuenta->count(),
             ]);
         } catch (\Exception $e) {
             Log::error('ERROR_POR_ANIO_ESTADOS_CUENTA', [
                 'message' => $e->getMessage(),
-                'anio'    => $anio,
+                'anio' => $anio,
             ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener estados de cuenta por año',
-                'error'   => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -358,46 +362,47 @@ class EstadosCuentaAgentesController extends Controller
     {
         try {
             $accesoTotal = $this->tieneAccesoTotal();
-            $cveVend     = $accesoTotal ? null : $this->getAgenteClave();
-            $params      = $accesoTotal ? [$noFactura] : [$cveVend, $noFactura];
+            $cveVend = $accesoTotal ? null : $this->getAgenteClave();
+            $params = $accesoTotal ? [$noFactura] : [$cveVend, $noFactura];
 
-            $query  = $this->queryBase($cveVend);
-            $query .= " AND TRIM(DOCUMENTO) = TRIM(?)";
+            $query = $this->queryBase($cveVend);
+            $query .= ' AND TRIM(DOCUMENTO) = TRIM(?)';
 
             $resultado = $this->fb()->selectOne($query, $params);
 
-            if (!$resultado) {
+            if (! $resultado) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Documento no encontrado'
+                    'message' => 'Documento no encontrado',
                 ], 404);
             }
 
             return response()->json([
                 'success' => true,
-                'data'    => [
-                    'clave'             => trim($resultado->CLAVE),
-                    'nombre'            => trim($resultado->NOMBRE ?? ''),
-                    'rfc'               => trim($resultado->RFC ?? ''),
-                    'status'            => $resultado->STATUS ?? '',
-                    'documento'         => trim($resultado->DOCUMENTO),
-                    'fecha_aplicacion'  => $resultado->FECHA_APLI ? Carbon::parse($resultado->FECHA_APLI)->format('Y-m-d') : null,
+                'data' => [
+                    'clave' => trim($resultado->CLAVE),
+                    'nombre' => trim($resultado->NOMBRE ?? ''),
+                    'rfc' => trim($resultado->RFC ?? ''),
+                    'status' => $resultado->STATUS ?? '',
+                    'documento' => trim($resultado->DOCUMENTO),
+                    'fecha_aplicacion' => $resultado->FECHA_APLI ? Carbon::parse($resultado->FECHA_APLI)->format('Y-m-d') : null,
                     'fecha_vencimiento' => $resultado->FECHA_VENC ? Carbon::parse($resultado->FECHA_VENC)->format('Y-m-d') : null,
-                    'cargos'            => (float) $resultado->CARGOS,
-                    'abonos'            => (float) $resultado->ABONOS,
-                    'saldo'             => (float) $resultado->SALDOS,
-                    'total_saldo'       => (float) $resultado->TOTAL_SALDO,
-                ]
+                    'cargos' => (float) $resultado->CARGOS,
+                    'abonos' => (float) $resultado->ABONOS,
+                    'saldo' => (float) $resultado->SALDOS,
+                    'total_saldo' => (float) $resultado->TOTAL_SALDO,
+                ],
             ]);
         } catch (\Exception $e) {
             Log::error('ERROR_SHOW_ESTADO_CUENTA', [
-                'message'   => $e->getMessage(),
+                'message' => $e->getMessage(),
                 'documento' => $noFactura,
             ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener detalle',
-                'error'   => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -409,28 +414,30 @@ class EstadosCuentaAgentesController extends Controller
     {
         try {
             $accesoTotal = $this->tieneAccesoTotal();
-            $cveVend     = $accesoTotal ? null : $this->getAgenteClave();
+            $cveVend = $accesoTotal ? null : $this->getAgenteClave();
 
-            $query  = $this->queryBase($cveVend); // ✅ pasar $cveVend
-            $query .= " AND TRIM(DOCUMENTO) = TRIM(?)";
+            $query = $this->queryBase($cveVend); // ✅ pasar $cveVend
+            $query .= ' AND TRIM(DOCUMENTO) = TRIM(?)';
 
             $params = $accesoTotal ? [$noFactura] : [$cveVend, $noFactura];
 
             $resultado = $this->fb()->selectOne($query, $params);
 
-            if (!$resultado) {
+            if (! $resultado) {
                 return response()->json(['success' => false, 'message' => 'Documento no encontrado'], 404);
             }
 
             $data = [
-                'documento'        => $resultado,
-                'fecha_generacion' => Carbon::now()->format('d/m/Y H:i:s')
+                'documento' => $resultado,
+                'fecha_generacion' => Carbon::now()->format('d/m/Y H:i:s'),
             ];
 
             $pdf = PDF::loadView('pdfs.estado-cuenta', $data);
+
             return $pdf->download("estado-cuenta-{$noFactura}.pdf");
         } catch (\Exception $e) {
             Log::error('ERROR_DESCARGAR_PDF', ['message' => $e->getMessage(), 'documento' => $noFactura]);
+
             return response()->json(['success' => false, 'message' => 'Error al generar PDF', 'error' => $e->getMessage()], 500);
         }
     }
@@ -442,20 +449,20 @@ class EstadosCuentaAgentesController extends Controller
     {
         try {
             $request->validate([
-                'documentos'   => 'required|array|min:1',
-                'documentos.*' => 'required|string'
+                'documentos' => 'required|array|min:1',
+                'documentos.*' => 'required|string',
             ]);
 
             $accesoTotal = $this->tieneAccesoTotal();
-            $cveVend     = $accesoTotal ? null : $this->getAgenteClave();
-            $documentos  = array_map('trim', $request->documentos);
+            $cveVend = $accesoTotal ? null : $this->getAgenteClave();
+            $documentos = array_map('trim', $request->documentos);
 
             $placeholders = implode(',', array_fill(0, count($documentos), '?'));
 
             // ✅ Pasar $cveVend para que queryBase genere el filtro correcto
-            $query  = $this->queryBase($cveVend);
+            $query = $this->queryBase($cveVend);
             $query .= " AND TRIM(DOCUMENTO) IN ({$placeholders})";
-            $query .= " ORDER BY FECHA_APLI DESC";
+            $query .= ' ORDER BY FECHA_APLI DESC';
 
             // ✅ Params: solo documentos si acceso total, o [cveVend, ...docs] si no
             $params = $accesoTotal
@@ -469,21 +476,23 @@ class EstadosCuentaAgentesController extends Controller
             }
 
             // Agrupar por cliente para el blade
-            $porCliente = collect($resultados)->groupBy(fn($r) => trim($r->CLAVE));
+            $porCliente = collect($resultados)->groupBy(fn ($r) => trim($r->CLAVE));
 
             $data = [
-                'por_cliente'      => $porCliente,
+                'por_cliente' => $porCliente,
                 'fecha_generacion' => Carbon::now()->format('d/m/Y H:i:s'),
             ];
 
             $pdf = PDF::loadView('pdfs.estados-cuenta-multiples', $data);
-            return $pdf->download("estados-cuenta-" . date('YmdHis') . ".pdf");
+
+            return $pdf->download('estados-cuenta-'.date('YmdHis').'.pdf');
         } catch (\Exception $e) {
             Log::error('ERROR_DESCARGAR_MULTIPLES', ['message' => $e->getMessage()]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error al generar PDF múltiple',
-                'error'   => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -498,31 +507,32 @@ class EstadosCuentaAgentesController extends Controller
 
             $cveVend = $this->getAgenteClave();
 
-            $query  = $this->queryBase();
-            $query .= " AND TRIM(DOCUMENTO) = TRIM(?)";
+            $query = $this->queryBase();
+            $query .= ' AND TRIM(DOCUMENTO) = TRIM(?)';
 
             $resultado = $this->fb()->selectOne($query, [$cveVend, $noFactura]);
 
-            if (!$resultado) {
+            if (! $resultado) {
                 return response()->json(['success' => false, 'message' => 'Documento no encontrado'], 404);
             }
 
             $data = [
-                'documento'        => $resultado,
-                'fecha_generacion' => Carbon::now()->format('d/m/Y H:i:s')
+                'documento' => $resultado,
+                'fecha_generacion' => Carbon::now()->format('d/m/Y H:i:s'),
             ];
 
             $pdf = PDF::loadView('pdfs.estado-cuenta', $data);
 
             Mail::send('emails.estado-cuenta', $data, function ($message) use ($request, $pdf, $noFactura) {
                 $message->to($request->email)
-                    ->subject('Estado de Cuenta - ' . $noFactura)
+                    ->subject('Estado de Cuenta - '.$noFactura)
                     ->attachData($pdf->output(), "estado-cuenta-{$noFactura}.pdf");
             });
 
             return response()->json(['success' => true, 'message' => 'Email enviado correctamente']);
         } catch (\Exception $e) {
             Log::error('ERROR_ENVIAR_EMAIL', ['message' => $e->getMessage(), 'documento' => $noFactura]);
+
             return response()->json(['success' => false, 'message' => 'Error al enviar email', 'error' => $e->getMessage()], 500);
         }
     }
@@ -534,7 +544,7 @@ class EstadosCuentaAgentesController extends Controller
     {
         return response()->json([
             'success' => false,
-            'message' => 'Funcionalidad no implementada - solo lectura desde Firebird'
+            'message' => 'Funcionalidad no implementada - solo lectura desde Firebird',
         ], 501);
     }
 
@@ -545,41 +555,42 @@ class EstadosCuentaAgentesController extends Controller
     {
         try {
             $request->validate([
-                'status' => 'required|string'
+                'status' => 'required|string',
             ]);
 
             $clie = $this->getAgenteClave();
 
-            $query  = $this->queryBase();
-            $query .= " AND TRIM(DOCUMENTO) = TRIM(?)";
+            $query = $this->queryBase();
+            $query .= ' AND TRIM(DOCUMENTO) = TRIM(?)';
 
             $resultado = $this->fb()->selectOne($query, [$clie, $noFactura]);
 
-            if (!$resultado) {
+            if (! $resultado) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Documento no encontrado'
+                    'message' => 'Documento no encontrado',
                 ], 404);
             }
 
             $this->fb()->update(
-                "UPDATE ".tb('CLIE')." SET STATUS = ? WHERE TRIM(CVE_VEND) = TRIM(?)",
+                'UPDATE '.tb('CLIE').' SET STATUS = ? WHERE TRIM(CVE_VEND) = TRIM(?)',
                 [$request->status, $clie]
             );
 
             return response()->json([
                 'success' => true,
-                'message' => 'Estado actualizado correctamente'
+                'message' => 'Estado actualizado correctamente',
             ]);
         } catch (\Exception $e) {
             Log::error('ERROR_ACTUALIZAR_ESTADO', [
-                'message'   => $e->getMessage(),
+                'message' => $e->getMessage(),
                 'documento' => $noFactura,
             ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error al actualizar estado',
-                'error'   => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -591,7 +602,7 @@ class EstadosCuentaAgentesController extends Controller
     {
         return response()->json([
             'success' => false,
-            'message' => 'No se permite eliminar estados de cuenta'
+            'message' => 'No se permite eliminar estados de cuenta',
         ], 403);
     }
 }
