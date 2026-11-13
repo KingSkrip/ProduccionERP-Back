@@ -24,6 +24,7 @@ use App\Http\Controllers\Personalizacion\Perfil\PerfilController;
 use App\Http\Controllers\Puestos\PuestoController;
 use App\Http\Controllers\Reprocesos\ReprocesosController;
 use App\Http\Controllers\RH\Nominas\EmpresaUno\EmpresaUnoController;
+use App\Http\Controllers\Scanner\ConrrecionAcabadoController;
 use App\Http\Controllers\Scanner\ScannerEmbarquesController;
 use App\Http\Controllers\SuperAdmin\AutorizacionPedidos\AutorizacionPedidosController;
 use App\Http\Controllers\SuperAdmin\GestionarUsuarios\AllUsersController;
@@ -307,6 +308,11 @@ Route::prefix('scanner')->middleware('jwt.auth')->group(function () {
     Route::get('/embarques', [ScannerEmbarquesController::class, 'index']);
     Route::post('/embarques', [ScannerEmbarquesController::class, 'scan']);
     Route::post('/inventario', [ScannerEmbarquesController::class, 'verificarInventario']);
+
+    // correccion
+    Route::post('/correccion-acabado', [ConrrecionAcabadoController::class, 'scan']);
+    Route::get('/correccion-acabado/articulo', [ConrrecionAcabadoController::class, 'articulo']);
+    Route::put('/correccion-acabado/edit', [ConrrecionAcabadoController::class, 'update']);
 
 });
 
