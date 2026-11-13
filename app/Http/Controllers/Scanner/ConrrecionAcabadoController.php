@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Scanner;
 
 use App\Http\Controllers\Controller;
 use App\Services\FirebirdConnectionService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -11,6 +12,8 @@ use Illuminate\Support\Facades\Log;
 class ConrrecionAcabadoController extends Controller
 {
     protected FirebirdConnectionService $firebird;
+
+    private const ESTATUS_EDITABLE = 3;
 
     public function __construct(FirebirdConnectionService $firebird)
     {
@@ -88,25 +91,20 @@ class ConrrecionAcabadoController extends Controller
 
             $row = (array) $row;
 
-            // 2) Encabezado de la partida, cacheado (la parte lenta)
-            $cveEnc = $row['CVE_ENC'];
-            $enc = Cache::remember("ca:enc:$cveEnc", 21600, function () use ($connection, $cveEnc) {
-                $e = $connection->selectOne("
-                SELECT P.ARTICULO AS ARTICULO, P.PARTIDA AS OP, OE.ORDEN AS ORDEN
-                FROM P_PSDENC('".config('firebird.company')."') P
-                LEFT JOIN ORDENESENC OE ON OE.ID = P.CVE_ORDEN
-                WHERE P.CVE_PSD_ENC = ?
-            ", [$cveEnc]);
-
-                return $e ? (array) $e : null;
-            });
+            // 2) Encabezado de la partida (cacheado). Ahora incluye OE_ID.
+            $enc = $this->encabezado($connection, $row['CVE_ENC']);
 
             if (! $enc) {
                 return null;
             }
 
             $row = array_merge($row, $enc);
-            unset($row['CVE_ENC']);
+
+            // 3) Estatus de la orden, SIEMPRE fresco (sin caché)
+            $row['OE_ESTATUS'] = $this->estatusOrden($connection, $enc['OE_ID'] ?? null);
+
+            // Campos internos que no se mandan al front
+            unset($row['CVE_ENC'], $row['OE_ID']);
 
             if (! empty($row['FECHA'])) {
                 $row['FECHA'] = str_replace(' ', 'T', substr((string) $row['FECHA'], 0, 19));
@@ -186,19 +184,57 @@ class ConrrecionAcabadoController extends Controller
             return response()->json(['ok' => false, 'motivo' => 'pesos_inconsistentes'], 422);
         }
 
+try {
+    $conn = $this->firebird->getProductionConnection();
+
+    if ($bloqueo = $this->validarEstatus($conn, $clave)) {
+        return $bloqueo;
+    }
+
+    $afectados = $conn->update(
+        'UPDATE PSDTABPZAS
+            SET PESOKG = ?, PNETO = ?, PESOLB = ?, MTS = ?, LONGITUD = ?, YDS = ?,
+                TARA = ?, PBRUT = ?
+          WHERE CLAVE = ?',
+        [$pneto, $pneto, round((float) $v['libras'], 3), $metros, $metros,
+            round((float) $v['yardas'], 3), $tara, $pbrut, $clave]
+    );
+} catch (\Throwable $e) {
+    Log::error('[correccion-acabado] UPDATE', ['clave' => $clave, 'm' => $e->getMessage()]);
+
+    return response()->json(['ok' => false, 'error' => 'No se pudo guardar'], 500);
+}
+
+        if ($afectados < 1) {
+            return response()->json(['ok' => false, 'motivo' => 'rollo_no_encontrado'], 404);
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function eliminar(Request $request)
+    {
+        $v = $request->validate([
+            'rollo' => ['required', 'regex:/^\d{1,10}$/'],
+        ]);
+
+        $clave = (int) (ltrim($v['rollo'], '0') ?: '0');
+
         try {
-            $afectados = $this->firebird->getProductionConnection()->update(
-                'UPDATE PSDTABPZAS
-                SET PESOKG = ?, PNETO = ?, PESOLB = ?, MTS = ?, LONGITUD = ?, YDS = ?,
-                    TARA = ?, PBRUT = ?
-              WHERE CLAVE = ?',
-                [$pneto, $pneto, round((float) $v['libras'], 3), $metros, $metros,
-                    round((float) $v['yardas'], 3), $tara, $pbrut, $clave]
+            $conn = $this->firebird->getProductionConnection();
+
+            if ($bloqueo = $this->validarEstatus($conn, $clave)) {
+                return $bloqueo;
+            }
+
+            $afectados = $conn->update(
+                'UPDATE PSDTABPZAS SET ESTATUS = 0 WHERE CLAVE = ?',
+                [$clave]
             );
         } catch (\Throwable $e) {
-            Log::error('[correccion-acabado] UPDATE', ['clave' => $clave, 'm' => $e->getMessage()]);
+            Log::error('[correccion-acabado] ELIMINAR', ['clave' => $clave, 'm' => $e->getMessage()]);
 
-            return response()->json(['ok' => false, 'error' => 'No se pudo guardar'], 500);
+            return response()->json(['ok' => false, 'error' => 'No se pudo eliminar'], 500);
         }
 
         if ($afectados < 1) {
@@ -206,5 +242,51 @@ class ConrrecionAcabadoController extends Controller
         }
 
         return response()->json(['ok' => true]);
+    }
+
+    private function encabezado($connection, $cveEnc): ?array
+    {
+        return Cache::remember("ca:enc2:$cveEnc", 21600, function () use ($connection, $cveEnc) {
+            $e = $connection->selectOne("
+            SELECT P.ARTICULO AS ARTICULO, P.PARTIDA AS OP, OE.ORDEN AS ORDEN, OE.ID AS OE_ID
+            FROM P_PSDENC('".config('firebird.company')."') P
+            LEFT JOIN ORDENESENC OE ON OE.ID = P.CVE_ORDEN
+            WHERE P.CVE_PSD_ENC = ?
+        ", [$cveEnc]);
+
+            return $e ? (array) $e : null;
+        });
+    }
+
+    private function estatusOrden($connection, $oeId): ?int
+    {
+        if (! $oeId) {
+            return null;
+        }
+        $r = $connection->selectOne('SELECT ESTATUS FROM ORDENESENC WHERE ID = ?', [$oeId]);
+
+        return $r ? (int) ((array) $r)['ESTATUS'] : null;
+    }
+
+    private function validarEstatus($connection, int $clave): ?JsonResponse
+    {
+        $psd = $connection->selectOne('SELECT CVE_ENC FROM PSDTABPZAS WHERE CLAVE = ?', [$clave]);
+        if (! $psd) {
+            return response()->json(['ok' => false, 'motivo' => 'rollo_no_encontrado'], 404);
+        }
+
+        $enc = $this->encabezado($connection, ((array) $psd)['CVE_ENC']);
+        $estatus = $this->estatusOrden($connection, $enc['OE_ID'] ?? null);
+
+        if ($estatus !== self::ESTATUS_EDITABLE) {
+            return response()->json([
+                'ok' => false,
+                'motivo' => 'estatus_no_permitido',
+                'estatus' => $estatus,
+                'error' => 'La orden tiene estatus '.($estatus ?? 'desconocido').' y no se puede modificar (debe ser 3)',
+            ], 409);
+        }
+
+        return null;
     }
 }
