@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Scanner;
 
 use App\Http\Controllers\Controller;
+use App\Models\UserFirebirdIdentity;
 use App\Services\FirebirdConnectionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -61,29 +62,30 @@ class ConrrecionAcabadoController extends Controller
         try {
             // 1) Rollo directo por CLAVE (rápido)
             $row = $connection->selectOne("
-            SELECT
-                PSD.CLAVE AS ID,
-                PSD.CVE_ENC AS CVE_ENC,
-                CASE PSD.TIPO
-                    WHEN 51 THEN 'PRIMERA' WHEN 52 THEN 'PREFERIDA' WHEN 73 THEN 'ORILLAS'
-                    WHEN 74 THEN 'RETAZO'  WHEN 77 THEN 'SEGUNDA'   WHEN 81 THEN 'MUESTRAS'
-                    ELSE 'OTRAS'
-                END AS TIPO,
-                PSD.PNETO AS \"PESO NETO\",
-                PSD.PIEZA AS PIEZA,
-                PSD.PBRUT AS PESO_BRUTO,
-                PSD.TARA AS TARA,
-                PSD.LONGITUD AS LONGITUD,
-                CASE PSD.TONO
-                    WHEN 0 THEN 'TONO A' WHEN 1 THEN 'TONO B' WHEN 2 THEN 'TONO C'
-                    ELSE 'TONO ' || PSD.TONO
-                END AS TONO,
-                PSD.FECHAYHORA AS FECHA,
-                PSD.MUESTRADELROLLO AS MUESTRA,
-                COALESCE(PSD.IS_PL, 0) AS PL
-            FROM PSDTABPZAS PSD
-            WHERE PSD.CLAVE = ?
-        ", [$clave]);
+        SELECT
+            PSD.CLAVE AS ID,
+            PSD.CVE_ENC AS CVE_ENC,
+            PSD.ESTATUS AS PSD_ESTATUS,
+            CASE PSD.TIPO
+                WHEN 51 THEN 'PRIMERA' WHEN 52 THEN 'PREFERIDA' WHEN 73 THEN 'ORILLAS'
+                WHEN 74 THEN 'RETAZO'  WHEN 77 THEN 'SEGUNDA'   WHEN 81 THEN 'MUESTRAS'
+                ELSE 'OTRAS'
+            END AS TIPO,
+            PSD.PNETO AS \"PESO NETO\",
+            PSD.PIEZA AS PIEZA,
+            PSD.PBRUT AS PESO_BRUTO,
+            PSD.TARA AS TARA,
+            PSD.LONGITUD AS LONGITUD,
+            CASE PSD.TONO
+                WHEN 0 THEN 'TONO A' WHEN 1 THEN 'TONO B' WHEN 2 THEN 'TONO C'
+                ELSE 'TONO ' || PSD.TONO
+            END AS TONO,
+            PSD.FECHAYHORA AS FECHA,
+            PSD.MUESTRADELROLLO AS MUESTRA,
+            COALESCE(PSD.IS_PL, 0) AS PL
+        FROM PSDTABPZAS PSD
+        WHERE PSD.CLAVE = ?
+    ", [$clave]);
 
             if (! $row) {
                 return null;
@@ -91,7 +93,7 @@ class ConrrecionAcabadoController extends Controller
 
             $row = (array) $row;
 
-            // 2) Encabezado de la partida (cacheado). Ahora incluye OE_ID.
+            // 2) Encabezado de la partida (cacheado)
             $enc = $this->encabezado($connection, $row['CVE_ENC']);
 
             if (! $enc) {
@@ -193,9 +195,9 @@ class ConrrecionAcabadoController extends Controller
 
             $afectados = $conn->update(
                 'UPDATE PSDTABPZAS
-            SET PESOKG = ?, PNETO = ?, PESOLB = ?, MTS = ?, LONGITUD = ?, YDS = ?,
-                TARA = ?, PBRUT = ?
-          WHERE CLAVE = ?',
+                SET PESOKG = ?, PNETO = ?, PESOLB = ?, MTS = ?, LONGITUD = ?, YDS = ?,
+                    TARA = ?, PBRUT = ?
+              WHERE CLAVE = ? AND COALESCE(ESTATUS, 1) <> 0',
                 [$pneto, $pneto, round((float) $v['libras'], 3), $metros, $metros,
                     round((float) $v['yardas'], 3), $tara, $pbrut, $clave]
             );
@@ -206,43 +208,65 @@ class ConrrecionAcabadoController extends Controller
         }
 
         if ($afectados < 1) {
-            return response()->json(['ok' => false, 'motivo' => 'rollo_no_encontrado'], 404);
+            return response()->json(['ok' => false, 'motivo' => 'rollo_eliminado', 'error' => 'El rollo ya fue eliminado'], 409);
         }
 
         return response()->json(['ok' => true]);
     }
 
-    public function eliminar(Request $request)
-    {
-        $v = $request->validate([
-            'rollo' => ['required', 'regex:/^\d{1,10}$/'],
+public function eliminar(Request $request)
+{
+    $v = $request->validate([
+        'rollo' => ['required', 'regex:/^\d{1,10}$/'],
+    ]);
+
+    $clave = (int) (ltrim($v['rollo'], '0') ?: '0');
+
+    $usuario = auth()->user();
+    $userId = (int) $usuario->ID;
+
+    $identity = UserFirebirdIdentity::where('firebird_user_clave', $userId)->first()
+        ?? UserFirebirdIdentity::where('firebird_user_clave', (int) $usuario->CLAVE)->first();
+
+    $tbClave = $identity?->firebird_tb_clave;
+    $tbClave = is_string($tbClave) ? trim($tbClave) : $tbClave;
+
+    if (! $tbClave) {
+        return response()->json(['ok' => false, 'error' => 'Usuario sin clave de empleado (TB)'], 403);
+    }
+
+    try {
+        $conn = $this->firebird->getProductionConnection();
+
+        if ($bloqueo = $this->validarEstatus($conn, $clave)) {
+            return $bloqueo;
+        }
+
+        $afectados = $conn->update(
+            'UPDATE PSDTABPZAS
+                SET ESTATUS = 0,
+                    FECHAYHORADEL = CURRENT_TIMESTAMP,
+                    USDEL = ?,
+                    CASEDEL = 1
+              WHERE CLAVE = ? AND COALESCE(ESTATUS, 1) <> 0',
+            [$tbClave, $clave]
+        );
+    } catch (\Throwable $e) {
+        Log::error('[correccion-acabado] ELIMINAR', [
+            'clave' => $clave,
+            'tb' => $tbClave,
+            'm' => $e->getMessage(),
         ]);
 
-        $clave = (int) (ltrim($v['rollo'], '0') ?: '0');
-
-        try {
-            $conn = $this->firebird->getProductionConnection();
-
-            if ($bloqueo = $this->validarEstatus($conn, $clave)) {
-                return $bloqueo;
-            }
-
-            $afectados = $conn->update(
-                'UPDATE PSDTABPZAS SET ESTATUS = 0 WHERE CLAVE = ?',
-                [$clave]
-            );
-        } catch (\Throwable $e) {
-            Log::error('[correccion-acabado] ELIMINAR', ['clave' => $clave, 'm' => $e->getMessage()]);
-
-            return response()->json(['ok' => false, 'error' => 'No se pudo eliminar'], 500);
-        }
-
-        if ($afectados < 1) {
-            return response()->json(['ok' => false, 'motivo' => 'rollo_no_encontrado'], 404);
-        }
-
-        return response()->json(['ok' => true]);
+        return response()->json(['ok' => false, 'error' => 'No se pudo eliminar'], 500);
     }
+
+    if ($afectados < 1) {
+        return response()->json(['ok' => false, 'motivo' => 'rollo_eliminado', 'error' => 'El rollo ya fue eliminado'], 409);
+    }
+
+    return response()->json(['ok' => true]);
+}
 
     private function encabezado($connection, $cveEnc): ?array
     {
@@ -270,12 +294,26 @@ class ConrrecionAcabadoController extends Controller
 
     private function validarEstatus($connection, int $clave): ?JsonResponse
     {
-        $psd = $connection->selectOne('SELECT CVE_ENC FROM PSDTABPZAS WHERE CLAVE = ?', [$clave]);
+        $psd = $connection->selectOne(
+            'SELECT CVE_ENC, ESTATUS FROM PSDTABPZAS WHERE CLAVE = ?',
+            [$clave]
+        );
         if (! $psd) {
             return response()->json(['ok' => false, 'motivo' => 'rollo_no_encontrado'], 404);
         }
 
-        $enc = $this->encabezado($connection, ((array) $psd)['CVE_ENC']);
+        $psd = (array) $psd;
+
+        // NUEVO: rollo ya eliminado
+        if ($psd['ESTATUS'] !== null && (int) $psd['ESTATUS'] === 0) {
+            return response()->json([
+                'ok' => false,
+                'motivo' => 'rollo_eliminado',
+                'error' => 'El rollo ya fue eliminado',
+            ], 409);
+        }
+
+        $enc = $this->encabezado($connection, $psd['CVE_ENC']);
         $estatus = $this->estatusOrden($connection, $enc['OE_ID'] ?? null);
 
         if ($estatus !== self::ESTATUS_EDITABLE) {
