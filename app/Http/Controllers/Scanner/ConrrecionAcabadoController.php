@@ -184,26 +184,26 @@ class ConrrecionAcabadoController extends Controller
             return response()->json(['ok' => false, 'motivo' => 'pesos_inconsistentes'], 422);
         }
 
-try {
-    $conn = $this->firebird->getProductionConnection();
+        try {
+            $conn = $this->firebird->getProductionConnection();
 
-    if ($bloqueo = $this->validarEstatus($conn, $clave)) {
-        return $bloqueo;
-    }
+            if ($bloqueo = $this->validarEstatus($conn, $clave)) {
+                return $bloqueo;
+            }
 
-    $afectados = $conn->update(
-        'UPDATE PSDTABPZAS
+            $afectados = $conn->update(
+                'UPDATE PSDTABPZAS
             SET PESOKG = ?, PNETO = ?, PESOLB = ?, MTS = ?, LONGITUD = ?, YDS = ?,
                 TARA = ?, PBRUT = ?
           WHERE CLAVE = ?',
-        [$pneto, $pneto, round((float) $v['libras'], 3), $metros, $metros,
-            round((float) $v['yardas'], 3), $tara, $pbrut, $clave]
-    );
-} catch (\Throwable $e) {
-    Log::error('[correccion-acabado] UPDATE', ['clave' => $clave, 'm' => $e->getMessage()]);
+                [$pneto, $pneto, round((float) $v['libras'], 3), $metros, $metros,
+                    round((float) $v['yardas'], 3), $tara, $pbrut, $clave]
+            );
+        } catch (\Throwable $e) {
+            Log::error('[correccion-acabado] UPDATE', ['clave' => $clave, 'm' => $e->getMessage()]);
 
-    return response()->json(['ok' => false, 'error' => 'No se pudo guardar'], 500);
-}
+            return response()->json(['ok' => false, 'error' => 'No se pudo guardar'], 500);
+        }
 
         if ($afectados < 1) {
             return response()->json(['ok' => false, 'motivo' => 'rollo_no_encontrado'], 404);
