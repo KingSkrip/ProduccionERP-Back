@@ -35,13 +35,11 @@ class ConrrecionAcabadoController extends Controller
             $conn = $this->firebird->getProductionConnection();
 
             if ($rollo !== '') {
-                // Escáner: por CLAVE
                 if (! preg_match('/^\d{1,10}$/', $rollo)) {
                     return response()->json(['ok' => false, 'motivo' => 'rollo_invalido', 'rollo' => $rollo], 422);
                 }
                 $clave = (int) (ltrim($rollo, '0') ?: '0');
             } else {
-                // Manual: por OP + PIEZA
                 if ($op === '' || strlen($op) > 30) {
                     return response()->json(['ok' => false, 'motivo' => 'op_invalida'], 422);
                 }
