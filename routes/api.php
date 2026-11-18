@@ -314,6 +314,7 @@ Route::prefix('scanner')->middleware('jwt.auth')->group(function () {
     Route::get('/correccion-acabado/articulo', [ConrrecionAcabadoController::class, 'articulo']);
     Route::put('/correccion-acabado/edit', [ConrrecionAcabadoController::class, 'update']);
     Route::post('/correccion-acabado/eliminar', [ConrrecionAcabadoController::class, 'eliminar']);
+    Route::get('/correccion-acabado/op', [ConrrecionAcabadoController::class, 'porOp']);
 
 });
 

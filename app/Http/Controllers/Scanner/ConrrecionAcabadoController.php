@@ -27,16 +27,36 @@ class ConrrecionAcabadoController extends Controller
      */
     public function scan(Request $request)
     {
-        $rollo = trim((string) $request->rollo);
-
-        if (! preg_match('/^\d{1,10}$/', $rollo)) {
-            return response()->json(['ok' => false, 'motivo' => 'rollo_invalido', 'rollo' => $rollo], 422);
-        }
-
-        $clave = (int) (ltrim($rollo, '0') ?: '0');
+        $rollo = trim((string) $request->input('rollo', ''));
+        $op = trim((string) $request->input('op', ''));
+        $pieza = trim((string) $request->input('pieza', ''));
 
         try {
-            $datos = $this->datosRolloAcabado($this->firebird->getProductionConnection(), $clave);
+            $conn = $this->firebird->getProductionConnection();
+
+            if ($rollo !== '') {
+                // Escáner: por CLAVE
+                if (! preg_match('/^\d{1,10}$/', $rollo)) {
+                    return response()->json(['ok' => false, 'motivo' => 'rollo_invalido', 'rollo' => $rollo], 422);
+                }
+                $clave = (int) (ltrim($rollo, '0') ?: '0');
+            } else {
+                // Manual: por OP + PIEZA
+                if ($op === '' || strlen($op) > 30) {
+                    return response()->json(['ok' => false, 'motivo' => 'op_invalida'], 422);
+                }
+                if (! preg_match('/^\d{1,10}$/', $pieza)) {
+                    return response()->json(['ok' => false, 'motivo' => 'rollo_invalido', 'rollo' => $pieza], 422);
+                }
+
+                $clave = $this->claveRolloPorOpPieza($conn, $op, (int) $pieza);
+
+                if ($clave === null) {
+                    return response()->json(['ok' => false, 'motivo' => 'pieza_no_encontrada'], 404);
+                }
+            }
+
+            $datos = $this->datosRolloAcabado($conn, $clave);
         } catch (\Throwable $e) {
             Log::error('[correccion-acabado] scan', ['m' => $e->getMessage()]);
 
@@ -44,17 +64,33 @@ class ConrrecionAcabadoController extends Controller
         }
 
         if ($datos === null) {
-            return response()->json(['ok' => false, 'motivo' => 'rollo_no_encontrado', 'rollo' => $rollo], 404);
+            return response()->json(['ok' => false, 'motivo' => 'rollo_no_encontrado'], 404);
         }
 
         return response()->json([
             'ok' => true,
-            'rollo' => $rollo,
+            'rollo' => str_pad((string) $clave, 10, '0', STR_PAD_LEFT), // siempre la CLAVE real
             'pieza' => $datos['PIEZA'],
             'op' => trim((string) $datos['OP']),
             'peso' => (float) $datos['PESO NETO'],
             'datos' => $datos,
         ]);
+    }
+
+    /** Busca la CLAVE del rollo a partir de OP (partida u orden) + número de pieza. */
+    private function claveRolloPorOpPieza($connection, string $op, int $pieza): ?int
+    {
+        $r = $connection->selectOne("
+        SELECT FIRST 1 PSD.CLAVE
+        FROM P_PSDENC('".config('firebird.company')."') P
+        LEFT JOIN ORDENESENC OE ON OE.ID = P.CVE_ORDEN
+        INNER JOIN PSDTABPZAS PSD ON PSD.CVE_ENC = P.CVE_PSD_ENC
+        WHERE (P.PARTIDA = ? OR OE.ORDEN = ?)
+          AND PSD.PIEZA = ?
+        ORDER BY COALESCE(PSD.ESTATUS, 1) DESC, PSD.CLAVE DESC
+    ", [$op, $op, $pieza]);
+
+        return $r ? (int) ((array) $r)['CLAVE'] : null;
     }
 
     private function datosRolloAcabado($connection, int $clave): ?array
@@ -214,59 +250,59 @@ class ConrrecionAcabadoController extends Controller
         return response()->json(['ok' => true]);
     }
 
-public function eliminar(Request $request)
-{
-    $v = $request->validate([
-        'rollo' => ['required', 'regex:/^\d{1,10}$/'],
-    ]);
+    public function eliminar(Request $request)
+    {
+        $v = $request->validate([
+            'rollo' => ['required', 'regex:/^\d{1,10}$/'],
+        ]);
 
-    $clave = (int) (ltrim($v['rollo'], '0') ?: '0');
+        $clave = (int) (ltrim($v['rollo'], '0') ?: '0');
 
-    $usuario = auth()->user();
-    $userId = (int) $usuario->ID;
+        $usuario = auth()->user();
+        $userId = (int) $usuario->ID;
 
-    $identity = UserFirebirdIdentity::where('firebird_user_clave', $userId)->first()
-        ?? UserFirebirdIdentity::where('firebird_user_clave', (int) $usuario->CLAVE)->first();
+        $identity = UserFirebirdIdentity::where('firebird_user_clave', $userId)->first()
+            ?? UserFirebirdIdentity::where('firebird_user_clave', (int) $usuario->CLAVE)->first();
 
-    $tbClave = $identity?->firebird_tb_clave;
-    $tbClave = is_string($tbClave) ? trim($tbClave) : $tbClave;
+        $tbClave = $identity?->firebird_tb_clave;
+        $tbClave = is_string($tbClave) ? trim($tbClave) : $tbClave;
 
-    if (! $tbClave) {
-        return response()->json(['ok' => false, 'error' => 'Usuario sin clave de empleado (TB)'], 403);
-    }
-
-    try {
-        $conn = $this->firebird->getProductionConnection();
-
-        if ($bloqueo = $this->validarEstatus($conn, $clave)) {
-            return $bloqueo;
+        if (! $tbClave) {
+            return response()->json(['ok' => false, 'error' => 'Usuario sin clave de empleado (TB)'], 403);
         }
 
-        $afectados = $conn->update(
-            'UPDATE PSDTABPZAS
+        try {
+            $conn = $this->firebird->getProductionConnection();
+
+            if ($bloqueo = $this->validarEstatus($conn, $clave)) {
+                return $bloqueo;
+            }
+
+            $afectados = $conn->update(
+                'UPDATE PSDTABPZAS
                 SET ESTATUS = 0,
                     FECHAYHORADEL = CURRENT_TIMESTAMP,
                     USDEL = ?,
                     CASEDEL = 1
               WHERE CLAVE = ? AND COALESCE(ESTATUS, 1) <> 0',
-            [$tbClave, $clave]
-        );
-    } catch (\Throwable $e) {
-        Log::error('[correccion-acabado] ELIMINAR', [
-            'clave' => $clave,
-            'tb' => $tbClave,
-            'm' => $e->getMessage(),
-        ]);
+                [$tbClave, $clave]
+            );
+        } catch (\Throwable $e) {
+            Log::error('[correccion-acabado] ELIMINAR', [
+                'clave' => $clave,
+                'tb' => $tbClave,
+                'm' => $e->getMessage(),
+            ]);
 
-        return response()->json(['ok' => false, 'error' => 'No se pudo eliminar'], 500);
+            return response()->json(['ok' => false, 'error' => 'No se pudo eliminar'], 500);
+        }
+
+        if ($afectados < 1) {
+            return response()->json(['ok' => false, 'motivo' => 'rollo_eliminado', 'error' => 'El rollo ya fue eliminado'], 409);
+        }
+
+        return response()->json(['ok' => true]);
     }
-
-    if ($afectados < 1) {
-        return response()->json(['ok' => false, 'motivo' => 'rollo_eliminado', 'error' => 'El rollo ya fue eliminado'], 409);
-    }
-
-    return response()->json(['ok' => true]);
-}
 
     private function encabezado($connection, $cveEnc): ?array
     {
