@@ -1091,85 +1091,85 @@ class AuthController extends Controller
     /**
      * Pausar sesión (usuario cambió de pestaña / minimizó / salió de la PWA)
      */
-    public function pauseSession(Request $request)
-    {
-        $token = $request->bearerToken() ?? $request->input('encrypt');
+    // public function pauseSession(Request $request)
+    // {
+    //     $token = $request->bearerToken() ?? $request->input('encrypt');
 
-        if (! $token) {
-            return response()->json(['message' => 'Token no proporcionado'], 401);
-        }
+    //     if (! $token) {
+    //         return response()->json(['message' => 'Token no proporcionado'], 401);
+    //     }
 
-        try {
-            $decoded = JWT::decode($token, new Key($this->jwtSecret, $this->jwtAlgorithm));
+    //     try {
+    //         $decoded = JWT::decode($token, new Key($this->jwtSecret, $this->jwtAlgorithm));
 
-            if (isset($decoded->jti)) {
-                UserLoginSession::where('jti', $decoded->jti)
-                    ->where('status', 1) // solo pausa si estaba activa
-                    ->first()
-                    ?->pausar();
-            }
+    //         if (isset($decoded->jti)) {
+    //             UserLoginSession::where('jti', $decoded->jti)
+    //                 ->where('status', 1) // solo pausa si estaba activa
+    //                 ->first()
+    //                 ?->pausar();
+    //         }
 
-            return response()->json(['message' => 'Sesión pausada'], 200);
-        } catch (\Throwable $e) {
-            return response()->json(['message' => 'Token inválido'], 401);
-        }
-    }
+    //         return response()->json(['message' => 'Sesión pausada'], 200);
+    //     } catch (\Throwable $e) {
+    //         return response()->json(['message' => 'Token inválido'], 401);
+    //     }
+    // }
 
     /**
      * Reanudar sesión (usuario volvió a la pestaña / app)
      */
-    public function resumeSession(Request $request)
-    {
-        $token = $request->bearerToken() ?? $request->input('encrypt');
+    // public function resumeSession(Request $request)
+    // {
+    //     $token = $request->bearerToken() ?? $request->input('encrypt');
 
-        if (! $token) {
-            return response()->json(['message' => 'Token no proporcionado'], 401);
-        }
+    //     if (! $token) {
+    //         return response()->json(['message' => 'Token no proporcionado'], 401);
+    //     }
 
-        try {
-            $decoded = JWT::decode($token, new Key($this->jwtSecret, $this->jwtAlgorithm));
+    //     try {
+    //         $decoded = JWT::decode($token, new Key($this->jwtSecret, $this->jwtAlgorithm));
 
-            if (isset($decoded->jti)) {
-                UserLoginSession::where('jti', $decoded->jti)
-                    ->whereIn('status', [1, 2]) // activa o pausada
-                    ->first()
-                    ?->reanudar();
-            }
+    //         if (isset($decoded->jti)) {
+    //             UserLoginSession::where('jti', $decoded->jti)
+    //                 ->whereIn('status', [1, 2]) // activa o pausada
+    //                 ->first()
+    //                 ?->reanudar();
+    //         }
 
-            return response()->json(['message' => 'Sesión reanudada'], 200);
-        } catch (\Throwable $e) {
-            return response()->json(['message' => 'Token inválido'], 401);
-        }
-    }
+    //         return response()->json(['message' => 'Sesión reanudada'], 200);
+    //     } catch (\Throwable $e) {
+    //         return response()->json(['message' => 'Token inválido'], 401);
+    //     }
+    // }
 
     /**
      * Heartbeat: confirma que la sesión sigue activa mientras la pestaña
      * está visible. Si el backend no recibe uno en X tiempo, un job
      * la marca como pausada automáticamente (ver punto 5).
      */
-    public function heartbeat(Request $request)
-    {
-        $token = $request->bearerToken() ?? $request->input('encrypt');
+    // public function heartbeat(Request $request)
+    // {
+    //     $token = $request->bearerToken() ?? $request->input('encrypt');
 
-        if (! $token) {
-            return response()->json(['message' => 'Token no proporcionado'], 401);
-        }
+    //     if (! $token) {
+    //         return response()->json(['message' => 'Token no proporcionado'], 401);
+    //     }
 
-        try {
-            $decoded = JWT::decode($token, new Key($this->jwtSecret, $this->jwtAlgorithm));
+    //     try {
+    //         $decoded = JWT::decode($token, new Key($this->jwtSecret, $this->jwtAlgorithm));
 
-            if (isset($decoded->jti)) {
-                UserLoginSession::where('jti', $decoded->jti)
-                    ->where('status', 1)
-                    ->first()
-                    ?->heartbeat();
-            }
+    //         if (isset($decoded->jti)) {
+    //             UserLoginSession::where('jti', $decoded->jti)
+    //                 ->where('status', 1)
+    //                 ->first()
+    //                 ?->heartbeat();
+    //         }
 
-            return response()->json(['ok' => true], 200);
-        } catch (\Throwable $e) {
-            return response()->json(['message' => 'Token inválido'], 401);
-        }
-    }
+    //         return response()->json(['ok' => true], 200);
+    //     } catch (\Throwable $e) {
+    //         return response()->json(['message' => 'Token inválido'], 401);
+    //     }
+    // }
 
     private function resolveDeviceInfo(Request $request): array
     {

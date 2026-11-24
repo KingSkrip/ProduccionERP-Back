@@ -441,50 +441,50 @@ class DataDashboardController extends Controller
         }
     }
 
-    public function refreshQr(Request $request)
-    {
-        $token = $request->bearerToken();
-        if (! $token) {
-            return response()->json(['message' => 'Token requerido'], 401);
-        }
+    // public function refreshQr(Request $request)
+    // {
+    //     $token = $request->bearerToken();
+    //     if (! $token) {
+    //         return response()->json(['message' => 'Token requerido'], 401);
+    //     }
 
-        try {
-            $decoded = JWT::decode($token, new Key($this->jwtSecret, 'HS256'));
-        } catch (\Throwable $e) {
-            return response()->json(['message' => 'Token inválido'], 401);
-        }
+    //     try {
+    //         $decoded = JWT::decode($token, new Key($this->jwtSecret, 'HS256'));
+    //     } catch (\Throwable $e) {
+    //         return response()->json(['message' => 'Token inválido'], 401);
+    //     }
 
-        $usuario = Users::find($decoded->sub ?? null);
-        if (! $usuario) {
-            return response()->json(['message' => 'Usuario no encontrado'], 404);
-        }
+    //     $usuario = Users::find($decoded->sub ?? null);
+    //     if (! $usuario) {
+    //         return response()->json(['message' => 'Usuario no encontrado'], 404);
+    //     }
 
-        $identity = UserFirebirdIdentity::where('firebird_user_clave', (int) $usuario->ID)->first()
-            ?? UserFirebirdIdentity::where('firebird_user_clave', (int) $usuario->CLAVE)->first();
+    //     $identity = UserFirebirdIdentity::where('firebird_user_clave', (int) $usuario->ID)->first()
+    //         ?? UserFirebirdIdentity::where('firebird_user_clave', (int) $usuario->CLAVE)->first();
 
-        if (! $identity) {
-            return response()->json(['message' => 'Identidad no encontrada'], 404);
-        }
+    //     if (! $identity) {
+    //         return response()->json(['message' => 'Identidad no encontrada'], 404);
+    //     }
 
-        // 🔒 No emitas QR fresco si la sesión no está activa/reciente
-        $sesion = isset($decoded->jti)
-            ? UserLoginSession::where('jti', $decoded->jti)->first()
-            : null;
+    //     // 🔒 No emitas QR fresco si la sesión no está activa/reciente
+    //     $sesion = isset($decoded->jti)
+    //         ? UserLoginSession::where('jti', $decoded->jti)->first()
+    //         : null;
 
-        if (! $sesion
-            || (int) $sesion->status !== 1
-            || ! $sesion->last_activity
-            || $sesion->last_activity->lt(now()->subSeconds(30))
-        ) {
-            return response()->json(['message' => 'Sesión inactiva, no se puede generar QR'], 409);
-        }
+    //     if (! $sesion
+    //         || (int) $sesion->status !== 1
+    //         || ! $sesion->last_activity
+    //         || $sesion->last_activity->lt(now()->subSeconds(30))
+    //     ) {
+    //         return response()->json(['message' => 'Sesión inactiva, no se puede generar QR'], 409);
+    //     }
 
-        try {
-            $data = $this->qrService->generarTokenEfimero($identity->id, $sesion->jti);
+    //     try {
+    //         $data = $this->qrService->generarTokenEfimero($identity->id, $sesion->jti);
 
-            return response()->json($data, 200);
-        } catch (\Throwable $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
-        }
-    }
+    //         return response()->json($data, 200);
+    //     } catch (\Throwable $e) {
+    //         return response()->json(['message' => $e->getMessage()], 422);
+    //     }
+    // }
 }

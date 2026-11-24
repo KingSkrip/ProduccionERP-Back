@@ -56,16 +56,16 @@ Route::prefix('auth')->group(function () {
     Route::post('reset-password', [AuthController::class, 'resetPassword']);
     // DESBLOQUEAR SESION
     Route::post('unlock-session', [AuthController::class, 'unlockSession']);
-    Route::post('session/pause', [AuthController::class, 'pauseSession']);
-    Route::post('session/resume', [AuthController::class, 'resumeSession']);
-    Route::post('session/heartbeat', [AuthController::class, 'heartbeat']);
+    // Route::post('session/pause', [AuthController::class, 'pauseSession']);
+    // Route::post('session/resume', [AuthController::class, 'resumeSession']);
+    // Route::post('session/heartbeat', [AuthController::class, 'heartbeat']);
 });
 
 // DASHBOARD PERSONAL
 Route::prefix('dash')->group(function () {
     Route::get('me', [DataDashboardController::class, 'me']);
     Route::post('update-status', [DataDashboardController::class, 'updateStatus']);
-    Route::post('/qr/refresh', [DataDashboardController::class, 'refreshQr']);
+    // Route::post('/qr/refresh', [DataDashboardController::class, 'refreshQr']);
 });
 
 // EDITAR PERFIL PERSONAL
@@ -315,6 +315,8 @@ Route::prefix('scanner')->middleware('jwt.auth')->group(function () {
     Route::put('/correccion-acabado/edit', [ConrrecionAcabadoController::class, 'update']);
     Route::post('/correccion-acabado/eliminar', [ConrrecionAcabadoController::class, 'eliminar']);
     Route::get('/correccion-acabado/op', [ConrrecionAcabadoController::class, 'porOp']);
+    Route::post('correccion-acabado/lote', [ConrrecionAcabadoController::class, 'scanLote']);
+    Route::post('/correccion-acabado/eliminar-lote', [ConrrecionAcabadoController::class, 'eliminarLote']);
 
 });
 
