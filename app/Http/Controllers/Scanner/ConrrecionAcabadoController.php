@@ -28,49 +28,103 @@ class ConrrecionAcabadoController extends Controller
         $this->firebird = $firebird;
     }
 
+    /* =======================================================
+        🧪 HELPERS DE DEBUG (solo logs, no alteran lógica)
+    ======================================================= */
+
+    /** Log de depuración con usuario e IP automáticos. */
+    private function dbg(string $tag, array $ctx = [], string $level = 'info'): void
+    {
+        $base = [
+            'user_id' => auth()->user()?->ID,
+            'ip' => request()->ip(),
+        ];
+
+        Log::{$level}("[correccion-acabado] {$tag}", array_merge($base, $ctx));
+    }
+
+    /** Log de error completo (clase, archivo, línea, trace). */
+    private function dbgError(string $tag, \Throwable $e, array $ctx = []): void
+    {
+        Log::error("[correccion-acabado] {$tag}", array_merge([
+            'user_id' => auth()->user()?->ID,
+            'ip' => request()->ip(),
+            'message' => $e->getMessage(),
+            'class' => get_class($e),
+            'code' => $e->getCode(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'trace' => $e->getTraceAsString(),
+        ], $ctx));
+    }
+
     /**
      * Un solo escaneo: { rollo: "0000413013" }
      * Regresa OP, PIEZA, ID del rollo y demás datos.
      */
     public function scan(Request $request)
     {
+        $inicio = microtime(true);
+
         $rollo = trim((string) $request->input('rollo', ''));
         $op = trim((string) $request->input('op', ''));
         $pieza = trim((string) $request->input('pieza', ''));
+
+        $this->dbg('▶️ SCAN inicio', ['rollo' => $rollo, 'op' => $op, 'pieza' => $pieza]);
 
         try {
             $conn = $this->firebird->getProductionConnection();
 
             if ($rollo !== '') {
                 if (! preg_match('/^\d{1,10}$/', $rollo)) {
+                    $this->dbg('⚠️ SCAN rollo inválido', ['rollo' => $rollo], 'warning');
+
                     return response()->json(['ok' => false, 'motivo' => 'rollo_invalido', 'rollo' => $rollo], 422);
                 }
                 $clave = (int) (ltrim($rollo, '0') ?: '0');
             } else {
                 if ($op === '' || strlen($op) > 30) {
+                    $this->dbg('⚠️ SCAN op inválida', ['op' => $op], 'warning');
+
                     return response()->json(['ok' => false, 'motivo' => 'op_invalida'], 422);
                 }
                 if (! preg_match('/^\d{1,10}$/', $pieza)) {
+                    $this->dbg('⚠️ SCAN pieza inválida', ['pieza' => $pieza], 'warning');
+
                     return response()->json(['ok' => false, 'motivo' => 'rollo_invalido', 'rollo' => $pieza], 422);
                 }
 
                 $clave = $this->claveRolloPorOpPieza($conn, $op, (int) $pieza);
 
+                $this->dbg('🔎 SCAN clave por OP+pieza', ['op' => $op, 'pieza' => $pieza, 'clave' => $clave]);
+
                 if ($clave === null) {
+                    $this->dbg('⚠️ SCAN pieza no encontrada', ['op' => $op, 'pieza' => $pieza], 'warning');
+
                     return response()->json(['ok' => false, 'motivo' => 'pieza_no_encontrada'], 404);
                 }
             }
 
             $datos = $this->datosRolloAcabado($conn, $clave);
         } catch (\Throwable $e) {
-            Log::error('[correccion-acabado] scan', ['m' => $e->getMessage()]);
+            $this->dbgError('scan', $e, ['rollo' => $rollo, 'op' => $op, 'pieza' => $pieza]);
 
             return response()->json(['ok' => false, 'error' => 'Conexión Firebird fallida'], 500);
         }
 
         if ($datos === null) {
+            $this->dbg('⚠️ SCAN rollo no encontrado', ['clave' => $clave], 'warning');
+
             return response()->json(['ok' => false, 'motivo' => 'rollo_no_encontrado'], 404);
         }
+
+        $this->dbg('✅ SCAN fin', [
+            'clave' => $clave,
+            'pieza' => $datos['PIEZA'] ?? null,
+            'oe_estatus' => $datos['OE_ESTATUS'] ?? null,
+            'psd_estatus' => $datos['PSD_ESTATUS'] ?? null,
+            'ms' => round((microtime(true) - $inicio) * 1000, 2),
+        ]);
 
         return response()->json([
             'ok' => true,
@@ -130,6 +184,8 @@ class ConrrecionAcabadoController extends Controller
     ", [$clave]);
 
             if (! $row) {
+                $this->dbg('⚠️ datosRolloAcabado: rollo no existe en PSDTABPZAS', ['clave' => $clave], 'warning');
+
                 return null;
             }
 
@@ -139,6 +195,11 @@ class ConrrecionAcabadoController extends Controller
             $enc = $this->encabezado($connection, $row['CVE_ENC']);
 
             if (! $enc) {
+                $this->dbg('⚠️ datosRolloAcabado: sin encabezado', [
+                    'clave' => $clave,
+                    'cve_enc' => $row['CVE_ENC'] ?? null,
+                ], 'warning');
+
                 return null;
             }
 
@@ -159,6 +220,10 @@ class ConrrecionAcabadoController extends Controller
             Log::warning('⚠️ [correccion-acabado] Falló la consulta del rollo', [
                 'clave' => $clave,
                 'message' => $e->getMessage(),
+                'class' => get_class($e),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return null;
@@ -167,13 +232,22 @@ class ConrrecionAcabadoController extends Controller
 
     public function articulo(Request $request)
     {
+        $inicio = microtime(true);
         $op = trim((string) $request->query('op'));
+
+        $this->dbg('▶️ ARTICULO inicio', ['op' => $op]);
+
         if ($op === '') {
+            $this->dbg('⚠️ ARTICULO op inválida', [], 'warning');
+
             return response()->json(['ok' => false, 'motivo' => 'op_invalida'], 422);
         }
 
         try {
             $row = Cache::remember("ca:articulo:$op", 3600, function () use ($op) {
+                // Este closure solo corre en cache MISS
+                $this->dbg('💾 ARTICULO cache MISS, consultando Firebird', ['op' => $op]);
+
                 $r = $this->firebird->getProductionConnection()->selectOne(
                     "SELECT FIRST 1 V.ID, V.ARTICULO, V.ANCHO, V.PESO, V.REND, V.ANCHO2, V.PESO2, V.REND2
                    FROM ORDENESENC OE
@@ -185,14 +259,22 @@ class ConrrecionAcabadoController extends Controller
                 return $r ? (array) $r : null;
             });
         } catch (\Throwable $e) {
-            Log::warning('[correccion-acabado] articulo', ['op' => $op, 'm' => $e->getMessage()]);
+            $this->dbgError('articulo', $e, ['op' => $op]);
 
             return response()->json(['ok' => false, 'error' => 'No se pudo consultar el artículo'], 500);
         }
 
         if (! $row) {
+            $this->dbg('⚠️ ARTICULO no encontrado', ['op' => $op], 'warning');
+
             return response()->json(['ok' => false, 'motivo' => 'articulo_no_encontrado'], 404);
         }
+
+        $this->dbg('✅ ARTICULO fin', [
+            'op' => $op,
+            'articulo' => trim((string) $row['ARTICULO']),
+            'ms' => round((microtime(true) - $inicio) * 1000, 2),
+        ]);
 
         return response()->json([
             'ok' => true,
@@ -208,6 +290,10 @@ class ConrrecionAcabadoController extends Controller
 
     public function update(Request $request)
     {
+        $inicio = microtime(true);
+
+        $this->dbg('▶️ UPDATE inicio (payload crudo)', ['payload' => $request->all()]);
+
         $v = $request->validate([
             'rollo' => ['required', 'regex:/^\d{1,10}$/'],
             'kilogramos' => ['required', 'numeric', 'gt:0'],
@@ -225,7 +311,23 @@ class ConrrecionAcabadoController extends Controller
         $pbrut = round((float) $v['pbruto'], 3);
         $metros = round((float) $v['metros'], 3);
 
+        $this->dbg('🧮 UPDATE valores calculados', [
+            'clave' => $clave,
+            'pneto' => $pneto,
+            'tara' => $tara,
+            'pbrut' => $pbrut,
+            'metros' => $metros,
+            'diff_pesos' => round(abs(($pneto + $tara) - $pbrut), 4),
+        ]);
+
         if (abs(($pneto + $tara) - $pbrut) > 0.01) {
+            $this->dbg('⚠️ UPDATE pesos inconsistentes', [
+                'clave' => $clave,
+                'pneto' => $pneto,
+                'tara' => $tara,
+                'pbrut' => $pbrut,
+            ], 'warning');
+
             return response()->json(['ok' => false, 'motivo' => 'pesos_inconsistentes'], 422);
         }
 
@@ -233,6 +335,12 @@ class ConrrecionAcabadoController extends Controller
             $conn = $this->firebird->getProductionConnection();
 
             if ($bloqueo = $this->validarEstatus($conn, $clave)) {
+                $this->dbg('⛔ UPDATE bloqueado por validarEstatus', [
+                    'clave' => $clave,
+                    'http' => $bloqueo->getStatusCode(),
+                    'respuesta' => $bloqueo->getData(true),
+                ], 'warning');
+
                 return $bloqueo;
             }
 
@@ -246,30 +354,48 @@ class ConrrecionAcabadoController extends Controller
             }
             $params[] = $clave;
 
-            $afectados = $conn->update(
-                "UPDATE PSDTABPZAS SET $sets WHERE CLAVE = ? AND COALESCE(ESTATUS, 1) <> 0",
-                $params
-            );
+            $sql = "UPDATE PSDTABPZAS SET $sets WHERE CLAVE = ? AND COALESCE(ESTATUS, 1) <> 0";
+
+            $this->dbg('🧪 UPDATE SQL', [
+                'sql' => $sql,
+                'placeholders' => substr_count($sql, '?'),
+                'params_count' => count($params),
+                'params' => $params,
+            ]);
+
+            $afectados = $conn->update($sql, $params);
+
+            $this->dbg('📦 UPDATE filas afectadas', ['clave' => $clave, 'afectados' => $afectados]);
         } catch (\Throwable $e) {
-            Log::error('[correccion-acabado] UPDATE', ['clave' => $clave, 'm' => $e->getMessage()]);
+            $this->dbgError('UPDATE', $e, ['clave' => $clave]);
 
             return response()->json(['ok' => false, 'error' => 'No se pudo guardar'], 500);
         }
 
         if ($afectados < 1) {
+            $this->dbg('⚠️ UPDATE 0 filas (rollo eliminado)', ['clave' => $clave], 'warning');
+
             return response()->json(['ok' => false, 'motivo' => 'rollo_eliminado', 'error' => 'El rollo ya fue eliminado'], 409);
         }
+
+        $this->dbg('✅ UPDATE fin', ['clave' => $clave, 'ms' => round((microtime(true) - $inicio) * 1000, 2)]);
 
         return response()->json(['ok' => true]);
     }
 
     public function eliminar(Request $request)
     {
+        $inicio = microtime(true);
+
+        $this->dbg('▶️ ELIMINAR inicio', ['payload' => $request->all()]);
+
         $v = $request->validate([
             'rollo' => ['required', 'regex:/^\d{1,10}$/'],
         ]);
 
         $clave = (int) (ltrim($v['rollo'], '0') ?: '0');
+
+        [$usdel, $namedel] = $this->quienElimina();
 
         $usuario = auth()->user();
         $userId = (int) $usuario->ID;
@@ -280,7 +406,22 @@ class ConrrecionAcabadoController extends Controller
         $tbClave = $identity?->firebird_tb_clave;
         $tbClave = is_string($tbClave) ? trim($tbClave) : $tbClave;
 
+        $this->dbg('🪪 ELIMINAR identidad', [
+            'clave_rollo' => $clave,
+            'usuario_ID' => $userId,
+            'usuario_CLAVE' => $usuario->CLAVE ?? null,
+            'identity_encontrada' => (bool) $identity,
+            'identity_id' => $identity->id ?? null,
+            'identity_firebird_user_clave' => $identity->firebird_user_clave ?? null,
+            'tbClave' => $tbClave,
+        ]);
+
         if (! $tbClave) {
+            $this->dbg('⛔ ELIMINAR rechazado: usuario sin clave TB', [
+                'usuario_ID' => $userId,
+                'identity_encontrada' => (bool) $identity,
+            ], 'warning');
+
             return response()->json(['ok' => false, 'error' => 'Usuario sin clave de empleado (TB)'], 403);
         }
 
@@ -288,31 +429,49 @@ class ConrrecionAcabadoController extends Controller
             $conn = $this->firebird->getProductionConnection();
 
             if ($bloqueo = $this->validarEstatus($conn, $clave)) {
+                $this->dbg('⛔ ELIMINAR bloqueado por validarEstatus', [
+                    'clave' => $clave,
+                    'http' => $bloqueo->getStatusCode(),
+                    'respuesta' => $bloqueo->getData(true),
+                ], 'warning');
+
                 return $bloqueo;
             }
 
-            $afectados = $conn->update(
-                'UPDATE PSDTABPZAS
-                SET ESTATUS = 0,
-                    FECHAYHORADEL = CURRENT_TIMESTAMP,
-                    USDEL = ?,
-                    CASEDEL = 1
-              WHERE CLAVE = ? AND COALESCE(ESTATUS, 1) <> 0',
-                [$tbClave, $clave]
-            );
+
+            $sql = 'UPDATE PSDTABPZAS
+            SET ESTATUS = 0,
+                FECHAYHORADEL = CURRENT_TIMESTAMP,
+                USDEL = ?,
+                NAMEDEL = ?,
+                CASEDEL = 1
+          WHERE CLAVE = ? AND COALESCE(ESTATUS, 1) <> 0';
+    
+        $this->dbg('🧪 ELIMINAR SQL', [
+            'placeholders' => substr_count($sql, '?'),
+            'params' => [$usdel, $namedel, $clave],
+        ]);
+    
+        $afectados = $conn->update($sql, [$usdel, $namedel, $clave]);
+
+            $this->dbg('📦 ELIMINAR filas afectadas', ['clave' => $clave, 'afectados' => $afectados]);
         } catch (\Throwable $e) {
-            Log::error('[correccion-acabado] ELIMINAR', [
-                'clave' => $clave,
-                'tb' => $tbClave,
-                'm' => $e->getMessage(),
-            ]);
+            $this->dbgError('ELIMINAR', $e, ['clave' => $clave, 'tb' => $tbClave]);
 
             return response()->json(['ok' => false, 'error' => 'No se pudo eliminar'], 500);
         }
 
         if ($afectados < 1) {
+            $this->dbg('⚠️ ELIMINAR 0 filas (ya eliminado)', ['clave' => $clave], 'warning');
+
             return response()->json(['ok' => false, 'motivo' => 'rollo_eliminado', 'error' => 'El rollo ya fue eliminado'], 409);
         }
+
+        $this->dbg('✅ ELIMINAR fin', [
+            'clave' => $clave,
+            'tb' => $tbClave,
+            'ms' => round((microtime(true) - $inicio) * 1000, 2),
+        ]);
 
         return response()->json(['ok' => true]);
     }
@@ -320,12 +479,19 @@ class ConrrecionAcabadoController extends Controller
     private function encabezado($connection, $cveEnc): ?array
     {
         return Cache::remember("ca:enc2:$cveEnc", 21600, function () use ($connection, $cveEnc) {
+            // Este closure solo corre en cache MISS
+            $this->dbg('💾 ENCABEZADO cache MISS, consultando Firebird', ['cve_enc' => $cveEnc]);
+
             $e = $connection->selectOne("
             SELECT P.ARTICULO AS ARTICULO, P.PARTIDA AS OP, OE.ORDEN AS ORDEN, OE.ID AS OE_ID
             FROM P_PSDENC('".config('firebird.company')."') P
             LEFT JOIN ORDENESENC OE ON OE.ID = P.CVE_ORDEN
             WHERE P.CVE_PSD_ENC = ?
         ", [$cveEnc]);
+
+            if (! $e) {
+                $this->dbg('⚠️ ENCABEZADO no encontrado (se cacheará null)', ['cve_enc' => $cveEnc], 'warning');
+            }
 
             return $e ? (array) $e : null;
         });
@@ -334,6 +500,8 @@ class ConrrecionAcabadoController extends Controller
     private function estatusOrden($connection, $oeId): ?int
     {
         if (! $oeId) {
+            $this->dbg('⚠️ estatusOrden sin OE_ID', [], 'warning');
+
             return null;
         }
         $r = $connection->selectOne('SELECT ESTATUS FROM ORDENESENC WHERE ID = ?', [$oeId]);
@@ -348,6 +516,8 @@ class ConrrecionAcabadoController extends Controller
             [$clave]
         );
         if (! $psd) {
+            $this->dbg('⚠️ validarEstatus: rollo no encontrado', ['clave' => $clave], 'warning');
+
             return response()->json(['ok' => false, 'motivo' => 'rollo_no_encontrado'], 404);
         }
 
@@ -355,6 +525,8 @@ class ConrrecionAcabadoController extends Controller
 
         // NUEVO: rollo ya eliminado
         if ($psd['ESTATUS'] !== null && (int) $psd['ESTATUS'] === 0) {
+            $this->dbg('⚠️ validarEstatus: rollo ya eliminado', ['clave' => $clave, 'psd' => $psd], 'warning');
+
             return response()->json([
                 'ok' => false,
                 'motivo' => 'rollo_eliminado',
@@ -364,6 +536,15 @@ class ConrrecionAcabadoController extends Controller
 
         $enc = $this->encabezado($connection, $psd['CVE_ENC']);
         $estatus = $this->estatusOrden($connection, $enc['OE_ID'] ?? null);
+
+        $this->dbg('🔍 validarEstatus', [
+            'clave' => $clave,
+            'psd_estatus' => $psd['ESTATUS'],
+            'cve_enc' => $psd['CVE_ENC'] ?? null,
+            'oe_id' => $enc['OE_ID'] ?? null,
+            'oe_estatus' => $estatus,
+            'estatus_requerido' => self::ESTATUS_EDITABLE,
+        ]);
 
         if ($estatus !== self::ESTATUS_EDITABLE) {
             return response()->json([
@@ -380,6 +561,14 @@ class ConrrecionAcabadoController extends Controller
     /** Varias piezas de una OP, toda la OP, o varios IDs. */
     public function lote(Request $request)
     {
+        $inicio = microtime(true);
+
+        $this->dbg('▶️ LOTE inicio', [
+            'op' => $request->input('op'),
+            'piezas' => is_array($request->input('piezas')) ? count($request->input('piezas')) : 0,
+            'claves' => is_array($request->input('claves')) ? count($request->input('claves')) : 0,
+        ]);
+
         $v = $request->validate([
             'op' => ['nullable', 'string', 'max:30'],
             'piezas' => ['nullable', 'array', 'max:'.self::MAX_LOTE],
@@ -397,7 +586,12 @@ class ConrrecionAcabadoController extends Controller
 
             if ($op !== '') {
                 $porPieza = $this->clavesPorOp($conn, $op, $piezas);
+
+                $this->dbg('🔎 LOTE claves por OP', ['op' => $op, 'encontradas' => count($porPieza)]);
+
                 if (! $porPieza) {
+                    $this->dbg('⚠️ LOTE pieza no encontrada', ['op' => $op], 'warning');
+
                     return response()->json(['ok' => false, 'motivo' => 'pieza_no_encontrada'], 404);
                 }
                 $claves = array_values($porPieza);
@@ -410,6 +604,8 @@ class ConrrecionAcabadoController extends Controller
                     $v['claves']
                 )));
             } else {
+                $this->dbg('⚠️ LOTE op inválida (sin op ni claves)', [], 'warning');
+
                 return response()->json(['ok' => false, 'motivo' => 'op_invalida'], 422);
             }
 
@@ -417,6 +613,7 @@ class ConrrecionAcabadoController extends Controller
             foreach ($claves as $clave) {
                 $datos = $this->datosRolloAcabado($conn, $clave);
                 if ($datos === null) {
+                    $this->dbg('⚠️ LOTE rollo sin datos', ['clave' => $clave], 'warning');
                     $faltan[] = $op !== '' ? $clave : str_pad((string) $clave, 10, '0', STR_PAD_LEFT);
 
                     continue;
@@ -431,10 +628,16 @@ class ConrrecionAcabadoController extends Controller
                 ];
             }
         } catch (\Throwable $e) {
-            Log::error('[correccion-acabado] lote', ['m' => $e->getMessage()]);
+            $this->dbgError('lote', $e, ['op' => $op]);
 
             return response()->json(['ok' => false, 'error' => 'Conexión Firebird fallida'], 500);
         }
+
+        $this->dbg('✅ LOTE fin', [
+            'rollos' => count($rollos),
+            'no_encontrados' => count($faltan),
+            'ms' => round((microtime(true) - $inicio) * 1000, 2),
+        ]);
 
         return response()->json([
             'ok' => true,
@@ -445,6 +648,14 @@ class ConrrecionAcabadoController extends Controller
 
     public function scanLote(Request $request)
     {
+        $inicio = microtime(true);
+
+        $this->dbg('▶️ SCAN_LOTE inicio', [
+            'op' => $request->input('op'),
+            'piezas' => is_array($request->input('piezas')) ? count($request->input('piezas')) : 0,
+            'claves' => is_array($request->input('claves')) ? count($request->input('claves')) : 0,
+        ]);
+
         $v = $request->validate([
             'op' => ['nullable', 'string', 'max:30', 'required_without:claves'],
             'piezas' => ['nullable', 'array', 'max:'.self::MAX_LOTE],
@@ -467,14 +678,29 @@ class ConrrecionAcabadoController extends Controller
             if ($claves) {
                 // modo IDs: [clave => clave]
                 $mapa = array_combine($claves, $claves);
+                $this->dbg('🔑 SCAN_LOTE modo IDs', ['claves' => count($claves)]);
             } else {
                 $mapa = $this->clavesPorOp($conn, $op, $piezas);   // [pieza => clave]
                 $noEncontradas = $piezas ? array_values(array_diff($piezas, array_keys($mapa))) : [];
 
+                $this->dbg('🔑 SCAN_LOTE modo OP', [
+                    'op' => $op,
+                    'piezas_pedidas' => count($piezas),
+                    'encontradas' => count($mapa),
+                    'no_encontradas' => count($noEncontradas),
+                ]);
+
                 if (! $piezas && ! $mapa) {
+                    $this->dbg('⚠️ SCAN_LOTE OP sin rollos', ['op' => $op], 'warning');
+
                     return response()->json(['ok' => false, 'motivo' => 'op_sin_rollos'], 404);
                 }
                 if (count($mapa) > self::MAX_OP_COMPLETA) {
+                    $this->dbg('✂️ SCAN_LOTE truncado', [
+                        'total' => count($mapa),
+                        'max' => self::MAX_OP_COMPLETA,
+                    ], 'warning');
+
                     $mapa = array_slice($mapa, 0, self::MAX_OP_COMPLETA, true);
                     $truncado = true;
                 }
@@ -483,6 +709,7 @@ class ConrrecionAcabadoController extends Controller
             foreach ($mapa as $llave => $clave) {
                 $datos = $this->datosRolloAcabado($conn, $clave);
                 if ($datos === null) {
+                    $this->dbg('⚠️ SCAN_LOTE rollo sin datos', ['llave' => $llave, 'clave' => $clave], 'warning');
                     $noEncontradas[] = $llave;
 
                     continue;
@@ -490,10 +717,17 @@ class ConrrecionAcabadoController extends Controller
                 $items[] = $this->formatoRollo($clave, $datos);
             }
         } catch (\Throwable $e) {
-            Log::error('[correccion-acabado] scanLote', ['m' => $e->getMessage()]);
+            $this->dbgError('scanLote', $e, ['op' => $op]);
 
             return response()->json(['ok' => false, 'error' => 'Conexión Firebird fallida'], 500);
         }
+
+        $this->dbg('✅ SCAN_LOTE fin', [
+            'total' => count($items),
+            'no_encontradas' => count($noEncontradas),
+            'truncado' => $truncado,
+            'ms' => round((microtime(true) - $inicio) * 1000, 2),
+        ]);
 
         return response()->json([
             'ok' => true,
@@ -515,14 +749,24 @@ class ConrrecionAcabadoController extends Controller
             $filtro = ' AND COALESCE(PSD.ESTATUS, 1) <> 0';
         }
 
-        $rows = $connection->select("
+        $sql = "
         SELECT PSD.CLAVE, PSD.PIEZA
         FROM P_PSDENC('".config('firebird.company')."') P
         LEFT JOIN ORDENESENC OE ON OE.ID = P.CVE_ORDEN
         INNER JOIN PSDTABPZAS PSD ON PSD.CVE_ENC = P.CVE_PSD_ENC
         WHERE (P.PARTIDA = ? OR OE.ORDEN = ?) $filtro
         ORDER BY PSD.PIEZA, COALESCE(PSD.ESTATUS, 1) DESC, PSD.CLAVE DESC
-    ", $params);
+    ";
+
+        $placeholders = substr_count($sql, '?');
+        if ($placeholders !== count($params)) {
+            $this->dbg('💥 clavesPorOp DESAJUSTE DE BINDINGS', [
+                'placeholders' => $placeholders,
+                'params_count' => count($params),
+            ], 'error');
+        }
+
+        $rows = $connection->select($sql, $params);
 
         $mapa = [];
         foreach ($rows as $r) {
@@ -531,6 +775,13 @@ class ConrrecionAcabadoController extends Controller
             $mapa[$p] ??= (int) $r['CLAVE']; // si hay pieza duplicada, gana la activa
         }
         ksort($mapa);
+
+        $this->dbg('📦 clavesPorOp', [
+            'op' => $op,
+            'piezas_filtro' => count($piezas),
+            'filas' => count($rows),
+            'piezas_unicas' => count($mapa),
+        ]);
 
         return $mapa;
     }
@@ -559,12 +810,54 @@ class ConrrecionAcabadoController extends Controller
         $tb = $identity?->firebird_tb_clave;
         $tb = is_string($tb) ? trim($tb) : $tb;
 
+        $this->dbg('🪪 tbClaveUsuario', [
+            'usuario_ID' => $userId,
+            'usuario_CLAVE' => $usuario->CLAVE ?? null,
+            'identity_encontrada' => (bool) $identity,
+            'identity_id' => $identity->id ?? null,
+            'tb' => $tb ?: null,
+        ]);
+
         return $tb ?: null;
     }
+
+
+    /**
+ * Datos de quien elimina:
+ *  - usdel:   clave TB si existe (como ahorita); si no, el ID de USUARIOS
+ *  - namedel: NOMBRE de la tabla usuarios
+ */
+private function quienElimina(): array
+{
+    $usuario = auth()->user();
+    $tb = $this->tbClaveUsuario();
+
+    $usdel = $tb ?: (string) $usuario->ID;
+    $nombre = trim((string) ($usuario->NOMBRE ?? ''));
+    $namedel = mb_substr($nombre, 0, 60); // ajusta 60 al largo real de NAMEDEL
+
+    $this->dbg('🪪 quienElimina', [
+        'usuario_ID' => $usuario->ID,
+        'tb' => $tb,
+        'usdel' => $usdel,
+        'namedel' => $namedel,
+        'fallback_a_usuario_id' => ! $tb,
+    ]);
+
+    return [$usdel, $namedel];
+}
+
 
     /** Elimina (baja lógica) varios rollos de golpe. Responde por rollo. */
     public function eliminarLote(Request $request)
     {
+        $inicio = microtime(true);
+        [$usdel, $namedel] = $this->quienElimina();
+
+        $this->dbg('▶️ ELIMINAR_LOTE inicio', [
+            'rollos' => is_array($request->input('rollos')) ? count($request->input('rollos')) : 0,
+        ]);
+
         $v = $request->validate([
             'rollos' => ['required', 'array', 'min:1', 'max:'.self::MAX_ELIMINAR_LOTE],
             'rollos.*' => ['regex:/^\d{1,10}$/'],
@@ -572,6 +865,8 @@ class ConrrecionAcabadoController extends Controller
 
         $tbClave = $this->tbClaveUsuario();
         if (! $tbClave) {
+            $this->dbg('⛔ ELIMINAR_LOTE rechazado: usuario sin clave TB', [], 'warning');
+
             return response()->json(['ok' => false, 'error' => 'Usuario sin clave de empleado (TB)'], 403);
         }
 
@@ -589,6 +884,8 @@ class ConrrecionAcabadoController extends Controller
                     // mismas reglas que eliminar(): existe, no eliminado, orden en estatus 3
                     if ($bloqueo = $this->validarEstatus($conn, $clave)) {
                         $d = $bloqueo->getData(true);
+                        $this->dbg('⛔ ELIMINAR_LOTE item bloqueado', ['rollo' => $id, 'respuesta' => $d], 'warning');
+
                         $fallidos[] = [
                             'rollo' => $id,
                             'motivo' => $d['motivo'] ?? null,
@@ -601,13 +898,16 @@ class ConrrecionAcabadoController extends Controller
 
                     $afectados = $conn->update(
                         'UPDATE PSDTABPZAS
-                        SET ESTATUS = 0,
-                            FECHAYHORADEL = CURRENT_TIMESTAMP,
-                            USDEL = ?,
-                            CASEDEL = 1
-                      WHERE CLAVE = ? AND COALESCE(ESTATUS, 1) <> 0',
-                        [$tbClave, $clave]
+                            SET ESTATUS = 0,
+                                FECHAYHORADEL = CURRENT_TIMESTAMP,
+                                USDEL = ?,
+                                NAMEDEL = ?,
+                                CASEDEL = 1
+                          WHERE CLAVE = ? AND COALESCE(ESTATUS, 1) <> 0',
+                        [$usdel, $namedel, $clave]
                     );
+
+                    $this->dbg('📦 ELIMINAR_LOTE item', ['rollo' => $id, 'afectados' => $afectados]);
 
                     if ($afectados < 1) {
                         $fallidos[] = ['rollo' => $id, 'motivo' => 'rollo_eliminado'];
@@ -615,20 +915,19 @@ class ConrrecionAcabadoController extends Controller
                         $eliminados[] = $id;
                     }
                 } catch (\Throwable $e) {
-                    Log::error('[correccion-acabado] ELIMINAR LOTE item', [
-                        'clave' => $clave, 'tb' => $tbClave, 'm' => $e->getMessage(),
-                    ]);
+                    $this->dbgError('ELIMINAR LOTE item', $e, ['clave' => $clave, 'tb' => $tbClave]);
                     $fallidos[] = ['rollo' => $id, 'error' => 'No se pudo eliminar'];
                 }
             }
         } catch (\Throwable $e) {
-            Log::error('[correccion-acabado] ELIMINAR LOTE', ['m' => $e->getMessage()]);
+            $this->dbgError('ELIMINAR LOTE', $e, ['tb' => $tbClave]);
 
             return response()->json(['ok' => false, 'error' => 'Conexión Firebird fallida'], 500);
         }
 
         Log::info('[correccion-acabado] ELIMINAR LOTE', [
             'tb' => $tbClave, 'eliminados' => count($eliminados), 'fallidos' => count($fallidos),
+            'ms' => round((microtime(true) - $inicio) * 1000, 2),
         ]);
 
         return response()->json([
