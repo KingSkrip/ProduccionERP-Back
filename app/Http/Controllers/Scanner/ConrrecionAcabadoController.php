@@ -395,35 +395,8 @@ class ConrrecionAcabadoController extends Controller
 
         $clave = (int) (ltrim($v['rollo'], '0') ?: '0');
 
+        // TB si existe; si no, ID de USUARIOS. NAMEDEL = nombre del usuario.
         [$usdel, $namedel] = $this->quienElimina();
-
-        $usuario = auth()->user();
-        $userId = (int) $usuario->ID;
-
-        $identity = UserFirebirdIdentity::where('firebird_user_clave', $userId)->first()
-            ?? UserFirebirdIdentity::where('firebird_user_clave', (int) $usuario->CLAVE)->first();
-
-        $tbClave = $identity?->firebird_tb_clave;
-        $tbClave = is_string($tbClave) ? trim($tbClave) : $tbClave;
-
-        $this->dbg('🪪 ELIMINAR identidad', [
-            'clave_rollo' => $clave,
-            'usuario_ID' => $userId,
-            'usuario_CLAVE' => $usuario->CLAVE ?? null,
-            'identity_encontrada' => (bool) $identity,
-            'identity_id' => $identity->id ?? null,
-            'identity_firebird_user_clave' => $identity->firebird_user_clave ?? null,
-            'tbClave' => $tbClave,
-        ]);
-
-        if (! $tbClave) {
-            $this->dbg('⛔ ELIMINAR rechazado: usuario sin clave TB', [
-                'usuario_ID' => $userId,
-                'identity_encontrada' => (bool) $identity,
-            ], 'warning');
-
-            return response()->json(['ok' => false, 'error' => 'Usuario sin clave de empleado (TB)'], 403);
-        }
 
         try {
             $conn = $this->firebird->getProductionConnection();
@@ -438,25 +411,24 @@ class ConrrecionAcabadoController extends Controller
                 return $bloqueo;
             }
 
-
             $sql = 'UPDATE PSDTABPZAS
-            SET ESTATUS = 0,
-                FECHAYHORADEL = CURRENT_TIMESTAMP,
-                USDEL = ?,
-                NAMEDEL = ?,
-                CASEDEL = 1
-          WHERE CLAVE = ? AND COALESCE(ESTATUS, 1) <> 0';
-    
-        $this->dbg('🧪 ELIMINAR SQL', [
-            'placeholders' => substr_count($sql, '?'),
-            'params' => [$usdel, $namedel, $clave],
-        ]);
-    
-        $afectados = $conn->update($sql, [$usdel, $namedel, $clave]);
+                       SET ESTATUS = 0,
+                           FECHAYHORADEL = CURRENT_TIMESTAMP,
+                           USDEL = ?,
+                           NAMEDEL = ?,
+                           CASEDEL = 1
+                     WHERE CLAVE = ? AND COALESCE(ESTATUS, 1) <> 0';
+
+            $this->dbg('🧪 ELIMINAR SQL', [
+                'placeholders' => substr_count($sql, '?'),
+                'params' => [$usdel, $namedel, $clave],
+            ]);
+
+            $afectados = $conn->update($sql, [$usdel, $namedel, $clave]);
 
             $this->dbg('📦 ELIMINAR filas afectadas', ['clave' => $clave, 'afectados' => $afectados]);
         } catch (\Throwable $e) {
-            $this->dbgError('ELIMINAR', $e, ['clave' => $clave, 'tb' => $tbClave]);
+            $this->dbgError('ELIMINAR', $e, ['clave' => $clave, 'usdel' => $usdel]);
 
             return response()->json(['ok' => false, 'error' => 'No se pudo eliminar'], 500);
         }
@@ -469,7 +441,7 @@ class ConrrecionAcabadoController extends Controller
 
         $this->dbg('✅ ELIMINAR fin', [
             'clave' => $clave,
-            'tb' => $tbClave,
+            'usdel' => $usdel,
             'ms' => round((microtime(true) - $inicio) * 1000, 2),
         ]);
 
@@ -821,38 +793,35 @@ class ConrrecionAcabadoController extends Controller
         return $tb ?: null;
     }
 
-
     /**
- * Datos de quien elimina:
- *  - usdel:   clave TB si existe (como ahorita); si no, el ID de USUARIOS
- *  - namedel: NOMBRE de la tabla usuarios
- */
-private function quienElimina(): array
-{
-    $usuario = auth()->user();
-    $tb = $this->tbClaveUsuario();
+     * Datos de quien elimina:
+     *  - usdel:   clave TB si existe (como ahorita); si no, el ID de USUARIOS
+     *  - namedel: NOMBRE de la tabla usuarios
+     */
+    private function quienElimina(): array
+    {
+        $usuario = auth()->user();
+        $tb = $this->tbClaveUsuario();
 
-    $usdel = $tb ?: (string) $usuario->ID;
-    $nombre = trim((string) ($usuario->NOMBRE ?? ''));
-    $namedel = mb_substr($nombre, 0, 60); // ajusta 60 al largo real de NAMEDEL
+        $usdel = $tb ? (string) $tb : (string) $usuario->ID;
+        $nombre = trim((string) ($usuario->NOMBRE ?? ''));
+        $namedel = mb_substr($nombre, 0, 60); // ajusta 60 al largo real de NAMEDEL
 
-    $this->dbg('🪪 quienElimina', [
-        'usuario_ID' => $usuario->ID,
-        'tb' => $tb,
-        'usdel' => $usdel,
-        'namedel' => $namedel,
-        'fallback_a_usuario_id' => ! $tb,
-    ]);
+        $this->dbg('🪪 quienElimina', [
+            'usuario_ID' => $usuario->ID,
+            'tb' => $tb,
+            'usdel' => $usdel,
+            'namedel' => $namedel,
+            'fallback_a_usuario_id' => ! $tb,
+        ]);
 
-    return [$usdel, $namedel];
-}
-
+        return [$usdel, $namedel];
+    }
 
     /** Elimina (baja lógica) varios rollos de golpe. Responde por rollo. */
     public function eliminarLote(Request $request)
     {
         $inicio = microtime(true);
-        [$usdel, $namedel] = $this->quienElimina();
 
         $this->dbg('▶️ ELIMINAR_LOTE inicio', [
             'rollos' => is_array($request->input('rollos')) ? count($request->input('rollos')) : 0,
@@ -863,12 +832,8 @@ private function quienElimina(): array
             'rollos.*' => ['regex:/^\d{1,10}$/'],
         ]);
 
-        $tbClave = $this->tbClaveUsuario();
-        if (! $tbClave) {
-            $this->dbg('⛔ ELIMINAR_LOTE rechazado: usuario sin clave TB', [], 'warning');
-
-            return response()->json(['ok' => false, 'error' => 'Usuario sin clave de empleado (TB)'], 403);
-        }
+        // TB si existe; si no, ID de USUARIOS. NAMEDEL = nombre del usuario.
+        [$usdel, $namedel] = $this->quienElimina();
 
         $eliminados = [];
         $fallidos = [];
@@ -915,18 +880,20 @@ private function quienElimina(): array
                         $eliminados[] = $id;
                     }
                 } catch (\Throwable $e) {
-                    $this->dbgError('ELIMINAR LOTE item', $e, ['clave' => $clave, 'tb' => $tbClave]);
+                    $this->dbgError('ELIMINAR LOTE item', $e, ['clave' => $clave, 'usdel' => $usdel]);
                     $fallidos[] = ['rollo' => $id, 'error' => 'No se pudo eliminar'];
                 }
             }
         } catch (\Throwable $e) {
-            $this->dbgError('ELIMINAR LOTE', $e, ['tb' => $tbClave]);
+            $this->dbgError('ELIMINAR LOTE', $e, ['usdel' => $usdel]);
 
             return response()->json(['ok' => false, 'error' => 'Conexión Firebird fallida'], 500);
         }
 
         Log::info('[correccion-acabado] ELIMINAR LOTE', [
-            'tb' => $tbClave, 'eliminados' => count($eliminados), 'fallidos' => count($fallidos),
+            'usdel' => $usdel,
+            'eliminados' => count($eliminados),
+            'fallidos' => count($fallidos),
             'ms' => round((microtime(true) - $inicio) * 1000, 2),
         ]);
 
