@@ -311,12 +311,12 @@ Route::prefix('scanner')->middleware('jwt.auth')->group(function () {
 
     // correccion
     Route::post('/correccion-acabado', [ConrrecionAcabadoController::class, 'scan']);
-    Route::get('/correccion-acabado/articulo', [ConrrecionAcabadoController::class, 'articulo']);
-    Route::put('/correccion-acabado/edit', [ConrrecionAcabadoController::class, 'update']);
-    Route::post('/correccion-acabado/eliminar', [ConrrecionAcabadoController::class, 'eliminar']);
-    Route::get('/correccion-acabado/op', [ConrrecionAcabadoController::class, 'porOp']);
-    Route::post('correccion-acabado/lote', [ConrrecionAcabadoController::class, 'scanLote']);
-    Route::post('/correccion-acabado/eliminar-lote', [ConrrecionAcabadoController::class, 'eliminarLote']);
+    Route::get('/articulo', [ConrrecionAcabadoController::class, 'articulo']);
+    Route::put('/edit', [ConrrecionAcabadoController::class, 'update']);
+    Route::post('/eliminar', [ConrrecionAcabadoController::class, 'eliminar']);
+    Route::get('/op', [ConrrecionAcabadoController::class, 'porOp']);
+    Route::post('/lote', [ConrrecionAcabadoController::class, 'scanLote']);
+    Route::post('/eliminar-lote', [ConrrecionAcabadoController::class, 'eliminarLote']);
 
 });
 
